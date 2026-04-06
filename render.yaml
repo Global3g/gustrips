@@ -1,0 +1,22 @@
+services:
+  # Backend API Service
+  - type: web
+    name: gustrips-backend
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    rootDir: flight-api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://gustrips.vercel.app,http://localhost:3000
+      - key: FRONTEND_URL
+        value: https://gustrips.vercel.app
+      - key: PYTHON_VERSION
+        value: 3.12.0
+    # Note: Firebase credentials and Resend API key must be added manually
+    # in the Render Dashboard after deployment:
+    # - FIREBASE_SERVICE_ACCOUNT_JSON
+    # - RESEND_API_KEY (optional)
