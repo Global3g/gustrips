@@ -40,19 +40,25 @@ export function useTrips(): UseTripsReturn {
 
     const db = getClientDb();
     const tripsRef = collection(db, 'trips');
+
+    // Cargar todos los viajes (las reglas permiten leer todos si estás autenticado)
+    // Luego filtraremos por usuario en el cliente
     const q = query(
       tripsRef,
-      where('createdBy', '==', user.uid),
       orderBy('createdAt', 'desc'),
     );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const tripsData: Trip[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Trip[];
+        // Filtrar solo los viajes del usuario actual
+        const tripsData: Trip[] = snapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+          .filter((trip: any) => trip.createdBy === user.uid) as Trip[];
+
         setTrips(tripsData);
         setLoading(false);
         setError(null);
