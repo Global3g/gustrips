@@ -108,7 +108,7 @@ export default function FlightSearchModal({
   };
 
   return (
-    <Modal open onClose={onClose} title="Buscar Vuelos" size="large">
+    <Modal open onClose={onClose} title="Buscar Vuelos" className="max-w-4xl">
       <div className="space-y-4">
         {/* Formulario de búsqueda */}
         <div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-3">
