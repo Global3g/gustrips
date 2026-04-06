@@ -20,6 +20,24 @@ def initialize_firebase():
     if _initialized:
         return _db
 
+    # Try to load from JSON string first (for production/Render)
+    service_account_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
+
+    if service_account_json:
+        try:
+            import json
+            service_account_dict = json.loads(service_account_json)
+            cred = credentials.Certificate(service_account_dict)
+            firebase_admin.initialize_app(cred)
+            _db = firestore.client()
+            _initialized = True
+            print("✅ Firebase Admin SDK initialized (from JSON env)")
+            return _db
+        except Exception as e:
+            print(f"❌ Error initializing Firebase from JSON: {e}")
+            return None
+
+    # Fall back to file path (for local development)
     service_account_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
 
     if not service_account_path or not os.path.exists(service_account_path):
@@ -33,7 +51,7 @@ def initialize_firebase():
         firebase_admin.initialize_app(cred)
         _db = firestore.client()
         _initialized = True
-        print("✅ Firebase Admin SDK initialized")
+        print("✅ Firebase Admin SDK initialized (from file)")
         return _db
     except Exception as e:
         print(f"❌ Error initializing Firebase: {e}")
