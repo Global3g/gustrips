@@ -228,14 +228,12 @@ export default function FlightsPage() {
                   type="date"
                   value={departureDate}
                   onChange={(e) => setDepartureDate(e.target.value)}
-                  icon={Calendar}
                 />
                 <Input
                   label="Fecha de regreso (opcional)"
                   type="date"
                   value={returnDate}
                   onChange={(e) => setReturnDate(e.target.value)}
-                  icon={Calendar}
                 />
               </div>
             ) : (
@@ -245,14 +243,12 @@ export default function FlightsPage() {
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  icon={Calendar}
                 />
                 <Input
                   label="Fecha fin"
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  icon={Calendar}
                 />
                 <Input
                   label="Duración del viaje (días)"
