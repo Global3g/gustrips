@@ -156,7 +156,6 @@ export default function AddToTripModal({ flight, trips, onClose }: AddToTripModa
             type="date"
             value={departureDate}
             onChange={(e) => setDepartureDate(e.target.value)}
-            icon={Calendar}
             required
           />
         </div>

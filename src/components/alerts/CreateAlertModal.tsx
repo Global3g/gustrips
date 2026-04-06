@@ -106,7 +106,6 @@ export default function CreateAlertModal({
             placeholder="2500"
             value={targetPrice}
             onChange={(e) => setTargetPrice(e.target.value)}
-            icon={DollarSign}
             required
           />
           <Select
