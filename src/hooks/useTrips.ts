@@ -15,6 +15,7 @@ import {
 import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
+import { saveDeletedItem, clearOldDeletedItems } from '@/lib/utils/recovery';
 import type { Trip, TripMember } from '@/types';
 
 interface UseTripsReturn {
@@ -56,8 +57,7 @@ export function useTrips(): UseTripsReturn {
           .map((doc) => ({
             id: doc.id,
             ...doc.data(),
-          }))
-          .filter((trip: any) => trip.createdBy === user.uid) as Trip[];
+          })) as Trip[];
 
         setTrips(tripsData);
         setLoading(false);
@@ -109,10 +109,20 @@ export function useTrips(): UseTripsReturn {
   const deleteTrip = useCallback(
     async (id: string): Promise<void> => {
       if (!user) throw new Error('Usuario no autenticado');
+
+      // Save trip data to localStorage before deleting
+      const tripData = trips.find((t) => t.id === id);
+      if (tripData) {
+        saveDeletedItem('trip', id, id, tripData as unknown as Record<string, unknown>);
+      }
+
+      // Clean old deleted items
+      clearOldDeletedItems();
+
       const db = getClientDb();
       await deleteDoc(doc(db, 'trips', id));
     },
-    [user],
+    [user, trips],
   );
 
   return { trips, loading, error, createTrip, deleteTrip };

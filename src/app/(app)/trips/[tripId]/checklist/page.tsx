@@ -1,20 +1,23 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CheckSquare } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { CheckSquare, Sparkles } from 'lucide-react';
 import { useChecklist } from '@/hooks/useChecklist';
 import { useToast } from '@/context/ToastContext';
 import ChecklistSection from '@/components/trips/ChecklistSection';
-import { ROUTES } from '@/config/constants';
+import TemplateSelector from '@/components/trips/TemplateSelector';
+// config/constants not needed after removing back button
+import type { ChecklistTemplate } from '@/config/checklistTemplates';
 import type { ChecklistPhase } from '@/types';
 
 export default function ChecklistPage() {
   const params = useParams();
-  const router = useRouter();
   const tripId = params.tripId as string;
 
   const { items, loading, addItem, toggleItem, deleteItem } = useChecklist(tripId);
   const { toast } = useToast();
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   /* ─── Progreso general ────────────────────────── */
 
@@ -45,30 +48,63 @@ export default function ChecklistPage() {
 
   const handleDelete = async (itemId: string) => {
     try {
-      await deleteItem(itemId);
-      toast('Elemento eliminado', 'success');
+      const { undo } = await deleteItem(itemId);
+      toast('Elemento eliminado', 'info', {
+        label: 'Deshacer',
+        onClick: () => {
+          undo();
+          toast('Elemento restaurado', 'success');
+        },
+      });
     } catch (error) {
       console.error('Error al eliminar elemento:', error);
       toast('Error al eliminar el elemento', 'error');
     }
   };
 
+  const handleApplyTemplates = useCallback(
+    async (templates: ChecklistTemplate[]) => {
+      let totalAdded = 0;
+      const templateNames: string[] = [];
+
+      for (const template of templates) {
+        templateNames.push(template.label);
+        for (const item of template.items) {
+          try {
+            await addItem(item.text, item.phase);
+            totalAdded++;
+          } catch (error) {
+            console.error('Error al agregar item de template:', error);
+          }
+        }
+      }
+
+      const nameList = templateNames.join(', ');
+      toast(`${totalAdded} items agregados del template ${nameList}`, 'success');
+    },
+    [addItem, toast]
+  );
+
   /* ─── Render ──────────────────────────────────── */
 
+  const isEmpty = !loading && totalItems === 0;
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
+    <div className="space-y-6">
       {/* Encabezado */}
       <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => router.push(ROUTES.app.trip(tripId))}
-          className="p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold text-white">Checklist</h1>
-          <p className="text-white/40 text-sm">Organiza tus tareas por fase del viaje</p>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-gray-900">Checklist</h1>
+          <p className="text-gray-400 text-sm">Prep\u00e1rate paso a paso para tu viaje</p>
         </div>
+        {/* Template button in header (always visible) */}
+        <button
+          onClick={() => setTemplateOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-50 text-gray-700 hover:text-gray-900 hover:bg-gray-100 border border-gray-200 transition-all duration-200"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          Template
+        </button>
       </div>
 
       {/* Barra de progreso general */}
@@ -76,20 +112,42 @@ export default function ChecklistPage() {
         <div className="glass rounded-xl px-4 py-4 mb-6">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <CheckSquare className="w-4 h-4 text-blue-400" />
-              <span className="text-white/70 text-sm font-medium">Progreso general</span>
+              <CheckSquare className="w-4 h-4 text-blue-600" />
+              <span className="text-gray-700 text-sm font-medium">Progreso general</span>
             </div>
-            <span className="text-white font-bold text-sm">{overallProgress}%</span>
+            <span className="text-gray-900 font-bold text-sm">{overallProgress}%</span>
           </div>
-          <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
+          <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-700 ease-out"
               style={{ width: `${overallProgress}%` }}
             />
           </div>
-          <p className="text-white/40 text-xs mt-2">
+          <p className="text-gray-400 text-xs mt-2">
             {checkedItems} de {totalItems} {totalItems === 1 ? 'tarea completada' : 'tareas completadas'}
           </p>
+        </div>
+      )}
+
+      {/* Empty state with prominent template CTA */}
+      {isEmpty && (
+        <div className="glass rounded-2xl px-6 py-10 mb-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mx-auto mb-4">
+            <Sparkles className="w-7 h-7 text-blue-600" />
+          </div>
+          <h2 className="text-gray-900 font-bold text-lg mb-2">
+            Comienza con un template
+          </h2>
+          <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
+            Elige un template predefinido para agregar rapidamente los elementos esenciales a tu checklist.
+          </p>
+          <button
+            onClick={() => setTemplateOpen(true)}
+            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-400 hover:to-blue-500 shadow-lg shadow-blue-500/25 border border-blue-400/20 transition-all duration-200 active:scale-[0.97]"
+          >
+            <Sparkles className="w-4 h-4" />
+            Explorar templates
+          </button>
         </div>
       )}
 
@@ -100,6 +158,13 @@ export default function ChecklistPage() {
         onToggle={handleToggle}
         onDelete={handleDelete}
         loading={loading}
+      />
+
+      {/* Template selector modal */}
+      <TemplateSelector
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        onApply={handleApplyTemplates}
       />
     </div>
   );

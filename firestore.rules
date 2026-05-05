@@ -2,28 +2,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Trips: cualquier usuario autenticado puede leer todos los viajes
+    // Trips con shareToken pueden ser leidos sin autenticacion
     // Pero solo puede escribir sus propios viajes
     match /trips/{tripId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
+      allow read: if request.auth != null
+                   || (resource.data.shareToken != null && resource.data.shareToken != '');
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
 
       // Subcolecciones (members, events, documents, checklist)
+      // Lectura publica si el viaje padre tiene shareToken
       match /{subcollection}/{docId} {
-        allow read, write: if request.auth != null;
+        allow read: if request.auth != null
+                     || (get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken != null
+                         && get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken != '');
+        allow write: if request.auth != null;
       }
     }
 
-    // Alerts: solo el usuario que creó la alerta puede verla
-    match /alerts/{alertId} {
-      allow read, write: if request.auth != null &&
-        (resource == null || resource.data.userId == request.auth.uid);
+    // Global travelers per user
+    match /users/{userId}/travelers/{travelerId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Price History: cualquier usuario autenticado puede leer
-    match /priceHistory/{historyId} {
-      allow read: if request.auth != null;
-      allow write: if false; // Solo el backend escribe aquí
-    }
   }
 }

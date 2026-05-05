@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
+import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const viewport: Viewport = {
@@ -39,12 +41,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className="dark">
+    <html lang="es">
       <head>
-        <meta name="theme-color" content="#2c5282" />
+        <meta name="theme-color" content="#f9fafb" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
-      <body className={`${inter.variable} antialiased`}>
+      <body className={`${dmSans.variable} antialiased`}>
+        <ServiceWorkerRegistration />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

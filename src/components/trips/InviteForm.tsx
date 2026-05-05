@@ -59,7 +59,7 @@ export default function InviteForm({ open, onClose, onSubmit, loading = false }:
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Invitar Miembro">
+    <Modal open={open} onClose={handleClose} title="Invitar Viajero">
       <form onSubmit={handleSubmit} className="space-y-5">
         <Input
           label="Correo electronico"
@@ -75,23 +75,23 @@ export default function InviteForm({ open, onClose, onSubmit, loading = false }:
         />
 
         <div className="space-y-1.5">
-          <label className="block text-white/80 text-sm font-medium">
+          <label className="block text-gray-800 text-sm font-medium">
             Rol
           </label>
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}
-            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all appearance-none cursor-pointer"
+            className="w-full bg-gray-50 border border-gray-300 rounded-xl px-4 py-3 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all appearance-none cursor-pointer"
           >
-            <option value="editor" className="bg-gray-800 text-white">
+            <option value="editor" className="bg-white text-gray-900">
               {MEMBER_ROLES.editor.label} — {MEMBER_ROLES.editor.description}
             </option>
-            <option value="viewer" className="bg-gray-800 text-white">
+            <option value="viewer" className="bg-white text-gray-900">
               {MEMBER_ROLES.viewer.label} — {MEMBER_ROLES.viewer.description}
             </option>
           </select>
           {errors.role && (
-            <p className="text-red-400 text-xs mt-1">{errors.role}</p>
+            <p className="text-red-600 text-xs mt-1">{errors.role}</p>
           )}
         </div>
 

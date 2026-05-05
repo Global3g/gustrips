@@ -5,7 +5,7 @@ import { format, parseISO, eachDayOfInterval, differenceInCalendarDays } from 'd
 import { es } from 'date-fns/locale/es';
 import { GripVertical } from 'lucide-react';
 import { EVENT_TYPES } from '@/config/constants';
-import { formatCurrency, getTimezoneAbbr } from '@/lib/utils/helpers';
+import { formatCurrency, getTimezoneAbbr, formatDateShortES } from '@/lib/utils/helpers';
 import type { TripEvent } from '@/types';
 
 /* ─── Constantes ──────────────────────────────────── */
@@ -18,13 +18,14 @@ const SNAP_MIN = 15;
 /* ─── Colores más intensos por tipo (fondo y texto) ─ */
 
 const AGENDA_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  flight:     { bg: 'rgba(6,182,212,0.25)',   border: '#06b6d4', text: '#22d3ee' },   // cyan
-  hotel:      { bg: 'rgba(139,92,246,0.25)',  border: '#8b5cf6', text: '#a78bfa' },   // violet
-  car_rental: { bg: 'rgba(234,179,8,0.25)',   border: '#eab308', text: '#facc15' },   // yellow
-  activity:   { bg: 'rgba(34,197,94,0.25)',   border: '#22c55e', text: '#4ade80' },   // green
-  restaurant: { bg: 'rgba(249,115,22,0.25)',  border: '#f97316', text: '#fb923c' },   // orange
-  transport:  { bg: 'rgba(59,130,246,0.25)',  border: '#3b82f6', text: '#60a5fa' },   // blue
-  other:      { bg: 'rgba(107,114,128,0.25)', border: '#6b7280', text: '#9ca3af' },   // gray
+  flight:     { bg: 'rgba(236,72,153,0.12)',   border: '#ec4899', text: '#db2777' },
+  hotel:      { bg: 'rgba(139,92,246,0.12)',  border: '#7c3aed', text: '#6d28d9' },
+  car_rental: { bg: 'rgba(234,179,8,0.12)',   border: '#ca8a04', text: '#a16207' },
+  activity:   { bg: 'rgba(34,197,94,0.12)',   border: '#16a34a', text: '#15803d' },
+  restaurant: { bg: 'rgba(249,115,22,0.12)',  border: '#ea580c', text: '#c2410c' },
+  transport:  { bg: 'rgba(59,130,246,0.12)',  border: '#2563eb', text: '#1d4ed8' },
+  cruise:     { bg: 'rgba(125,211,252,0.20)', border: '#7dd3fc', text: '#0284c7' },
+  other:      { bg: 'rgba(107,114,128,0.12)', border: '#6b7280', text: '#4b5563' },
 };
 
 /* ─── Helpers ─────────────────────────────────────── */
@@ -66,16 +67,24 @@ interface ResizeGhost {
 interface AgendaViewProps {
   events: TripEvent[];
   onEdit: (event: TripEvent) => void;
-  onUpdate: (eventId: string, data: Partial<TripEvent>) => Promise<void>;
+  onUpdate?: (eventId: string, data: Partial<TripEvent>) => Promise<void>;
+  onDelete?: (eventId: string) => Promise<void>;
+  onReorder?: (events: TripEvent[]) => Promise<void>;
+  onCreateAt?: (date: string, time: string) => void;
+  selectedDate?: string;
+  tripStartDate?: string;
+  tripEndDate?: string;
 }
 
 /* ─── Componente ──────────────────────────────────── */
 
-export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps) {
+export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReorder, onCreateAt, selectedDate, tripStartDate, tripEndDate }: AgendaViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragInfoRef = useRef<{ event: TripEvent; durationMin: number; offsetY: number } | null>(null);
   const ghostRef = useRef<DragGhost | null>(null);
+  const clickedEventRef = useRef(false);
+  const gridClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [ghost, setGhost] = useState<DragGhost | null>(null);
   const resizeInfoRef = useRef<{ event: TripEvent; startMin: number } | null>(null);
@@ -89,6 +98,16 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
   /* ─── Derivar fechas ────────────────────────────── */
 
   const dates = useMemo(() => {
+    // If trip start/end dates provided, show ALL days of the trip
+    if (tripStartDate && tripEndDate) {
+      try {
+        return eachDayOfInterval({
+          start: parseISO(tripStartDate),
+          end: parseISO(tripEndDate),
+        }).map((d) => format(d, 'yyyy-MM-dd'));
+      } catch { /* fall through */ }
+    }
+    // Fallback: derive from events
     const allDates: string[] = [];
     for (const ev of events) {
       if (ev.date) allDates.push(ev.date);
@@ -101,7 +120,7 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
       start: parseISO(sorted[0]),
       end: parseISO(sorted[sorted.length - 1]),
     }).map((d) => format(d, 'yyyy-MM-dd'));
-  }, [events]);
+  }, [events, tripStartDate, tripEndDate]);
 
   /* ─── Rango de horas ────────────────────────────── */
 
@@ -258,7 +277,7 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
             };
           }
 
-          onUpdate(drag.event.id, updates);
+          onUpdate?.(drag.event.id, updates);
         }
       }
 
@@ -319,7 +338,7 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
       if (info && rg) {
         const newEndTime = minutesToTime(rg.endMin);
         if (newEndTime !== info.event.endTime) {
-          onUpdate(info.event.id, { endTime: newEndTime });
+          onUpdate?.(info.event.id, { endTime: newEndTime });
         }
       }
 
@@ -388,13 +407,13 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
   /* ─── Render ────────────────────────────────────── */
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-gray-900/60 overflow-hidden">
+    <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
       <div ref={scrollRef} className="overflow-auto max-h-[85vh]">
         <div className="flex min-w-max">
 
           {/* ─── Columna de horas (sticky) ──────── */}
-          <div className="w-14 flex-shrink-0 sticky left-0 z-20 bg-gray-900">
-            <div className="h-12 border-b border-white/10" />
+          <div className="w-14 flex-shrink-0 sticky left-0 z-20 bg-white">
+            <div className="h-12 border-b border-gray-200" />
             <div className="relative" style={{ height: totalHours * HOUR_HEIGHT }}>
               {hours.map((h) => (
                 <div
@@ -402,13 +421,13 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                   className="absolute w-full text-right pr-2"
                   style={{ top: (h - startHour) * HOUR_HEIGHT }}
                 >
-                  <span className="text-white/25 text-[10px] font-mono leading-none relative -top-[5px]">
+                  <span className="text-gray-300 text-[10px] font-mono leading-none relative -top-[5px]">
                     {formatHour(h)}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="h-10 border-t border-white/10" />
+            <div className="h-10 border-t border-gray-200" />
           </div>
 
           {/* ─── Columnas de días ───────────────── */}
@@ -421,34 +440,49 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
               <div
                 key={date}
                 ref={(el) => { if (el) colRefs.current.set(date, el); }}
-                className="border-l border-white/10"
+                className="border-l border-gray-200"
                 style={{ minWidth: DAY_COL_MIN_W }}
               >
                 {/* Header del día */}
                 <div
-                  className={`h-12 flex flex-col items-center justify-center border-b border-white/10 sticky top-0 z-10 ${
-                    isWeekend ? 'bg-gray-800' : 'bg-gray-900'
+                  className={`h-12 flex flex-col items-center justify-center border-b border-gray-200 sticky top-0 z-10 ${
+                    isWeekend ? 'bg-gray-50' : 'bg-white'
                   }`}
                 >
-                  <span className="text-white/40 text-[10px] uppercase tracking-wide">
+                  <span className="text-gray-400 text-[10px] uppercase tracking-wide">
                     {format(parseISO(date), 'EEE', { locale: es })}
                   </span>
-                  <span className="text-white text-xs font-bold">
-                    {format(parseISO(date), 'd MMM', { locale: es })}
+                  <span className="text-gray-900 text-xs font-bold">
+                    {formatDateShortES(date)}
                   </span>
                 </div>
 
                 {/* Grid de tiempo */}
                 <div
                   data-grid
-                  className={`relative ${isWeekend ? 'bg-white/[0.015]' : ''}`}
+                  className={`relative ${isWeekend ? 'bg-gray-50/50' : ''}`}
                   style={{ height: totalHours * HOUR_HEIGHT }}
+                  onPointerUp={(e) => {
+                    if (!onCreateAt) return;
+                    if ((e.target as HTMLElement).closest('[data-event-block]')) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickY = e.clientY - rect.top;
+                    // Cancel any pending timer
+                    if (gridClickTimerRef.current) clearTimeout(gridClickTimerRef.current);
+                    gridClickTimerRef.current = setTimeout(() => {
+                      if (clickedEventRef.current) { clickedEventRef.current = false; return; }
+                      const totalMin = startHour * 60 + (clickY / HOUR_HEIGHT) * 60;
+                      const snappedMin = Math.round(totalMin / SNAP_MIN) * SNAP_MIN;
+                      const time = minutesToTime(snappedMin);
+                      onCreateAt(date, time);
+                    }, 300);
+                  }}
                 >
                   {/* Líneas de hora */}
                   {hours.map((h) => (
                     <div
                       key={h}
-                      className="absolute w-full border-t border-white/[0.06]"
+                      className="absolute w-full border-t border-gray-100 pointer-events-none"
                       style={{ top: (h - startHour) * HOUR_HEIGHT }}
                     />
                   ))}
@@ -459,6 +493,7 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                     return (
                       <div
                         key={event.id}
+                        data-event-block
                         className="absolute left-1 right-1 rounded-md overflow-hidden cursor-pointer hover:brightness-125 transition-all"
                         style={{
                           top: 2 + i * 26,
@@ -524,6 +559,7 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                     return (
                       <div
                         key={`${event.id}-${date}`}
+                        data-event-block
                         className={`absolute left-1 right-1 rounded-lg overflow-hidden z-[1] transition-opacity ${
                           isDragging ? 'opacity-30 pointer-events-none' : 'cursor-grab active:cursor-grabbing hover:brightness-110'
                         } ${isContinuation ? 'opacity-60 border-dashed' : ''}`}
@@ -534,10 +570,38 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                           borderLeft: `3px solid ${colors.border}`,
                           touchAction: 'none',
                         }}
-                        onPointerDown={!isContinuation ? (e) => handleDragStart(e, event) : undefined}
-                        onClick={isContinuation ? undefined : (e) => {
-                          if (!dragInfoRef.current) onEdit(event);
-                        }}
+                        onPointerDown={!isContinuation ? (e) => {
+                          const startX = e.clientX;
+                          const startY = e.clientY;
+                          let dragged = false;
+                          const reactEvent = e;
+
+                          const onMove = (ev: PointerEvent) => {
+                            if (dragged) return;
+                            const dx = Math.abs(ev.clientX - startX);
+                            const dy = Math.abs(ev.clientY - startY);
+                            if (dx > 5 || dy > 5) {
+                              dragged = true;
+                              document.removeEventListener('pointermove', onMove);
+                              document.removeEventListener('pointerup', onUp);
+                              handleDragStart(reactEvent, event);
+                            }
+                          };
+
+                          const onUp = () => {
+                            document.removeEventListener('pointermove', onMove);
+                            document.removeEventListener('pointerup', onUp);
+                            if (!dragged) {
+                              // Was a click — open edit
+                              clickedEventRef.current = true;
+                              if (gridClickTimerRef.current) clearTimeout(gridClickTimerRef.current);
+                              onEdit(event);
+                            }
+                          };
+
+                          document.addEventListener('pointermove', onMove);
+                          document.addEventListener('pointerup', onUp);
+                        } : undefined}
                       >
                         <div className="px-1.5 py-0.5 h-full flex flex-col overflow-hidden relative">
                           {/* Grip + título */}
@@ -552,23 +616,23 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
 
                           {/* Detalles extra para vuelos */}
                           {event.type === 'flight' && !isContinuation && (
-                            <p className="text-white/40 text-[9px] leading-tight truncate">
+                            <p className="text-gray-400 text-[9px] leading-tight truncate">
                               {[event.details?.airline, event.details?.flightNumber].filter(Boolean).join(' · ')}
-                              {flightDur && <span className="text-cyan-400/70 font-semibold"> · {flightDur}</span>}
+                              {flightDur && <span className="text-cyan-600 font-semibold"> · {flightDur}</span>}
                             </p>
                           )}
 
                           {/* Hora + timezone */}
-                          <p className="text-white/50 text-[9px] leading-tight truncate">
+                          <p className="text-gray-500 text-[9px] leading-tight truncate">
                             {isContinuation
                               ? `→ llega ${event.endTime || ''}`
                               : (
                                 <>
                                   {event.startTime}
-                                  {tzAbbr && <span className="text-amber-400/60"> ({tzAbbr})</span>}
+                                  {tzAbbr && <span className="text-amber-600"> ({tzAbbr})</span>}
                                   {event.endTime && ` – ${event.endTime}`}
                                   {event.details?.arrivalTimezone && (
-                                    <span className="text-amber-400/60">
+                                    <span className="text-amber-600">
                                       {' '}({getTimezoneAbbr(event.details.arrivalTimezone, event.details?.arrivalDate || date)})
                                     </span>
                                   )}
@@ -579,26 +643,26 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
 
                           {/* Confirmación (vuelos) */}
                           {event.type === 'flight' && event.details?.confirmationCode && pos.height > 30 && (
-                            <p className="text-white/30 text-[9px] truncate">
+                            <p className="text-gray-300 text-[9px] truncate">
                               Ref: {event.details.confirmationCode}
                             </p>
                           )}
 
                           {/* Asiento + equipaje (vuelos) */}
                           {event.type === 'flight' && pos.height > 40 && (
-                            <p className="text-white/25 text-[9px] truncate">
+                            <p className="text-gray-300 text-[9px] truncate">
                               {[event.details?.seatNumber && `Asiento ${event.details.seatNumber}`, event.details?.baggage].filter(Boolean).join(' · ')}
                             </p>
                           )}
 
                           {/* Ubicación (no vuelos) */}
                           {event.type !== 'flight' && pos.height > 30 && event.location && (
-                            <p className="text-white/25 text-[9px] truncate mt-auto">{event.location}</p>
+                            <p className="text-gray-300 text-[9px] truncate mt-auto">{event.location}</p>
                           )}
 
                           {/* Costo */}
                           {event.cost > 0 && pos.height > 25 && (
-                            <p className="text-emerald-400/60 text-[9px] font-semibold mt-auto">
+                            <p className="text-emerald-600 text-[9px] font-semibold mt-auto">
                               {formatCurrency(event.cost, event.currency)}
                             </p>
                           )}
@@ -606,16 +670,16 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                           {/* Handle de resize (barra al fondo) */}
                           {!isContinuation && (
                             <div
-                              className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize group/resize flex items-center justify-center"
+                              className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize group/resize flex items-center justify-center pointer-events-auto"
                               onPointerDown={(e) => handleResizeStart(e, event, date)}
                             >
-                              <div className="w-8 h-[3px] rounded-full bg-white/15 group-hover/resize:bg-white/40 transition-colors" />
+                              <div className="w-8 h-[3px] rounded-full bg-gray-200 group-hover/resize:bg-gray-400 transition-colors" />
                             </div>
                           )}
 
                           {/* Hora nueva durante resize */}
                           {isResizing && (
-                            <p className="absolute bottom-2 right-1.5 text-blue-400 text-[9px] font-bold">
+                            <p className="absolute bottom-2 right-1.5 text-blue-600 text-[9px] font-bold">
                               → {minutesToTime(resizeGhost.endMin)}
                             </p>
                           )}
@@ -634,7 +698,7 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                         backgroundColor: 'rgba(59,130,246,0.12)',
                       }}
                     >
-                      <p className="px-2 py-1 text-blue-400 text-[11px] font-semibold">
+                      <p className="px-2 py-1 text-blue-600 text-[11px] font-semibold">
                         {minutesToTime(ghost.startMin)} – {minutesToTime(ghost.startMin + ghost.durationMin)}
                       </p>
                     </div>
@@ -642,13 +706,13 @@ export default function AgendaView({ events, onEdit, onUpdate }: AgendaViewProps
                 </div>
 
                 {/* Total del día */}
-                <div className="h-10 border-t border-white/10 flex items-center justify-center">
+                <div className="h-10 border-t border-gray-200 flex items-center justify-center">
                   {total > 0 ? (
-                    <span className="text-emerald-400/80 text-xs font-semibold">
+                    <span className="text-emerald-600 text-xs font-semibold">
                       {formatCurrency(total)}
                     </span>
                   ) : (
-                    <span className="text-white/15 text-[10px]">—</span>
+                    <span className="text-gray-200 text-[10px]">—</span>
                   )}
                 </div>
               </div>

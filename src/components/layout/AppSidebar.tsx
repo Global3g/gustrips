@@ -1,72 +1,137 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Plane, LayoutDashboard, PlaneTakeoff, Bell, LogOut } from 'lucide-react';
+import {
+  LayoutDashboard,
+  PlaneTakeoff,
+  Users,
+  LogOut,
+  HardDriveDownload,
+  Loader2,
+  Globe,
+  Compass,
+} from 'lucide-react';
 import { APP_NAV_ITEMS } from '@/config/navigation';
-import { APP_NAME } from '@/config/constants';
 import { useAuth } from '@/hooks/useAuth';
-import { classNames, getInitials, glassStyle } from '@/lib/utils/helpers';
+import { classNames, getInitials } from '@/lib/utils/helpers';
+import { exportAllTripsBackup, downloadBackup, getFullBackupFilename } from '@/lib/utils/backup';
+import { useToast } from '@/context/ToastContext';
+
+/* ── Each nav item gets its own unique color ── */
+const NAV_COLORS: Record<string, { active: string; icon: string; bg: string; glow: string }> = {
+  '/dashboard': {
+    active: 'text-blue-400',
+    icon: 'text-blue-400',
+    bg: 'bg-blue-500/10',
+    glow: 'shadow-blue-500/20',
+  },
+  '/travelers': {
+    active: 'text-emerald-400',
+    icon: 'text-emerald-400',
+    bg: 'bg-emerald-500/10',
+    glow: 'shadow-emerald-500/20',
+  },
+  '/trips/new': {
+    active: 'text-amber-400',
+    icon: 'text-amber-400',
+    bg: 'bg-amber-500/10',
+    glow: 'shadow-amber-500/20',
+  },
+};
 
 const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   LayoutDashboard,
-  Plane,
-  Bell,
+  Users,
   PlaneTakeoff,
-};
-
-const ICON_COLORS: Record<string, string> = {
-  '/dashboard': 'text-blue-400',
-  '/flights': 'text-cyan-400',
-  '/alerts': 'text-purple-400',
-  '/trips/new': 'text-cyan-400',
 };
 
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const { toast } = useToast();
+  const [backingUp, setBackingUp] = useState(false);
+
+  const handleGlobalBackup = async () => {
+    if (!user) return;
+    try {
+      setBackingUp(true);
+      const data = await exportAllTripsBackup(user.uid);
+      const filename = getFullBackupFilename();
+      downloadBackup(data, filename);
+      toast('Backup completo descargado', 'success');
+    } catch (err) {
+      console.error('Error al generar backup global:', err);
+      toast('Error al generar el backup', 'error');
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  // Time-based greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
 
   return (
     <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 lg:left-0 z-40">
-      <div
-        className="flex flex-col h-full rounded-r-2xl overflow-hidden"
-        style={glassStyle}
-      >
-        {/* Brand Header */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-white/10">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <Plane className="w-5 h-5 text-white" />
-          </div>
-          <span className="text-white font-bold text-lg tracking-tight">
-            {APP_NAME}
-          </span>
+      <div className="flex flex-col h-full relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #0f172a 0%, #0c1425 50%, #091120 100%)' }}>
+
+        {/* ── Background orbs for depth ── */}
+        <div className="absolute top-20 -left-10 w-40 h-40 bg-blue-600/8 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-40 -right-10 w-32 h-32 bg-violet-600/6 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-10 left-5 w-24 h-24 bg-emerald-600/5 rounded-full blur-3xl pointer-events-none" />
+
+        {/* ── Logo ── */}
+        <div className="relative flex items-center justify-center px-6 pt-6 pb-4">
+          <img src="/logo.png" alt="GusTrips" className="h-14 brightness-0 invert opacity-80" />
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        {/* ── Greeting ── */}
+        {user && (
+          <div className="relative px-5 pb-4">
+            <p className="text-white/30 text-[11px] font-medium">{greeting},</p>
+            <p className="text-white/80 text-[14px] font-semibold truncate">
+              {user.displayName || user.email?.split('@')[0]}
+            </p>
+          </div>
+        )}
+
+        {/* ── Divider ── */}
+        <div className="mx-5 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+        {/* ── Navigation ── */}
+        <nav className="relative flex-1 px-3 py-5 space-y-1.5">
           {APP_NAV_ITEMS.map((item) => {
             const Icon = ICON_MAP[item.icon];
+            const colors = NAV_COLORS[item.href] || NAV_COLORS['/dashboard'];
             const isActive =
               item.href === '/dashboard'
                 ? pathname === '/dashboard'
                 : pathname.startsWith(item.href);
-            const iconColor = ICON_COLORS[item.href] ?? 'text-white/60';
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={classNames(
-                  'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200',
+                  'flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium transition-all duration-200 relative group',
                   isActive
-                    ? 'bg-white/15 text-white shadow-lg shadow-black/10'
-                    : 'text-white/60 hover:text-white hover:bg-white/8'
+                    ? `${colors.bg} ${colors.active} font-semibold shadow-lg ${colors.glow} backdrop-blur-sm`
+                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]',
                 )}
               >
+                {/* Active bar */}
+                {isActive && (
+                  <div className={classNames(
+                    'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full',
+                    colors.active.replace('text-', 'bg-'),
+                  )} />
+                )}
                 <Icon
                   className={classNames(
-                    'w-5 h-5 flex-shrink-0',
-                    isActive ? iconColor : 'text-white/40'
+                    'w-5 h-5 flex-shrink-0 transition-colors duration-200',
+                    isActive ? colors.icon : 'text-white/25 group-hover:text-white/40',
                   )}
                 />
                 <span>{item.label}</span>
@@ -75,25 +140,52 @@ export default function AppSidebar() {
           })}
         </nav>
 
-        {/* User Info */}
+        {/* ── Explore section ── */}
+        <div className="relative px-5 pb-3">
+          <div className="mx-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
+          <div className="flex items-center gap-2 px-1 mb-3">
+            <Compass className="w-3.5 h-3.5 text-white/20" />
+            <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.12em]">Acciones</span>
+          </div>
+          <button
+            onClick={handleGlobalBackup}
+            disabled={backingUp}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-white/35 hover:text-white/60 hover:bg-white/[0.04] transition-all duration-200 disabled:opacity-40"
+          >
+            {backingUp ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <HardDriveDownload className="w-4 h-4" />
+            )}
+            <span>Backup completo</span>
+          </button>
+        </div>
+
+        {/* ── User Footer ── */}
         {user && (
-          <div className="px-4 py-4 border-t border-white/10">
+          <div className="relative px-4 py-4">
+            <div className="mx-1 h-px bg-gradient-to-r from-transparent via-white/8 to-transparent mb-4" />
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-xs font-bold">
-                  {getInitials(user.displayName || user.email)}
-                </span>
+              {/* Avatar with gradient ring */}
+              <div className="relative">
+                <div className="absolute -inset-0.5 bg-gradient-to-br from-blue-500 via-violet-500 to-rose-500 rounded-full opacity-60 blur-[1px]" />
+                <div className="relative w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center ring-2 ring-slate-800">
+                  <span className="text-white/80 text-xs font-bold">
+                    {getInitials(user.displayName || user.email)}
+                  </span>
+                </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">
+                <p className="text-white/70 text-[12px] font-medium truncate">
                   {user.displayName || 'Usuario'}
                 </p>
-                <p className="text-white/40 text-xs truncate">{user.email}</p>
+                <p className="text-white/25 text-[10px] truncate">{user.email}</p>
               </div>
               <button
                 onClick={() => signOut()}
-                className="text-white/40 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/10"
+                className="text-white/20 hover:text-rose-400 transition-colors duration-200 p-1.5 rounded-lg hover:bg-white/[0.05]"
                 title="Cerrar sesion"
+                aria-label="Cerrar sesion"
               >
                 <LogOut className="w-4 h-4" />
               </button>

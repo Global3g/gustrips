@@ -22,11 +22,11 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
             htmlFor={selectId}
             className={classNames(
               'block font-medium',
-              isSmall ? 'text-xs text-white/50' : 'text-sm text-white/70'
+              isSmall ? 'text-xs text-gray-500' : 'text-sm text-gray-700'
             )}
           >
             {label}
-            {required && <span className="text-red-400 ml-1">*</span>}
+            {required && <span className="text-red-500 ml-1">*</span>}
           </label>
         )}
 
@@ -35,23 +35,23 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
           id={selectId}
           required={required}
           className={classNames(
-            'w-full bg-white/10 border border-white/20 text-white cursor-pointer',
-            'focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30',
+            'w-full bg-white border border-gray-300 text-gray-900 cursor-pointer',
+            'focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20',
             'transition-colors duration-200',
             isSmall ? 'rounded-lg px-3 py-1.5 text-sm' : 'rounded-xl px-4 py-3',
-            error && 'border-red-400/60 focus:border-red-400 focus:ring-red-400/30',
+            error && 'border-red-400 focus:border-red-500 focus:ring-red-500/20',
             className
           )}
           {...props}
         >
           {options.map((opt) => (
-            <option key={opt.value} value={opt.value} className="bg-gray-800 text-white">
+            <option key={opt.value} value={opt.value} className="bg-white text-gray-900">
               {opt.label}
             </option>
           ))}
         </select>
 
-        {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
+        {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
       </div>
     );
   }

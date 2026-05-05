@@ -17,15 +17,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-400 hover:to-blue-500 shadow-lg shadow-blue-500/25 border border-blue-400/20',
+    'bg-amber-600 text-white hover:bg-amber-700 shadow-sm hover:shadow-lg hover:shadow-amber-600/20 border border-amber-600/20',
   secondary:
-    'bg-white/10 text-white hover:bg-white/20 border border-white/15',
+    'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm hover:shadow-md',
   outline:
-    'bg-transparent text-white border border-white/25 hover:bg-white/10',
+    'bg-transparent text-gray-700 border border-gray-300 hover:bg-gray-50',
   ghost:
-    'bg-transparent text-white/70 hover:text-white hover:bg-white/10 border border-transparent',
+    'bg-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-transparent',
   danger:
-    'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-400 hover:to-red-500 shadow-lg shadow-red-500/25 border border-red-400/20',
+    'bg-white text-red-600 border border-red-300 hover:bg-red-50 shadow-sm',
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
@@ -62,7 +62,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isDisabled}
         className={classNames(
           'inline-flex items-center justify-center font-medium transition-all duration-200 cursor-pointer',
-          'active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
+          'hover:translate-y-[-1px] active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0',
           VARIANT_CLASSES[variant],
           SIZE_CLASSES[size],
           className

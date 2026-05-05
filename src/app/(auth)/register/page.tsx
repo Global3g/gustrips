@@ -118,17 +118,14 @@ export default function RegisterPage() {
       <div className="glass rounded-2xl p-8 animate-auth-in">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-500/20 mb-4">
-            <Plane className="w-8 h-8 text-blue-400" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Crear Cuenta</h1>
-          <p className="text-white/50 text-sm mt-1">Unete a GusTrips</p>
+          <img src="/logo.png" alt="GusTrips" className="h-32 mx-auto mb-2" />
+          <h1 className="text-2xl font-bold text-gray-900">Crear Cuenta</h1>
         </div>
 
         {/* General Error */}
         {generalError && (
-          <div className="bg-red-500/15 border border-red-400/30 rounded-xl px-4 py-3 mb-6">
-            <p className="text-red-300 text-sm text-center">{generalError}</p>
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6">
+            <p className="text-red-600 text-sm text-center">{generalError}</p>
           </div>
         )}
 
@@ -136,7 +133,7 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Display Name */}
           <div>
-            <label htmlFor="displayName" className="block text-white/70 text-sm font-medium mb-1.5">
+            <label htmlFor="displayName" className="block text-gray-700 text-sm font-medium mb-1.5">
               Nombre
             </label>
             <input
@@ -147,21 +144,22 @@ export default function RegisterPage() {
               placeholder="Tu nombre"
               required
               autoComplete="name"
+              aria-invalid={!!errors.displayName}
               className={classNames(
-                'w-full bg-white/10 border rounded-xl px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-1 transition-colors',
+                'w-full bg-white border rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-300 outline-none focus:ring-1 transition-colors',
                 errors.displayName
-                  ? 'border-red-400/60 focus:border-red-400/60 focus:ring-red-400/30'
-                  : 'border-white/20 focus:border-blue-400/60 focus:ring-blue-400/30',
+                  ? 'border-red-400 focus:border-red-400 focus:ring-red-200'
+                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200',
               )}
             />
             {errors.displayName && (
-              <p className="text-red-400 text-xs mt-1">{errors.displayName}</p>
+              <p className="text-red-600 text-xs mt-1">{errors.displayName}</p>
             )}
           </div>
 
           {/* Email */}
           <div>
-            <label htmlFor="email" className="block text-white/70 text-sm font-medium mb-1.5">
+            <label htmlFor="email" className="block text-gray-700 text-sm font-medium mb-1.5">
               Correo electronico
             </label>
             <input
@@ -172,21 +170,22 @@ export default function RegisterPage() {
               placeholder="tu@correo.com"
               required
               autoComplete="email"
+              aria-invalid={!!errors.email}
               className={classNames(
-                'w-full bg-white/10 border rounded-xl px-4 py-3 text-white placeholder:text-white/30 outline-none focus:ring-1 transition-colors',
+                'w-full bg-white border rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-300 outline-none focus:ring-1 transition-colors',
                 errors.email
-                  ? 'border-red-400/60 focus:border-red-400/60 focus:ring-red-400/30'
-                  : 'border-white/20 focus:border-blue-400/60 focus:ring-blue-400/30',
+                  ? 'border-red-400 focus:border-red-400 focus:ring-red-200'
+                  : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200',
               )}
             />
             {errors.email && (
-              <p className="text-red-400 text-xs mt-1">{errors.email}</p>
+              <p className="text-red-600 text-xs mt-1">{errors.email}</p>
             )}
           </div>
 
           {/* Password */}
           <div>
-            <label htmlFor="password" className="block text-white/70 text-sm font-medium mb-1.5">
+            <label htmlFor="password" className="block text-gray-700 text-sm font-medium mb-1.5">
               Contrasena
             </label>
             <div className="relative">
@@ -198,29 +197,30 @@ export default function RegisterPage() {
                 placeholder="Minimo 6 caracteres"
                 required
                 autoComplete="new-password"
+                aria-invalid={!!errors.password}
                 className={classNames(
-                  'w-full bg-white/10 border rounded-xl px-4 py-3 pr-12 text-white placeholder:text-white/30 outline-none focus:ring-1 transition-colors',
+                  'w-full bg-white border rounded-xl px-4 py-3 pr-12 text-gray-900 placeholder:text-gray-300 outline-none focus:ring-1 transition-colors',
                   errors.password
-                    ? 'border-red-400/60 focus:border-red-400/60 focus:ring-red-400/30'
-                    : 'border-white/20 focus:border-blue-400/60 focus:ring-blue-400/30',
+                    ? 'border-red-400 focus:border-red-400 focus:ring-red-200'
+                    : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200',
                 )}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
             {errors.password && (
-              <p className="text-red-400 text-xs mt-1">{errors.password}</p>
+              <p className="text-red-600 text-xs mt-1">{errors.password}</p>
             )}
           </div>
 
           {/* Confirm Password */}
           <div>
-            <label htmlFor="confirmPassword" className="block text-white/70 text-sm font-medium mb-1.5">
+            <label htmlFor="confirmPassword" className="block text-gray-700 text-sm font-medium mb-1.5">
               Confirmar contrasena
             </label>
             <div className="relative">
@@ -232,23 +232,24 @@ export default function RegisterPage() {
                 placeholder="Repite tu contrasena"
                 required
                 autoComplete="new-password"
+                aria-invalid={!!errors.confirmPassword}
                 className={classNames(
-                  'w-full bg-white/10 border rounded-xl px-4 py-3 pr-12 text-white placeholder:text-white/30 outline-none focus:ring-1 transition-colors',
+                  'w-full bg-white border rounded-xl px-4 py-3 pr-12 text-gray-900 placeholder:text-gray-300 outline-none focus:ring-1 transition-colors',
                   errors.confirmPassword
-                    ? 'border-red-400/60 focus:border-red-400/60 focus:ring-red-400/30'
-                    : 'border-white/20 focus:border-blue-400/60 focus:ring-blue-400/30',
+                    ? 'border-red-400 focus:border-red-400 focus:ring-red-200'
+                    : 'border-gray-300 focus:border-blue-400 focus:ring-blue-200',
                 )}
               />
               <button
                 type="button"
                 onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
               >
                 {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
             {errors.confirmPassword && (
-              <p className="text-red-400 text-xs mt-1">{errors.confirmPassword}</p>
+              <p className="text-red-600 text-xs mt-1">{errors.confirmPassword}</p>
             )}
           </div>
 
@@ -256,7 +257,7 @@ export default function RegisterPage() {
             type="submit"
             disabled={loading || googleLoading}
             className={classNames(
-              'bg-blue-600 hover:bg-blue-500 w-full rounded-xl py-3 text-white font-semibold transition-colors',
+              'bg-amber-600 hover:bg-amber-700 w-full rounded-xl py-3 text-white font-semibold transition-colors',
               (loading || googleLoading) && 'opacity-60 cursor-not-allowed',
             )}
           >
@@ -273,9 +274,9 @@ export default function RegisterPage() {
 
         {/* Divider */}
         <div className="flex items-center gap-3 my-6">
-          <div className="flex-1 h-px bg-white/15" />
-          <span className="text-white/30 text-xs uppercase tracking-wider">o</span>
-          <div className="flex-1 h-px bg-white/15" />
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-gray-300 text-xs uppercase tracking-wider">o</span>
+          <div className="flex-1 h-px bg-gray-200" />
         </div>
 
         {/* Google Button */}
@@ -284,13 +285,13 @@ export default function RegisterPage() {
             onClick={handleGoogleSignIn}
             disabled={loading || googleLoading}
             className={classNames(
-              'bg-white/10 border border-white/20 hover:bg-white/15 w-full rounded-xl py-3 text-white font-medium transition-colors flex items-center justify-center gap-3',
+              'bg-white border border-gray-300 hover:bg-gray-50 w-full rounded-xl py-3 text-gray-900 font-medium transition-colors flex items-center justify-center gap-3',
               (loading || googleLoading) && 'opacity-60 cursor-not-allowed',
             )}
           >
             {googleLoading ? (
               <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                <span className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
                 Conectando...
               </span>
             ) : (
@@ -320,9 +321,9 @@ export default function RegisterPage() {
         </div>
 
         {/* Link to login */}
-        <p className="text-center text-white/40 text-sm mt-6">
+        <p className="text-center text-gray-400 text-sm mt-6">
           Ya tienes cuenta?{' '}
-          <Link href={ROUTES.login} className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+          <Link href={ROUTES.login} className="text-amber-600 hover:text-amber-700 font-medium transition-colors underline">
             Inicia sesion
           </Link>
         </p>

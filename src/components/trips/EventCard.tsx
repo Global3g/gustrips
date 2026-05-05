@@ -9,21 +9,31 @@ import {
   UtensilsCrossed,
   Car,
   CarFront,
+  Ship,
   MoreHorizontal,
   Trash2,
-  Clock,
   DollarSign,
   ChevronDown,
   Pencil,
+  Paperclip,
+  FileText,
+  X,
+  Eye,
+  Image,
+  File as FileIcon,
+  Copy,
+  Camera,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale/es';
-import { EVENT_TYPES } from '@/config/constants';
+import { EVENT_TYPES, EVENT_TYPE_TO_DOC_CATEGORY, DOCUMENT_CATEGORIES } from '@/config/constants';
 import { classNames, formatCurrency, getTimezoneAbbr } from '@/lib/utils/helpers';
-import type { TripEvent, EventType } from '@/types';
+import DocumentUpload from '@/components/trips/DocumentUpload';
+import PhotoGallery from '@/components/trips/PhotoGallery';
+import type { TripEvent, EventType, TripAttachment, DocumentCategory } from '@/types';
 
-/* ─── Mapa de iconos Lucide ─────────────────────── */
+/* ---- Icon map ---- */
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Plane,
@@ -32,10 +42,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
   UtensilsCrossed,
   Car,
   CarFront,
+  Ship,
   MoreHorizontal,
 };
 
-/* ─── Colores de borde por tipo ─────────────────── */
+/* ---- Left border colors by type ---- */
 
 const BORDER_COLORS: Record<EventType, string> = {
   flight: 'border-l-cyan-400',
@@ -44,73 +55,96 @@ const BORDER_COLORS: Record<EventType, string> = {
   activity: 'border-l-green-400',
   restaurant: 'border-l-orange-400',
   transport: 'border-l-blue-400',
+  cruise: 'border-l-sky-400',
   other: 'border-l-gray-400',
 };
 
 const BG_ICON_COLORS: Record<EventType, string> = {
-  flight: 'bg-cyan-500/20 text-cyan-400',
-  hotel: 'bg-violet-500/20 text-violet-400',
-  car_rental: 'bg-yellow-500/20 text-yellow-400',
-  activity: 'bg-green-500/20 text-green-400',
-  restaurant: 'bg-orange-500/20 text-orange-400',
-  transport: 'bg-blue-500/20 text-blue-400',
-  other: 'bg-gray-500/20 text-gray-400',
+  flight: 'bg-cyan-50 text-cyan-600',
+  hotel: 'bg-violet-50 text-violet-600',
+  car_rental: 'bg-yellow-50 text-yellow-600',
+  activity: 'bg-green-50 text-green-600',
+  restaurant: 'bg-orange-50 text-orange-600',
+  transport: 'bg-blue-50 text-blue-600',
+  cruise: 'bg-sky-50 text-sky-600',
+  other: 'bg-gray-100 text-gray-500',
 };
 
-/* ─── Labels para detalles por tipo ────────────── */
+/* ---- Detail labels ---- */
 
 const DETAIL_LABELS: Record<string, string> = {
-  // Flight
-  airline: 'Aerolínea',
+  airline: 'Aerolinea',
   flightNumber: 'No. de vuelo',
   origin: 'Origen',
   destination: 'Destino',
   departureTerminal: 'Terminal',
-  confirmationCode: 'Confirmación',
+  confirmationCode: 'Confirmacion',
   seatNumber: 'Asiento',
   baggage: 'Equipaje',
   clubPremier: 'Club Premier',
-  // Hotel
   hotelName: 'Hotel',
-  address: 'Dirección',
+  address: 'Direccion',
   checkInDate: 'Check-in',
   checkOutDate: 'Check-out',
   checkInTime: 'Hora check-in',
   checkOutTime: 'Hora check-out',
-  roomType: 'Habitación',
-  guests: 'Huéspedes',
-  // Car rental
+  roomType: 'Habitacion',
+  guests: 'Huespedes',
   rentalCompany: 'Empresa',
   pickupLocation: 'Recogida',
-  dropoffLocation: 'Devolución',
+  dropoffLocation: 'Devolucion',
   pickupDate: 'Fecha recogida',
   pickupTime: 'Hora recogida',
-  dropoffDate: 'Fecha devolución',
-  dropoffTime: 'Hora devolución',
-  carType: 'Vehículo',
-  // Restaurant
+  dropoffDate: 'Fecha devolucion',
+  dropoffTime: 'Hora devolucion',
+  carType: 'Vehiculo',
   restaurantName: 'Restaurante',
-  reservationName: 'Reservación',
+  reservationName: 'Reservacion',
   cuisine: 'Cocina',
-  // Activity
   activityName: 'Actividad',
-  duration: 'Duración',
+  duration: 'Duracion',
   bookingRef: 'Referencia',
   provider: 'Proveedor',
-  // Transport
   fromLocation: 'Desde',
   toLocation: 'Hasta',
   transportMode: 'Modo',
 };
 
+/* ---- Helpers ---- */
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* ---- Props ---- */
+
 interface EventCardProps {
   event: TripEvent;
   onEdit: (event: TripEvent) => void;
   onDelete: (eventId: string) => void;
+  onDuplicate?: (event: TripEvent) => void;
+  eventDocuments?: TripAttachment[];
+  onUploadDocument?: (file: File) => Promise<string>;
+  onDeleteDocument?: (docId: string, url: string) => Promise<void>;
+  onAddPhoto?: (eventId: string, file: File) => Promise<void>;
+  onDeletePhoto?: (eventId: string, url: string) => Promise<void>;
 }
 
-export default function EventCard({ event, onEdit, onDelete }: EventCardProps) {
+export default function EventCard({
+  event,
+  onEdit,
+  onDelete,
+  onDuplicate,
+  eventDocuments = [],
+  onUploadDocument,
+  onDeleteDocument,
+  onAddPhoto,
+  onDeletePhoto,
+}: EventCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [showDocUpload, setShowDocUpload] = useState(false);
 
   const typeConfig = EVENT_TYPES[event.type];
   const Icon = ICON_MAP[typeConfig.icon] || MoreHorizontal;
@@ -118,16 +152,16 @@ export default function EventCard({ event, onEdit, onDelete }: EventCardProps) {
   const details = event.details || {};
   const hasDetails = Object.values(details).some((v) => v?.trim());
 
-  // Timezone abbreviations (para todos los tipos)
   const departureTzAbbr = event.timezone ? getTimezoneAbbr(event.timezone, event.date) : '';
   const arrivalDateStr = details.arrivalDate || event.date;
   const arrivalTzAbbr = details.arrivalTimezone
     ? getTimezoneAbbr(details.arrivalTimezone, arrivalDateStr)
     : '';
-  // ¿La fecha de llegada es distinta a la de salida?
-  const arrivalDateDiffers = details.arrivalDate && details.arrivalDate !== event.date;
 
-  // Duración (para vuelos)
+  const docCategory: DocumentCategory = EVENT_TYPE_TO_DOC_CATEGORY[event.type] || 'other';
+  const docCount = eventDocuments.length;
+
+  /* Flight duration calculation */
   const flightDuration = (() => {
     if (event.type !== 'flight' || !event.startTime || !event.endTime) return '';
     const depDate = event.date;
@@ -160,82 +194,88 @@ export default function EventCard({ event, onEdit, onDelete }: EventCardProps) {
     }
   })();
 
+  /* Time range display */
+  const timeRange = (() => {
+    if (!event.startTime && !event.endTime) return null;
+    const parts: string[] = [];
+    if (event.startTime) parts.push(event.startTime);
+    if (event.endTime) parts.push(event.endTime);
+    return parts.join(' - ');
+  })();
+
   return (
     <motion.div
       layout
       className={classNames(
-        'glass rounded-xl border-l-4 overflow-hidden cursor-pointer',
+        'bg-white rounded-xl border border-gray-200 border-l-4 overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition-shadow',
         BORDER_COLORS[event.type]
       )}
       onClick={() => setExpanded(!expanded)}
     >
-      {/* Fila principal */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        {/* Icono del tipo */}
+      {/* Main row: clean timeline card layout */}
+      <div className="flex items-start gap-3 px-4 py-3">
+        {/* Type icon */}
         <div
           className={classNames(
-            'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
+            'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
             BG_ICON_COLORS[event.type]
           )}
         >
-          <Icon className="w-5 h-5" />
+          <Icon className="w-4.5 h-4.5" />
         </div>
 
-        {/* Informacion */}
+        {/* Content */}
         <div className="flex-1 min-w-0">
-          <h4 className="text-white font-semibold text-sm truncate">{event.title}</h4>
+          {/* Line 1: Title */}
+          <h4 className="text-gray-900 font-semibold text-sm truncate">{event.title}</h4>
 
-          {/* ── Salida y llegada para todos los tipos ── */}
-          <div className="mt-1 space-y-0.5">
-            {event.startTime && (
-              <p className="text-white/50 text-xs">
-                <span className="text-white/30 font-medium">Sale:</span>{' '}
-                {format(parseISO(event.date), "d MMM", { locale: es })},{' '}
-                {event.startTime}
-                {departureTzAbbr && <span className="text-amber-400/70"> ({departureTzAbbr})</span>}
-              </p>
-            )}
-            {event.endTime && (
-              <p className="text-white/50 text-xs">
-                <span className="text-white/30 font-medium">Llega:</span>{' '}
-                {format(parseISO(details.arrivalDate || event.date), "d MMM", { locale: es })},{' '}
-                {event.endTime}
-                {(arrivalTzAbbr || departureTzAbbr) && (
-                  <span className="text-amber-400/70"> ({arrivalTzAbbr || departureTzAbbr})</span>
-                )}
-                {flightDuration && (
-                  <span className="text-cyan-400/70 font-medium"> · {flightDuration}</span>
-                )}
-              </p>
-            )}
-            {event.location && event.type !== 'flight' && (
-              <p className="flex items-center gap-1 text-white/50 text-xs truncate">
-                <MapPin className="w-3 h-3 flex-shrink-0" />
-                {event.location}
-              </p>
-            )}
-          </div>
+          {/* Line 2: Time range */}
+          {timeRange && (
+            <p className="text-gray-500 text-xs mt-0.5">
+              {timeRange}
+              {departureTzAbbr && <span className="text-amber-500 ml-1">({departureTzAbbr})</span>}
+              {flightDuration && <span className="text-cyan-600 font-medium ml-1.5">{flightDuration}</span>}
+            </p>
+          )}
+
+          {/* Line 3: Location */}
+          {event.location && (
+            <p className="flex items-center gap-1 text-gray-400 text-xs mt-0.5 truncate">
+              <MapPin className="w-3 h-3 flex-shrink-0" />
+              {event.location}
+            </p>
+          )}
         </div>
 
-        {/* Costo */}
-        {event.cost > 0 && (
-          <span className="flex items-center gap-1 text-emerald-400 text-sm font-medium flex-shrink-0">
-            <DollarSign className="w-3.5 h-3.5" />
-            {formatCurrency(event.cost, event.currency)}
-          </span>
-        )}
+        {/* Right side: cost + doc count + expand arrow */}
+        <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+          {/* Doc count badge */}
+          {docCount > 0 && (
+            <span className="flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-50 text-gray-400">
+              <Paperclip className="w-2.5 h-2.5" />
+              {docCount}
+            </span>
+          )}
 
-        {/* Flecha expandir */}
-        <motion.div
-          animate={{ rotate: expanded ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-          className="text-white/30 flex-shrink-0"
-        >
-          <ChevronDown className="w-4 h-4" />
-        </motion.div>
+          {/* Cost */}
+          {event.cost > 0 && (
+            <span className="text-emerald-600 text-xs font-medium whitespace-nowrap">
+              {formatCurrency(event.cost, event.currency)}
+            </span>
+          )}
+
+          {/* Expand arrow */}
+          <motion.div
+            animate={{ rotate: expanded ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+            className="text-gray-300"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </motion.div>
+        </div>
       </div>
 
-      {/* Contenido expandido */}
+      {/* Expanded content */}
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -245,10 +285,10 @@ export default function EventCard({ event, onEdit, onDelete }: EventCardProps) {
             transition={{ duration: 0.25, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-1 border-t border-white/10">
-              {/* Tipo */}
+            <div className="px-4 pb-4 pt-1 border-t border-gray-100">
+              {/* Type badge */}
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-white/40 text-xs">Tipo:</span>
+                <span className="text-gray-400 text-xs">Tipo:</span>
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full"
                   style={{ backgroundColor: `${typeConfig.color}25`, color: typeConfig.color }}
@@ -257,43 +297,195 @@ export default function EventCard({ event, onEdit, onDelete }: EventCardProps) {
                 </span>
               </div>
 
-              {/* Detalles especificos del tipo */}
+              {/* Type-specific details */}
               {hasDetails && (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-3">
                   {Object.entries(details).map(([key, value]) =>
                     value?.trim() && key !== 'arrivalTimezone' && key !== 'arrivalDate' ? (
                       <div key={key} className="min-w-0">
-                        <span className="text-white/40 text-[11px] block">{DETAIL_LABELS[key] || key}</span>
-                        <span className="text-white/80 text-sm truncate block">{value}</span>
+                        <span className="text-gray-400 text-[11px] block">{DETAIL_LABELS[key] || key}</span>
+                        <span className="text-gray-800 text-sm truncate block">{value}</span>
                       </div>
                     ) : null
                   )}
                 </div>
               )}
 
-              {/* Notas */}
+              {/* Notes */}
               {event.notes && (
-                <p className="text-white/60 text-sm mb-3 leading-relaxed">{event.notes}</p>
+                <p className="text-gray-600 text-sm mb-3 leading-relaxed">{event.notes}</p>
               )}
 
-              {/* Acciones */}
+              {/* Photo gallery */}
+              {onAddPhoto && onDeletePhoto && (
+                <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                  {(event.photos?.length ?? 0) > 0 && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <Camera className="w-3 h-3 text-gray-400" />
+                      <span className="text-gray-400 text-xs font-medium">
+                        Fotos ({event.photos!.length})
+                      </span>
+                    </div>
+                  )}
+                  <PhotoGallery
+                    photos={event.photos ?? []}
+                    onAddPhoto={(file) => onAddPhoto(event.id, file)}
+                    onDeletePhoto={(url) => onDeletePhoto(event.id, url)}
+                  />
+                </div>
+              )}
+
+              {/* Attached documents list */}
+              {eventDocuments.length > 0 && (
+                <div className="mb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Paperclip className="w-3 h-3 text-gray-400" />
+                    <span className="text-gray-400 text-xs font-medium">
+                      Documentos adjuntos ({eventDocuments.length})
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {eventDocuments.map((doc) => {
+                      const isImage = doc.type.startsWith('image/');
+                      const isPdf = doc.type === 'application/pdf';
+                      const DocIcon = isPdf ? FileText : isImage ? Image : FileIcon;
+
+                      return (
+                        <div
+                          key={doc.id}
+                          className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 group/doc"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <DocIcon className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+                          <span className="text-gray-700 text-xs truncate flex-1">
+                            {doc.name}
+                          </span>
+                          <span className="text-gray-300 text-[10px] flex-shrink-0">
+                            {formatFileSize(doc.size)}
+                          </span>
+                          {(isImage || isPdf) && (
+                            <a
+                              href={doc.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 text-gray-300 hover:text-gray-600 transition-colors opacity-0 group-hover/doc:opacity-100"
+                              aria-label="Ver"
+                            >
+                              <Eye className="w-3 h-3" />
+                            </a>
+                          )}
+                          {onDeleteDocument && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Eliminar "${doc.name}"?`)) {
+                                  onDeleteDocument(doc.id, doc.url);
+                                }
+                              }}
+                              className="p-1 text-red-400/40 hover:text-red-400 transition-colors opacity-0 group-hover/doc:opacity-100"
+                              aria-label="Eliminar"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Document upload overlay */}
+              <AnimatePresence>
+                {showDocUpload && onUploadDocument && onDeleteDocument && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden mb-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-gray-600 text-xs font-medium">
+                          Adjuntar documento
+                        </span>
+                        <button
+                          onClick={() => setShowDocUpload(false)}
+                          className="p-1 text-gray-300 hover:text-gray-600 transition-colors"
+                          aria-label="Cerrar"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <DocumentUpload
+                        documents={[]}
+                        onUpload={onUploadDocument}
+                        onDelete={onDeleteDocument}
+                        category={docCategory}
+                        eventId={event.id}
+                        hideCategorySelector
+                        compact
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Actions */}
               <div className="flex items-center gap-2 pt-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onEdit(event);
                   }}
-                  className="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-blue-500/10 transition-colors"
+                  aria-label={`Editar evento ${event.title}`}
+                  className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
                 >
                   <Pencil className="w-3.5 h-3.5" />
                   Editar
                 </button>
+
+                {onDuplicate && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDuplicate(event);
+                    }}
+                    aria-label={`Duplicar evento ${event.title}`}
+                    className="flex items-center gap-1.5 text-violet-600 hover:text-violet-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-violet-50 transition-colors"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Duplicar
+                  </button>
+                )}
+
+                {onUploadDocument && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDocUpload(!showDocUpload);
+                    }}
+                    className={classNames(
+                      'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors',
+                      showDocUpload
+                        ? 'text-amber-600 bg-amber-50'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                    )}
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                    Adjuntar
+                  </button>
+                )}
+
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDelete(event.id);
+                    if (window.confirm(`Eliminar "${event.title}"? Esta accion no se puede deshacer.`)) {
+                      onDelete(event.id);
+                    }
                   }}
-                  className="flex items-center gap-1.5 text-red-400 hover:text-red-300 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                  aria-label={`Eliminar evento ${event.title}`}
+                  className="flex items-center gap-1.5 text-red-600 hover:text-red-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Eliminar

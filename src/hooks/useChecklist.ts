@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -14,12 +14,20 @@ import {
 import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
+import { saveDeletedItem, clearOldDeletedItems } from '@/lib/utils/recovery';
 import type { ChecklistItem, ChecklistPhase } from '@/types';
+
+const UNDO_DELAY_MS = 8000;
 
 export function useChecklist(tripId: string) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    clearOldDeletedItems();
+  }, []);
 
   useEffect(() => {
     if (!tripId) return;
@@ -34,8 +42,9 @@ export function useChecklist(tripId: string) {
         const data = snapshot.docs.map((d) => ({
           id: d.id,
           ...d.data(),
-        })) as ChecklistItem[];
-        setItems(data);
+        })) as (ChecklistItem & { deletedAt?: string })[];
+        // Filter out soft-deleted items
+        setItems(data.filter((item) => !item.deletedAt));
         setLoading(false);
       },
       (error) => {
@@ -66,11 +75,53 @@ export function useChecklist(tripId: string) {
     await updateDoc(itemRef, { checked });
   };
 
-  const deleteItem = async (itemId: string) => {
-    const db = getClientDb();
-    const itemRef = doc(db, `trips/${tripId}/checklist`, itemId);
-    await deleteDoc(itemRef);
-  };
+  /**
+   * Soft-deletes a checklist item. Returns an object with an `undo` function.
+   */
+  const deleteItem = useCallback(
+    async (
+      itemId: string,
+      options?: { onUndo?: () => void; onConfirm?: () => void },
+    ) => {
+      const db = getClientDb();
+      const itemRef = doc(db, `trips/${tripId}/checklist`, itemId);
+
+      // Save to localStorage for recovery
+      const itemData = items.find((i) => i.id === itemId);
+      if (itemData) {
+        saveDeletedItem('checklist', itemId, tripId, itemData as unknown as Record<string, unknown>);
+      }
+
+      // Soft delete
+      await updateDoc(itemRef, { deletedAt: nowISO() });
+
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+      }
+
+      const undo = async () => {
+        if (undoTimerRef.current) {
+          clearTimeout(undoTimerRef.current);
+          undoTimerRef.current = null;
+        }
+        await updateDoc(itemRef, { deletedAt: null });
+        options?.onUndo?.();
+      };
+
+      undoTimerRef.current = setTimeout(async () => {
+        try {
+          await deleteDoc(itemRef);
+          options?.onConfirm?.();
+        } catch (err) {
+          console.error('Error al eliminar item permanentemente:', err);
+        }
+        undoTimerRef.current = null;
+      }, UNDO_DELAY_MS);
+
+      return { undo };
+    },
+    [tripId, items],
+  );
 
   return { items, loading, addItem, toggleItem, deleteItem };
 }

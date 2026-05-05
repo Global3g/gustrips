@@ -3,21 +3,24 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   collection,
+  doc,
   onSnapshot,
   addDoc,
+  setDoc,
   orderBy,
   query,
 } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
-import type { TripMember, TripInvite, MemberRole } from '@/types';
+import type { TripMember, TripInvite, MemberRole, TravelerInfo } from '@/types';
 
 interface UseMembersReturn {
   members: TripMember[];
   invites: TripInvite[];
   loading: boolean;
   inviteMember: (email: string, role: MemberRole) => Promise<void>;
+  updateTravelerInfo: (uid: string, info: TravelerInfo) => Promise<void>;
 }
 
 export function useMembers(tripId: string): UseMembersReturn {
@@ -103,5 +106,18 @@ export function useMembers(tripId: string): UseMembersReturn {
     [user, tripId],
   );
 
-  return { members, invites, loading, inviteMember };
+  const updateTravelerInfo = useCallback(
+    async (uid: string, info: TravelerInfo): Promise<void> => {
+      if (!user) throw new Error('Usuario no autenticado');
+      if (!tripId) throw new Error('ID de viaje no proporcionado');
+
+      const db = getClientDb();
+      const memberRef = doc(db, 'trips', tripId, 'members', uid);
+
+      await setDoc(memberRef, { travelerInfo: info }, { merge: true });
+    },
+    [user, tripId],
+  );
+
+  return { members, invites, loading, inviteMember, updateTravelerInfo };
 }

@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
-import { nowISO } from '@/lib/utils/helpers';
+import { nowISO, generateId } from '@/lib/utils/helpers';
 import type { Trip } from '@/types';
 
 interface UseTripReturn {
   trip: Trip | null;
   loading: boolean;
   updateTrip: (data: Partial<Omit<Trip, 'id' | 'createdBy' | 'createdAt'>>) => Promise<void>;
+  generateShareToken: () => Promise<string>;
 }
 
 export function useTrip(tripId: string): UseTripReturn {
@@ -60,5 +61,20 @@ export function useTrip(tripId: string): UseTripReturn {
     [tripId],
   );
 
-  return { trip, loading, updateTrip };
+  const generateShareToken = useCallback(async (): Promise<string> => {
+    if (!tripId) throw new Error('ID de viaje no proporcionado');
+
+    const db = getClientDb();
+    const tripRef = doc(db, 'trips', tripId);
+    const token = generateId();
+
+    await updateDoc(tripRef, {
+      shareToken: token,
+      updatedAt: nowISO(),
+    });
+
+    return token;
+  }, [tripId]);
+
+  return { trip, loading, updateTrip, generateShareToken };
 }

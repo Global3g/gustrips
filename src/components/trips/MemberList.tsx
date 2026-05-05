@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/Button';
 import type { TripMember } from '@/types';
 
 const ROLE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  owner: { bg: 'bg-amber-500/20', text: 'text-amber-300', border: 'border-amber-400/30' },
-  editor: { bg: 'bg-blue-500/20', text: 'text-blue-300', border: 'border-blue-400/30' },
-  viewer: { bg: 'bg-gray-500/20', text: 'text-gray-300', border: 'border-gray-400/30' },
+  owner: { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200' },
+  editor: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
+  viewer: { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' },
 };
 
 const AVATAR_GRADIENTS = [
@@ -32,15 +32,13 @@ export default function MemberList({ members, onInvite, isOwner }: MemberListPro
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-white font-semibold text-lg">
-          Miembros ({members.length})
+        <h3 className="text-gray-900 font-semibold text-lg">
+          Viajeros ({members.length})
         </h3>
-        {isOwner && (
-          <Button variant="secondary" size="sm" onClick={onInvite}>
-            <UserPlus className="w-4 h-4 mr-2" />
-            Invitar
-          </Button>
-        )}
+        <Button variant="secondary" size="sm" onClick={onInvite}>
+          <UserPlus className="w-4 h-4 mr-2" />
+          Invitar
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -74,10 +72,10 @@ export default function MemberList({ members, onInvite, isOwner }: MemberListPro
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium text-sm truncate">
+                  <p className="text-gray-900 font-medium text-sm truncate">
                     {member.displayName || 'Sin nombre'}
                   </p>
-                  <p className="text-white/50 text-xs truncate">
+                  <p className="text-gray-500 text-xs truncate">
                     {member.email}
                   </p>
                 </div>
@@ -101,7 +99,7 @@ export default function MemberList({ members, onInvite, isOwner }: MemberListPro
 
       {members.length === 0 && (
         <div className="text-center py-8">
-          <p className="text-white/40 text-sm">No hay miembros aun</p>
+          <p className="text-gray-400 text-sm">No hay miembros aun</p>
         </div>
       )}
     </div>

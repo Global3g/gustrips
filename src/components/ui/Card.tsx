@@ -1,7 +1,7 @@
 import type { ReactNode, HTMLAttributes } from 'react';
 import { classNames } from '@/lib/utils/helpers';
 
-/* ─── Card ─────────────────────────────────────────── */
+/* --- Card --- */
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -12,8 +12,8 @@ export function Card({ children, hoverable = false, className, ...props }: CardP
   return (
     <div
       className={classNames(
-        'glass rounded-2xl overflow-hidden',
-        hoverable && 'transition-transform duration-300 hover:scale-[1.02] hover:shadow-xl',
+        'bg-white border border-gray-200/80 rounded-2xl overflow-hidden shadow-sm shadow-[inset_0_1px_0_0_rgba(255,255,255,0.8)]',
+        hoverable && 'transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md',
         className
       )}
       {...props}
@@ -23,7 +23,7 @@ export function Card({ children, hoverable = false, className, ...props }: CardP
   );
 }
 
-/* ─── CardHeader ───────────────────────────────────── */
+/* --- CardHeader --- */
 
 interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -33,13 +33,13 @@ export function CardHeader({ children, className, ...props }: CardHeaderProps) {
   return (
     <div className={classNames('relative px-5 py-4', className)} {...props}>
       {children}
-      {/* Gradient underline */}
-      <div className="absolute bottom-0 left-5 right-5 h-[2px] bg-gradient-to-r from-blue-500 to-purple-500 rounded-full" />
+      {/* Subtle underline */}
+      <div className="absolute bottom-0 left-5 right-5 h-[1px] bg-gray-100" />
     </div>
   );
 }
 
-/* ─── CardBody ─────────────────────────────────────── */
+/* --- CardBody --- */
 
 interface CardBodyProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -53,7 +53,7 @@ export function CardBody({ children, className, ...props }: CardBodyProps) {
   );
 }
 
-/* ─── CardFooter ───────────────────────────────────── */
+/* --- CardFooter --- */
 
 interface CardFooterProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -63,7 +63,7 @@ export function CardFooter({ children, className, ...props }: CardFooterProps) {
   return (
     <div
       className={classNames(
-        'px-5 py-3 border-t border-white/10 bg-white/5',
+        'px-5 py-3 border-t border-gray-100 bg-gray-50/30',
         className
       )}
       {...props}

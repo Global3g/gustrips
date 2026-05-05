@@ -10,10 +10,12 @@ import {
   X,
   CloudUpload,
   File as FileIcon,
+  Eye,
+  ChevronDown,
 } from 'lucide-react';
-import { MAX_FILE_SIZE, ACCEPTED_FILE_TYPES } from '@/config/constants';
+import { MAX_FILE_SIZE, ACCEPTED_FILE_TYPES, DOCUMENT_CATEGORIES } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
-import type { TripAttachment } from '@/types';
+import type { TripAttachment, DocumentCategory } from '@/types';
 
 /* ─── Helpers ───────────────────────────────────── */
 
@@ -40,6 +42,14 @@ interface DocumentUploadProps {
   onUpload: (file: File) => Promise<string>;
   onDelete: (docId: string, url: string) => Promise<void>;
   loading?: boolean;
+  /** Pre-set eventId for all uploads from this instance */
+  eventId?: string;
+  /** Pre-set category for all uploads from this instance */
+  category?: DocumentCategory;
+  /** Hide category selector (when pre-set from event) */
+  hideCategorySelector?: boolean;
+  /** Compact mode for inline use inside EventCard */
+  compact?: boolean;
 }
 
 /* ─── Componente ────────────────────────────────── */
@@ -49,11 +59,17 @@ export default function DocumentUpload({
   onUpload,
   onDelete,
   loading,
+  eventId,
+  category: presetCategory,
+  hideCategorySelector = false,
+  compact = false,
 }: DocumentUploadProps) {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>(presetCategory || 'other');
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = (file: File): string | null => {
@@ -78,7 +94,6 @@ export default function DocumentUpload({
       setUploading(true);
       setUploadProgress(0);
 
-      // Simular progreso visual
       const interval = setInterval(() => {
         setUploadProgress((prev) => {
           if (prev >= 90) {
@@ -127,12 +142,43 @@ export default function DocumentUpload({
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleUpload(file);
-    // Reset input para permitir subir el mismo archivo
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const categoryConfig = selectedCategory ? DOCUMENT_CATEGORIES[selectedCategory] : null;
+
   return (
-    <div className="space-y-6">
+    <div className={classNames('space-y-4', compact ? 'space-y-3' : 'space-y-6')}>
+      {/* Category selector */}
+      {!hideCategorySelector && (
+        <div className="relative">
+          <label className="text-gray-400 text-xs mb-1.5 block">Categoria del documento</label>
+          <div className="relative">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value as DocumentCategory)}
+              className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 text-sm pr-10 focus:outline-none focus:border-gray-400 transition-colors"
+            >
+              {Object.entries(DOCUMENT_CATEGORIES).map(([key, val]) => (
+                <option key={key} value={key} className="bg-white text-gray-900">
+                  {val.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" />
+          </div>
+          {categoryConfig && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: categoryConfig.color }}
+              />
+              <span className="text-gray-300 text-xs">{categoryConfig.label}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Zona de arrastrar y soltar */}
       <div
         onDragOver={handleDragOver}
@@ -140,10 +186,11 @@ export default function DocumentUpload({
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={classNames(
-          'relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200',
+          'relative border-2 border-dashed rounded-2xl text-center cursor-pointer transition-all duration-200',
+          compact ? 'p-4' : 'p-8',
           dragging
-            ? 'border-blue-400 bg-blue-500/10'
-            : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+            ? 'border-blue-400 bg-blue-50'
+            : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
         )}
       >
         <input
@@ -154,37 +201,38 @@ export default function DocumentUpload({
           className="hidden"
         />
 
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-2">
           <div
             className={classNames(
-              'w-14 h-14 rounded-2xl flex items-center justify-center transition-colors',
-              dragging ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-white/40'
+              'rounded-2xl flex items-center justify-center transition-colors',
+              compact ? 'w-10 h-10' : 'w-14 h-14',
+              dragging ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-400'
             )}
           >
-            <CloudUpload className="w-7 h-7" />
+            <CloudUpload className={compact ? 'w-5 h-5' : 'w-7 h-7'} />
           </div>
           <div>
-            <p className="text-white/70 text-sm font-medium">
-              {dragging ? 'Suelta el archivo aqui' : 'Arrastra un archivo o haz clic para seleccionar'}
+            <p className={classNames('text-gray-700 font-medium', compact ? 'text-xs' : 'text-sm')}>
+              {dragging ? 'Suelta el archivo aqui' : compact ? 'Arrastra o haz clic' : 'Arrastra un archivo o haz clic para seleccionar'}
             </p>
-            <p className="text-white/30 text-xs mt-1">
+            <p className="text-gray-300 text-xs mt-0.5">
               JPG, PNG, WebP, PDF - Max {formatFileSize(MAX_FILE_SIZE)}
             </p>
           </div>
         </div>
 
-        {/* Barra de progreso de subida */}
+        {/* Barra de progreso */}
         <AnimatePresence>
           {uploading && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-x-4 bottom-4"
+              className="absolute inset-x-4 bottom-3"
             >
               <div className="flex items-center gap-3">
-                <Upload className="w-4 h-4 text-blue-400 animate-pulse" />
-                <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                <Upload className="w-4 h-4 text-blue-600 animate-pulse" />
+                <div className="flex-1 h-2 bg-gray-50 rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-blue-400 rounded-full"
                     initial={{ width: 0 }}
@@ -192,7 +240,7 @@ export default function DocumentUpload({
                     transition={{ duration: 0.3 }}
                   />
                 </div>
-                <span className="text-white/50 text-xs">{uploadProgress}%</span>
+                <span className="text-gray-500 text-xs">{uploadProgress}%</span>
               </div>
             </motion.div>
           )}
@@ -201,10 +249,10 @@ export default function DocumentUpload({
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 bg-red-500/15 border border-red-400/30 rounded-xl px-4 py-3">
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           <X className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <p className="text-red-300 text-sm flex-1">{error}</p>
-          <button onClick={() => setError('')} className="text-red-400/50 hover:text-red-400">
+          <p className="text-red-600 text-sm flex-1">{error}</p>
+          <button onClick={() => setError('')} aria-label="Cerrar error" className="text-red-400 hover:text-red-600">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -213,18 +261,22 @@ export default function DocumentUpload({
       {/* Grid de documentos */}
       {loading ? (
         <div className="flex items-center justify-center py-8">
-          <div className="w-8 h-8 border-2 border-white/20 border-t-blue-400 rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
         </div>
       ) : documents.length === 0 ? (
-        <div className="text-center py-8">
-          <FileText className="w-12 h-12 text-white/15 mx-auto mb-3" />
-          <p className="text-white/30 text-sm">No hay documentos subidos</p>
-        </div>
+        !compact && (
+          <div className="text-center py-8">
+            <FileText className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-300 text-sm">No hay documentos subidos</p>
+          </div>
+        )
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className={classNames('grid gap-3', compact ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3')}>
           {documents.map((doc) => {
             const DocIcon = getFileIcon(doc.type);
             const isImage = isImageType(doc.type);
+            const isPdf = doc.type === 'application/pdf';
+            const catConfig = doc.category ? DOCUMENT_CATEGORIES[doc.category] : null;
 
             return (
               <motion.div
@@ -236,39 +288,169 @@ export default function DocumentUpload({
                 className="glass rounded-xl overflow-hidden group"
               >
                 {/* Vista previa / Icono */}
-                <div className="relative aspect-square bg-white/5 flex items-center justify-center">
-                  {isImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={doc.url}
-                      alt={doc.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <DocIcon className="w-12 h-12 text-white/20" />
-                  )}
+                {!compact && (
+                  <div className="relative aspect-square bg-gray-50 flex items-center justify-center">
+                    {isImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={doc.url}
+                        alt={doc.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <DocIcon className="w-12 h-12 text-gray-200" />
+                    )}
 
-                  {/* Overlay con boton eliminar */}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <button
-                      onClick={() => onDelete(doc.id, doc.url)}
-                      className="p-2 bg-red-500/80 rounded-full text-white hover:bg-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Overlay con acciones */}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      {isImage && (
+                        <button
+                          onClick={() => setLightboxUrl(doc.url)}
+                          className="p-2 bg-white/80 rounded-full text-gray-700 hover:bg-white transition-colors"
+                          aria-label="Ver imagen"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      )}
+                      {isPdf && (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-2 bg-white/80 rounded-full text-gray-700 hover:bg-white transition-colors"
+                          aria-label="Ver PDF"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Eliminar "${doc.name}"?`)) {
+                            onDelete(doc.id, doc.url);
+                          }
+                        }}
+                        aria-label={`Eliminar documento ${doc.name}`}
+                        className="p-2 bg-red-500/80 rounded-full text-white hover:bg-red-500 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Category badge (top-right corner) */}
+                    {catConfig && (
+                      <div
+                        className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                        style={{
+                          backgroundColor: `${catConfig.color}25`,
+                          color: catConfig.color,
+                        }}
+                      >
+                        {catConfig.label}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
                 {/* Info del archivo */}
-                <div className="px-3 py-2">
-                  <p className="text-white/80 text-xs font-medium truncate">{doc.name}</p>
-                  <p className="text-white/30 text-xs">{formatFileSize(doc.size)}</p>
+                <div className={classNames('px-3 py-2', compact && 'flex items-center gap-2')}>
+                  {compact && (
+                    <DocIcon className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-800 text-xs font-medium truncate">{doc.name}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-300 text-xs">{formatFileSize(doc.size)}</span>
+                      {compact && catConfig && (
+                        <span
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: `${catConfig.color}25`,
+                            color: catConfig.color,
+                          }}
+                        >
+                          {catConfig.label}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {compact && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {(isImage || isPdf) && (
+                        isImage ? (
+                          <button
+                            onClick={() => setLightboxUrl(doc.url)}
+                            className="p-1 text-gray-300 hover:text-gray-700 transition-colors"
+                            aria-label="Ver"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <a
+                            href={doc.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 text-gray-300 hover:text-gray-700 transition-colors"
+                            aria-label="Ver PDF"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </a>
+                        )
+                      )}
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Eliminar "${doc.name}"?`)) {
+                            onDelete(doc.id, doc.url);
+                          }
+                        }}
+                        className="p-1 text-red-400 hover:text-red-600 transition-colors"
+                        aria-label="Eliminar"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );
           })}
         </div>
       )}
+
+      {/* Lightbox modal for images */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className="relative max-w-4xl max-h-[90vh] w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setLightboxUrl(null)}
+                className="absolute -top-10 right-0 p-2 text-white/70 hover:text-white transition-colors"
+                aria-label="Cerrar"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxUrl}
+                alt="Vista previa"
+                className="w-full h-full object-contain rounded-xl"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

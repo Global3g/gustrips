@@ -1,14 +1,12 @@
 import type React from 'react';
+import { format, parseISO } from 'date-fns';
+import { es } from 'date-fns/locale';
 
-export const glassStyle = {
-  background: 'linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.08) 100%)',
-  backdropFilter: 'blur(20px)',
-  WebkitBackdropFilter: 'blur(20px)',
-  border: '1px solid rgba(255,255,255,0.3)',
-  borderTop: '1px solid rgba(255,255,255,0.45)',
-  borderLeft: '1px solid rgba(255,255,255,0.35)',
-  boxShadow: '0 4px 16px rgba(0,0,0,0.12), inset 0 1px 1px rgba(255,255,255,0.15)',
-} as React.CSSProperties;
+export const glassStyle: React.CSSProperties = {
+  background: '#ffffff',
+  border: '1px solid #e5e7eb',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+};
 
 export function classNames(...classes: (string | undefined | false | null)[]): string {
   return classes.filter(Boolean).join(' ');
@@ -47,7 +45,47 @@ export function formatCurrency(amount: number, currency: string = 'MXN'): string
   }).format(amount);
 }
 
-// ─── Timezone helpers ──────────────────────────────
+// --- Date formatting helpers ---
+
+/**
+ * Formats a date string as "dd-MMMM-yyyy" in Spanish (e.g., "06-mayo-2026").
+ */
+export function formatDateES(dateStr: string): string {
+  try {
+    const d = parseISO(dateStr);
+    return format(d, 'dd-MMMM-yyyy', { locale: es });
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Formats a date string as "dd-MMM" in Spanish for compact display (e.g., "06-may").
+ */
+export function formatDateShortES(dateStr: string): string {
+  try {
+    const d = parseISO(dateStr);
+    return format(d, 'dd-MMM', { locale: es });
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Formats a date string as "EEEE dd-MMMM" in Spanish for day headers (e.g., "Martes 06-mayo").
+ * Returns capitalized string.
+ */
+export function formatDateHeaderES(dateStr: string): string {
+  try {
+    const d = parseISO(dateStr);
+    const full = format(d, "EEEE dd-MMMM", { locale: es });
+    return full.charAt(0).toUpperCase() + full.slice(1);
+  } catch {
+    return dateStr;
+  }
+}
+
+// --- Timezone helpers ---
 
 /**
  * Obtiene la abreviatura de una zona horaria (CST, CET, MST, etc.)

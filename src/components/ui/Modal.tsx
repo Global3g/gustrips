@@ -1,6 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { classNames } from '@/lib/utils/helpers';
@@ -43,11 +44,58 @@ export function Modal({
   footer,
   className,
 }: ModalProps) {
-  return (
+  const [mounted, setMounted] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [open]);
+
+  // Close on Escape key
+  const handleEscape = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [open, handleEscape]);
+
+  // Auto-focus first focusable element when modal opens
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      const el = contentRef.current;
+      if (!el) return;
+      const focusable = el.querySelector<HTMLElement>(
+        'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      focusable?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  const modalContent = (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 sm:p-6"
           variants={backdropVariants}
           initial="hidden"
           animate="visible"
@@ -55,8 +103,9 @@ export function Modal({
           onClick={onClose}
         >
           <motion.div
+            ref={contentRef}
             className={classNames(
-              'bg-gray-900 border border-white/15 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl',
+              'bg-white border border-gray-200 rounded-2xl w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl shadow-black/10',
               className
             )}
             variants={contentVariants}
@@ -67,11 +116,11 @@ export function Modal({
           >
             {/* Header */}
             {title && (
-              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 flex-shrink-0">
-                <h3 className="text-white font-semibold text-lg">{title}</h3>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+                <h3 className="text-gray-900 font-semibold text-lg">{title}</h3>
                 <button
                   onClick={onClose}
-                  className="text-white/40 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-lg hover:bg-gray-100"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -83,7 +132,7 @@ export function Modal({
 
             {/* Footer */}
             {footer && (
-              <div className="px-5 py-3 border-t border-white/10 bg-white/5 flex items-center justify-end gap-3 flex-shrink-0">
+              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-3 flex-shrink-0">
                 {footer}
               </div>
             )}
@@ -92,6 +141,10 @@ export function Modal({
       )}
     </AnimatePresence>
   );
+
+  // Portal to document.body so modal is never clipped by parent overflow
+  if (!mounted) return null;
+  return createPortal(modalContent, document.body);
 }
 
 export default Modal;

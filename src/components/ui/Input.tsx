@@ -12,6 +12,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, compact = false, className, id, required, ...props }, ref) => {
     const inputId = id || props.name || label?.toLowerCase().replace(/\s+/g, '-');
+    const errorId = error ? `${inputId}-error` : undefined;
     const isSmall = compact;
 
     return (
@@ -21,11 +22,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             htmlFor={inputId}
             className={classNames(
               'block font-medium',
-              isSmall ? 'text-xs text-white/50' : 'text-sm text-white/70'
+              isSmall ? 'text-xs text-gray-500' : 'text-sm text-gray-700'
             )}
           >
             {label}
-            {required && <span className="text-red-400 ml-1">*</span>}
+            {required && <span className="text-red-500 ml-1">*</span>}
           </label>
         )}
 
@@ -33,20 +34,22 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId}
           className={classNames(
-            'w-full bg-white/10 border border-white/20 text-white',
-            'placeholder:text-white/30',
-            'focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30',
-            'transition-colors duration-200',
+            'w-full bg-white border border-gray-300 text-gray-900',
+            'placeholder:text-gray-500',
+            'outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 focus:border-blue-500',
+            'transition-all duration-200',
             isSmall ? 'rounded-lg px-3 py-1.5 text-sm' : 'rounded-xl px-4 py-3',
-            error && 'border-red-400/60 focus:border-red-400 focus:ring-red-400/30',
+            error && 'border-red-400 focus:border-red-500 focus-visible:ring-red-400 focus-visible:ring-2',
             className
           )}
           {...props}
         />
 
         {error && (
-          <p className="text-red-400 text-xs mt-1">{error}</p>
+          <p id={errorId} role="alert" className="text-red-500 text-xs mt-1">{error}</p>
         )}
       </div>
     );

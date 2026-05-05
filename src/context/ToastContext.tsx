@@ -7,14 +7,20 @@ import { classNames } from '@/lib/utils/helpers';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   message: string;
   type: ToastType;
+  action?: ToastAction;
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (message: string, type?: ToastType, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -28,24 +34,24 @@ const TOAST_ICONS: Record<ToastType, typeof CheckCircle> = {
 
 const TOAST_COLORS: Record<ToastType, { bg: string; border: string; icon: string }> = {
   success: {
-    bg: 'bg-emerald-500/20',
-    border: 'border-emerald-400/30',
-    icon: 'text-emerald-400',
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    icon: 'text-emerald-600',
   },
   error: {
-    bg: 'bg-red-500/20',
-    border: 'border-red-400/30',
-    icon: 'text-red-400',
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    icon: 'text-red-600',
   },
   warning: {
-    bg: 'bg-amber-500/20',
-    border: 'border-amber-400/30',
-    icon: 'text-amber-400',
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    icon: 'text-amber-600',
   },
   info: {
-    bg: 'bg-blue-500/20',
-    border: 'border-blue-400/30',
-    icon: 'text-blue-400',
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    icon: 'text-blue-600',
   },
 };
 
@@ -57,10 +63,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToast = useCallback(
-    (message: string, type: ToastType = 'info') => {
+    (message: string, type: ToastType = 'info', action?: ToastAction) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      setToasts((prev) => [...prev, { id, message, type }]);
-      setTimeout(() => removeToast(id), 4000);
+      setToasts((prev) => [...prev, { id, message, type, action }]);
+      const delay = action ? 8000 : 4000;
+      setTimeout(() => removeToast(id), delay);
     },
     [removeToast],
   );
@@ -69,7 +76,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ toast: addToast }}>
       {children}
 
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-3 pointer-events-none">
+      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-3 pointer-events-none" role="status" aria-live="polite">
         <AnimatePresence mode="popLayout">
           {toasts.map((t) => {
             const Icon = TOAST_ICONS[t.type];
@@ -90,10 +97,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 )}
               >
                 <Icon className={classNames('w-5 h-5 flex-shrink-0', colors.icon)} />
-                <span className="text-white text-sm font-medium flex-1">{t.message}</span>
+                <span className="text-gray-900 text-sm font-medium flex-1">{t.message}</span>
+                {t.action && (
+                  <button
+                    onClick={() => {
+                      t.action!.onClick();
+                      removeToast(t.id);
+                    }}
+                    className="text-blue-600 hover:text-blue-700 text-xs font-semibold px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors flex-shrink-0"
+                  >
+                    {t.action.label}
+                  </button>
+                )}
                 <button
                   onClick={() => removeToast(t.id)}
-                  className="text-white/50 hover:text-white/80 transition-colors flex-shrink-0"
+                  className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                  aria-label="Cerrar notificacion"
                 >
                   <X className="w-4 h-4" />
                 </button>
