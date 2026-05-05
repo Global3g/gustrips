@@ -145,39 +145,42 @@ export default function PhotosPage() {
       const today = selectedDate;
       let successCount = 0;
 
-      for (const file of fileArray) {
-        try {
-          const photo = await addPhoto(file, today);
+      try {
+        for (const file of fileArray) {
+          try {
+            const photo = await addPhoto(file, today);
 
-          // If linked to an event, also add photo URL to event.photos[]
-          if (eventId) {
-            try {
-              const event = events.find((e) => e.id === eventId);
-              const currentPhotos = event?.photos ?? [];
-              await updateEvent(eventId, { photos: [...currentPhotos, photo.url] });
-            } catch {
-              // Non-critical — photo was saved to album
+            // If linked to an event, also add photo URL to event.photos[]
+            if (eventId) {
+              try {
+                const event = events.find((e) => e.id === eventId);
+                const currentPhotos = event?.photos ?? [];
+                await updateEvent(eventId, { photos: [...currentPhotos, photo.url] });
+              } catch (linkErr) {
+                console.error('Error vinculando foto al evento:', linkErr);
+              }
             }
+
+            successCount++;
+          } catch (err) {
+            console.error('Error uploading photo:', err);
+            toast('Error al subir foto', 'error');
           }
-
-          successCount++;
-        } catch (err) {
-          console.error('Error uploading photo:', err);
-          toast('Error al subir foto', 'error');
         }
-      }
 
-      setUploading(false);
-      if (successCount > 0) {
-        toast(
-          successCount === 1
-            ? 'Foto agregada al album'
-            : `${successCount} fotos agregadas al album`,
-          'success',
-        );
+        if (successCount > 0) {
+          toast(
+            successCount === 1
+              ? 'Foto agregada al album'
+              : `${successCount} fotos agregadas al album`,
+            'success',
+          );
+        }
+      } finally {
+        setUploading(false);
       }
     },
-    [addPhoto, toast, events, updateEvent, tripId],
+    [addPhoto, toast, events, updateEvent, selectedDate],
   );
 
   const handleFileInput = useCallback(

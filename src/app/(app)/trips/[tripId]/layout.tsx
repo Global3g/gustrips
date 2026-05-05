@@ -5,6 +5,7 @@ import { useParams, usePathname } from 'next/navigation';
 import TripSidebar from '@/components/trips/TripSidebar';
 import TripBottomNav from '@/components/trips/TripBottomNav';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
+import NotificationBanner from '@/components/NotificationBanner';
 import { useEvents } from '@/hooks/useEvents';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useTrip } from '@/hooks/useTrip';
@@ -105,6 +106,7 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute top-1/3 left-0 w-80 h-80 bg-violet-200/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-rose-200/10 rounded-full blur-3xl pointer-events-none" />
+        <NotificationBanner />
         <div className="relative p-5 sm:p-8 lg:p-12">
           {children}
         </div>

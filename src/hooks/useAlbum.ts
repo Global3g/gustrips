@@ -12,32 +12,63 @@ import type { Trip, AlbumPhoto } from '@/types';
 async function compressImage(file: File, maxWidth = 1200, quality = 0.8): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    // Safety timeout — 30s max for compression
+    const timeout = setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Image compression timed out'));
+    }, 30_000);
+
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ratio = Math.min(maxWidth / img.width, 1);
-      canvas.width = img.width * ratio;
-      canvas.height = img.height * ratio;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Could not get canvas context'));
-        return;
+      try {
+        const canvas = document.createElement('canvas');
+        const ratio = Math.min(maxWidth / img.width, 1);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            clearTimeout(timeout);
+            URL.revokeObjectURL(objectUrl);
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error('Canvas toBlob returned null'));
+            }
+          },
+          'image/jpeg',
+          quality,
+        );
+      } catch (err) {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
       }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Canvas toBlob returned null'));
-          }
-        },
-        'image/jpeg',
-        quality,
-      );
     };
-    img.onerror = () => reject(new Error('Failed to load image'));
-    img.src = URL.createObjectURL(file);
+    img.onerror = () => {
+      clearTimeout(timeout);
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Failed to load image'));
+    };
+    img.src = objectUrl;
   });
+}
+
+/** Remove undefined values from an object (Firestore rejects them) */
+function cleanUndefined<T extends object>(obj: T): T {
+  const clean = {} as Record<string, unknown>;
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  return clean as T;
 }
 
 /* ─── Hook ──────────────────────────────────────── */
@@ -69,13 +100,13 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const photo: AlbumPhoto = {
         url,
         date,
-        caption: caption || undefined,
         uploadedAt: nowISO(),
       };
+      if (caption) photo.caption = caption;
 
       const tripRef = doc(db, 'trips', tripId);
       await updateDoc(tripRef, {
-        albumPhotos: arrayUnion(photo),
+        albumPhotos: arrayUnion(cleanUndefined(photo)),
         updatedAt: nowISO(),
       });
 
@@ -89,9 +120,11 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const db = getClientDb();
       const tripRef = doc(db, 'trips', tripId);
 
-      // Remove from Firestore
+      // Remove from Firestore by filtering out the photo by URL
+      const currentPhotos = trip?.albumPhotos ?? [];
+      const filtered = currentPhotos.filter((p) => p.url !== photo.url);
       await updateDoc(tripRef, {
-        albumPhotos: arrayRemove(photo),
+        albumPhotos: filtered,
         updatedAt: nowISO(),
       });
 
@@ -110,7 +143,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         console.error('Error deleting photo from storage:', err);
       }
     },
-    [tripId],
+    [tripId, trip],
   );
 
   const updateCaption = useCallback(
@@ -123,11 +156,11 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const updatedPhoto: AlbumPhoto = { ...photo, caption };
 
       await updateDoc(tripRef, {
-        albumPhotos: arrayRemove(photo),
+        albumPhotos: arrayRemove(cleanUndefined(photo)),
         updatedAt: nowISO(),
       });
       await updateDoc(tripRef, {
-        albumPhotos: arrayUnion(updatedPhoto),
+        albumPhotos: arrayUnion(cleanUndefined(updatedPhoto)),
         updatedAt: nowISO(),
       });
     },

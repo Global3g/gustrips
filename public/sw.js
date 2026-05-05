@@ -1,14 +1,61 @@
-// Service Worker disabled — unregister itself to prevent caching issues
+/* GusTrips Service Worker — Push Notifications */
+
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+/* ── Push event — show notification ── */
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: 'GusTrips', body: event.data.text() };
+  }
+
+  const { title, body, icon, badge, data, tag } = payload;
+
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((key) => caches.delete(key)))
-    ).then(() => self.clients.claim())
+    self.registration.showNotification(title || 'GusTrips', {
+      body: body || '',
+      icon: icon || '/logo.png',
+      badge: badge || '/logo.png',
+      tag: tag || 'gustrips-reminder',
+      data: data || {},
+      vibrate: [200, 100, 200],
+      requireInteraction: true,
+      actions: [
+        { action: 'open', title: 'Ver evento' },
+        { action: 'dismiss', title: 'Cerrar' },
+      ],
+    }),
   );
-  // Unregister this service worker
-  self.registration.unregister();
+});
+
+/* ── Notification click — open trip page ── */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  if (event.action === 'dismiss') return;
+
+  const url = event.notification.data?.url || '/dashboard';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Focus existing tab if found
+      for (const client of clients) {
+        if (client.url.includes('/trips/') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open new tab
+      return self.clients.openWindow(url);
+    }),
+  );
 });
