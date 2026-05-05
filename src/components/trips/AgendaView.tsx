@@ -91,10 +91,14 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
   const resizeInfoRef = useRef<{ event: TripEvent; startMin: number } | null>(null);
   const resizeGhostRef = useRef<ResizeGhost | null>(null);
   const [resizeGhost, setResizeGhost] = useState<ResizeGhost | null>(null);
+  const [weekOffset, setWeekOffset] = useState(0);
 
   // Sync refs with state
   useEffect(() => { ghostRef.current = ghost; }, [ghost]);
   useEffect(() => { resizeGhostRef.current = resizeGhost; }, [resizeGhost]);
+
+  // Reset week offset when view or selectedDate changes
+  useEffect(() => { setWeekOffset(0); }, [calendarView, selectedDate]);
 
   /* ─── Derivar fechas ────────────────────────────── */
 
@@ -131,12 +135,13 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
       if (selectedDate && dates.includes(selectedDate)) return [selectedDate];
       return dates.length > 0 ? [dates[0]] : [];
     }
-    // 'week': 7 days starting from selectedDate
+    // 'week': 7 days starting from selectedDate + weekOffset
     const start = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
     if (!start) return [];
-    const startIdx = dates.indexOf(start);
-    return dates.slice(startIdx, startIdx + 7);
-  }, [dates, calendarView, selectedDate]);
+    const startIdx = dates.indexOf(start) + weekOffset * 7;
+    const clampedStart = Math.max(0, Math.min(startIdx, dates.length - 1));
+    return dates.slice(clampedStart, clampedStart + 7);
+  }, [dates, calendarView, selectedDate, weekOffset]);
 
   /* ─── Rango de horas ────────────────────────────── */
 
@@ -439,13 +444,46 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
             {v === 'day' ? 'Día' : v === 'week' ? 'Semana' : 'Completo'}
           </button>
         ))}
+
+        {/* Week navigation arrows */}
+        {calendarView === 'week' && (
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => setWeekOffset((o) => o - 1)}
+              disabled={(() => {
+                const start = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+                if (!start) return true;
+                return dates.indexOf(start) + (weekOffset - 1) * 7 < 0;
+              })()}
+              className="p-1 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+              title="Semana anterior"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <span className="text-[11px] text-gray-500 min-w-[80px] text-center">
+              {filteredDates.length > 0 && `${formatDateShortES(filteredDates[0])} – ${formatDateShortES(filteredDates[filteredDates.length - 1])}`}
+            </span>
+            <button
+              onClick={() => setWeekOffset((o) => o + 1)}
+              disabled={(() => {
+                const start = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+                if (!start) return true;
+                return dates.indexOf(start) + (weekOffset + 1) * 7 >= dates.length;
+              })()}
+              className="p-1 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+              title="Semana siguiente"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </div>
+        )}
       </div>
       <div ref={scrollRef} className="overflow-auto max-h-[85vh]">
-        <div className="flex min-w-max">
+        <div className={`flex ${calendarView === 'full' ? 'min-w-max' : 'min-w-0 w-full'}`}>
 
           {/* ─── Columna de horas (sticky) ──────── */}
-          <div className="w-14 flex-shrink-0 sticky left-0 z-20 bg-white">
-            <div className="h-12 border-b border-gray-200" />
+          <div className={`${calendarView === 'day' ? 'w-16' : 'w-14'} flex-shrink-0 sticky left-0 z-20 bg-white`}>
+            <div className={`${calendarView === 'day' ? 'h-16' : 'h-12'} border-b border-gray-200`} />
             <div className="relative" style={{ height: totalHours * HOUR_HEIGHT }}>
               {hours.map((h) => (
                 <div
@@ -453,7 +491,9 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                   className="absolute w-full text-right pr-2"
                   style={{ top: (h - startHour) * HOUR_HEIGHT }}
                 >
-                  <span className="text-gray-300 text-[10px] font-mono leading-none relative -top-[5px]">
+                  <span className={`font-mono leading-none relative -top-[5px] ${
+                    calendarView === 'day' ? 'text-gray-400 text-xs' : 'text-gray-300 text-[10px]'
+                  }`}>
                     {formatHour(h)}
                   </span>
                 </div>
@@ -472,19 +512,25 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
               <div
                 key={date}
                 ref={(el) => { if (el) colRefs.current.set(date, el); }}
-                className="border-l border-gray-200"
-                style={{ minWidth: DAY_COL_MIN_W }}
+                className={`border-l border-gray-200 ${calendarView !== 'full' ? 'flex-1' : ''}`}
+                style={
+                  calendarView === 'day'
+                    ? { minWidth: '100%', width: '100%' }
+                    : calendarView === 'week'
+                    ? { minWidth: 120, flex: 1 }
+                    : { minWidth: DAY_COL_MIN_W }
+                }
               >
                 {/* Header del día */}
                 <div
-                  className={`h-12 flex flex-col items-center justify-center border-b border-gray-200 sticky top-0 z-10 ${
+                  className={`${calendarView === 'day' ? 'h-16' : 'h-12'} flex flex-col items-center justify-center border-b border-gray-200 sticky top-0 z-10 ${
                     isWeekend ? 'bg-gray-50' : 'bg-white'
                   }`}
                 >
-                  <span className="text-gray-400 text-[10px] uppercase tracking-wide">
-                    {format(parseISO(date), 'EEE', { locale: es })}
+                  <span className={`text-gray-400 uppercase tracking-wide ${calendarView === 'day' ? 'text-xs' : 'text-[10px]'}`}>
+                    {format(parseISO(date), calendarView === 'day' ? 'EEEE' : 'EEE', { locale: es })}
                   </span>
-                  <span className="text-gray-900 text-xs font-bold">
+                  <span className={`text-gray-900 font-bold ${calendarView === 'day' ? 'text-base' : 'text-xs'}`}>
                     {formatDateShortES(date)}
                   </span>
                 </div>

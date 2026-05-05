@@ -7,6 +7,7 @@ import AppSidebar from '@/components/layout/AppSidebar';
 import AppBottomNav from '@/components/layout/AppBottomNav';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { ToastProvider } from '@/context/ToastContext';
+import { Chatbot } from '@/components/chat/Chatbot';
 import { classNames } from '@/lib/utils/helpers';
 
 /** Detect if we are inside a trip detail view (has tripId in path) */
@@ -50,6 +51,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             {/* Bottom nav - mobile only, hidden inside trip views */}
             {!inTrip && <AppBottomNav />}
+
+            {/* AI Chatbot - floating assistant */}
+            <Chatbot />
           </div>
         </ErrorBoundary>
       </ToastProvider>
