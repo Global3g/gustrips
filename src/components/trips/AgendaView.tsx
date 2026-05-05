@@ -3,15 +3,14 @@
 import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { format, parseISO, eachDayOfInterval, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale/es';
-import { GripVertical } from 'lucide-react';
 import { EVENT_TYPES } from '@/config/constants';
 import { formatCurrency, getTimezoneAbbr, formatDateShortES } from '@/lib/utils/helpers';
 import type { TripEvent } from '@/types';
 
 /* ─── Constantes ──────────────────────────────────── */
 
-const HOUR_HEIGHT = 40;
-const MIN_BLOCK_HEIGHT = 20;
+const HOUR_HEIGHT = 80;
+const MIN_BLOCK_HEIGHT = 40;
 const DAY_COL_MIN_W = 170;
 const SNAP_MIN = 15;
 
@@ -74,11 +73,13 @@ interface AgendaViewProps {
   selectedDate?: string;
   tripStartDate?: string;
   tripEndDate?: string;
+  calendarView?: 'day' | 'week' | 'full';
+  onCalendarViewChange?: (view: 'day' | 'week' | 'full') => void;
 }
 
 /* ─── Componente ──────────────────────────────────── */
 
-export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReorder, onCreateAt, selectedDate, tripStartDate, tripEndDate }: AgendaViewProps) {
+export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReorder, onCreateAt, selectedDate, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragInfoRef = useRef<{ event: TripEvent; durationMin: number; offsetY: number } | null>(null);
@@ -122,10 +123,25 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
     }).map((d) => format(d, 'yyyy-MM-dd'));
   }, [events, tripStartDate, tripEndDate]);
 
+  /* ─── Filtrar fechas según calendarView ──────────── */
+
+  const filteredDates = useMemo(() => {
+    if (calendarView === 'full') return dates;
+    if (calendarView === 'day') {
+      if (selectedDate && dates.includes(selectedDate)) return [selectedDate];
+      return dates.length > 0 ? [dates[0]] : [];
+    }
+    // 'week': 7 days starting from selectedDate
+    const start = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+    if (!start) return [];
+    const startIdx = dates.indexOf(start);
+    return dates.slice(startIdx, startIdx + 7);
+  }, [dates, calendarView, selectedDate]);
+
   /* ─── Rango de horas ────────────────────────────── */
 
   const { startHour, endHour } = useMemo(() => {
-    return { startHour: 6, endHour: 24 }; // Siempre 6 AM a medianoche
+    return { startHour: 6, endHour: 22 }; // 6 AM a 10 PM
   }, []);
 
   const totalHours = endHour - startHour;
@@ -402,12 +418,28 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
     return { top, height };
   };
 
-  if (dates.length === 0) return null;
+  if (filteredDates.length === 0) return null;
 
   /* ─── Render ────────────────────────────────────── */
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+      {/* ─── View toggle bar ─────────────────── */}
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+        {(['day', 'week', 'full'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => onCalendarViewChange?.(v)}
+            className={`px-3 py-1 rounded-md text-xs transition-colors ${
+              calendarView === v
+                ? 'bg-amber-100 text-amber-800 font-bold'
+                : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            {v === 'day' ? 'Día' : v === 'week' ? 'Semana' : 'Completo'}
+          </button>
+        ))}
+      </div>
       <div ref={scrollRef} className="overflow-auto max-h-[85vh]">
         <div className="flex min-w-max">
 
@@ -431,7 +463,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
           </div>
 
           {/* ─── Columnas de días ───────────────── */}
-          {dates.map((date) => {
+          {filteredDates.map((date) => {
             const { timed, untimed } = eventsByDate[date];
             const isWeekend = [0, 6].includes(parseISO(date).getDay());
             const total = dayTotals[date];
@@ -603,66 +635,69 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                           document.addEventListener('pointerup', onUp);
                         } : undefined}
                       >
-                        <div className="px-1.5 py-0.5 h-full flex flex-col overflow-hidden relative">
-                          {/* Grip + título */}
-                          <div className="flex items-start gap-0.5">
-                            {!isContinuation && (
-                              <GripVertical className="w-3 h-3 flex-shrink-0 mt-px opacity-30" style={{ color: colors.text }} />
-                            )}
-                            <p className="text-[10px] font-bold leading-tight truncate flex-1" style={{ color: colors.text }}>
-                              {isContinuation ? `↳ ${event.title}` : event.title}
-                            </p>
-                          </div>
-
-                          {/* Detalles extra para vuelos */}
-                          {event.type === 'flight' && !isContinuation && (
-                            <p className="text-gray-400 text-[9px] leading-tight truncate">
-                              {[event.details?.airline, event.details?.flightNumber].filter(Boolean).join(' · ')}
-                              {flightDur && <span className="text-cyan-600 font-semibold"> · {flightDur}</span>}
-                            </p>
-                          )}
-
-                          {/* Hora + timezone */}
-                          <p className="text-gray-500 text-[9px] leading-tight truncate">
-                            {isContinuation
-                              ? `→ llega ${event.endTime || ''}`
-                              : (
-                                <>
-                                  {event.startTime}
-                                  {tzAbbr && <span className="text-amber-600"> ({tzAbbr})</span>}
-                                  {event.endTime && ` – ${event.endTime}`}
-                                  {event.details?.arrivalTimezone && (
-                                    <span className="text-amber-600">
-                                      {' '}({getTimezoneAbbr(event.details.arrivalTimezone, event.details?.arrivalDate || date)})
-                                    </span>
-                                  )}
-                                </>
-                              )
-                            }
+                        <div className="py-1.5 px-2 h-full flex flex-col overflow-hidden relative justify-start gap-0.5">
+                          {/* Título */}
+                          <p
+                            className={`font-bold leading-tight truncate ${resizedHeight > 60 ? 'text-xs' : 'text-[11px]'}`}
+                            style={{ color: colors.text }}
+                          >
+                            {isContinuation ? `↳ ${event.title}` : event.title}
                           </p>
 
-                          {/* Confirmación (vuelos) */}
-                          {event.type === 'flight' && event.details?.confirmationCode && pos.height > 30 && (
-                            <p className="text-gray-300 text-[9px] truncate">
-                              Ref: {event.details.confirmationCode}
-                            </p>
+                          {/* Contenido adicional solo si el bloque es > 40px */}
+                          {resizedHeight > 40 && (
+                            <>
+                              {/* Hora */}
+                              <p className="text-[10px] text-gray-500 leading-tight truncate">
+                                {isContinuation
+                                  ? `→ llega ${event.endTime || ''}`
+                                  : (
+                                    <>
+                                      {event.startTime}
+                                      {tzAbbr && <span className="text-amber-600"> ({tzAbbr})</span>}
+                                      {event.endTime && ` – ${event.endTime}`}
+                                      {event.details?.arrivalTimezone && (
+                                        <span className="text-amber-600">
+                                          {' '}({getTimezoneAbbr(event.details.arrivalTimezone, event.details?.arrivalDate || date)})
+                                        </span>
+                                      )}
+                                    </>
+                                  )
+                                }
+                              </p>
+
+                              {/* Detalles extra para vuelos */}
+                              {event.type === 'flight' && !isContinuation && resizedHeight > 60 && (
+                                <p className="text-gray-400 text-[10px] leading-tight truncate">
+                                  {[event.details?.airline, event.details?.flightNumber].filter(Boolean).join(' · ')}
+                                  {flightDur && <span className="text-cyan-600 font-semibold"> · {flightDur}</span>}
+                                </p>
+                              )}
+
+                              {/* Confirmación (vuelos) */}
+                              {event.type === 'flight' && event.details?.confirmationCode && resizedHeight > 80 && (
+                                <p className="text-gray-300 text-[10px] truncate">
+                                  Ref: {event.details.confirmationCode}
+                                </p>
+                              )}
+
+                              {/* Asiento + equipaje (vuelos) */}
+                              {event.type === 'flight' && resizedHeight > 100 && (
+                                <p className="text-gray-300 text-[10px] truncate">
+                                  {[event.details?.seatNumber && `Asiento ${event.details.seatNumber}`, event.details?.baggage].filter(Boolean).join(' · ')}
+                                </p>
+                              )}
+
+                              {/* Ubicación (no vuelos) */}
+                              {event.type !== 'flight' && event.location && resizedHeight > 60 && (
+                                <p className="text-gray-400 text-[10px] truncate">{event.location}</p>
+                              )}
+                            </>
                           )}
 
-                          {/* Asiento + equipaje (vuelos) */}
-                          {event.type === 'flight' && pos.height > 40 && (
-                            <p className="text-gray-300 text-[9px] truncate">
-                              {[event.details?.seatNumber && `Asiento ${event.details.seatNumber}`, event.details?.baggage].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-
-                          {/* Ubicación (no vuelos) */}
-                          {event.type !== 'flight' && pos.height > 30 && event.location && (
-                            <p className="text-gray-300 text-[9px] truncate mt-auto">{event.location}</p>
-                          )}
-
-                          {/* Costo */}
-                          {event.cost > 0 && pos.height > 25 && (
-                            <p className="text-emerald-600 text-[9px] font-semibold mt-auto">
+                          {/* Costo — posicionado al fondo */}
+                          {event.cost > 0 && resizedHeight > 50 && (
+                            <p className="text-emerald-600 text-[10px] font-semibold mt-auto">
                               {formatCurrency(event.cost, event.currency)}
                             </p>
                           )}
@@ -679,7 +714,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
 
                           {/* Hora nueva durante resize */}
                           {isResizing && (
-                            <p className="absolute bottom-2 right-1.5 text-blue-600 text-[9px] font-bold">
+                            <p className="absolute bottom-2 right-1.5 text-blue-600 text-[10px] font-bold">
                               → {minutesToTime(resizeGhost.endMin)}
                             </p>
                           )}

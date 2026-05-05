@@ -59,6 +59,7 @@ export default function ItineraryPage() {
   const [editingEvent, setEditingEvent] = useState<TripEvent | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'timeline' | 'agenda' | 'all'>('timeline');
+  const [calendarView, setCalendarView] = useState<'day' | 'week' | 'full'>('full');
   const [defaultFormDate, setDefaultFormDate] = useState('');
   const [defaultFormTime, setDefaultFormTime] = useState('');
 
@@ -497,6 +498,9 @@ export default function ItineraryPage() {
             }}
             tripStartDate={trip?.startDate}
             tripEndDate={trip?.endDate}
+            selectedDate={selectedDayStr}
+            calendarView={calendarView}
+            onCalendarViewChange={setCalendarView}
           />
         </div>
 
