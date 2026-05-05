@@ -694,7 +694,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                           {resizedHeight > 40 && (
                             <>
                               {/* Hora */}
-                              <p className="text-[10px] text-gray-500 leading-tight truncate">
+                              <p className="text-[10px] text-gray-700 leading-tight truncate">
                                 {isContinuation
                                   ? `→ llega ${event.endTime || ''}`
                                   : (
@@ -714,7 +714,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
 
                               {/* Detalles extra para vuelos */}
                               {event.type === 'flight' && !isContinuation && resizedHeight > 60 && (
-                                <p className="text-gray-400 text-[10px] leading-tight truncate">
+                                <p className="text-gray-700 text-[10px] leading-tight truncate">
                                   {[event.details?.airline, event.details?.flightNumber].filter(Boolean).join(' · ')}
                                   {flightDur && <span className="text-cyan-600 font-semibold"> · {flightDur}</span>}
                                 </p>
@@ -722,21 +722,21 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
 
                               {/* Confirmación (vuelos) */}
                               {event.type === 'flight' && event.details?.confirmationCode && resizedHeight > 80 && (
-                                <p className="text-gray-300 text-[10px] truncate">
+                                <p className="text-gray-700 text-[10px] truncate">
                                   Ref: {event.details.confirmationCode}
                                 </p>
                               )}
 
                               {/* Asiento + equipaje (vuelos) */}
                               {event.type === 'flight' && resizedHeight > 100 && (
-                                <p className="text-gray-300 text-[10px] truncate">
+                                <p className="text-gray-700 text-[10px] truncate">
                                   {[event.details?.seatNumber && `Asiento ${event.details.seatNumber}`, event.details?.baggage].filter(Boolean).join(' · ')}
                                 </p>
                               )}
 
                               {/* Ubicación (no vuelos) */}
                               {event.type !== 'flight' && event.location && resizedHeight > 60 && (
-                                <p className="text-gray-400 text-[10px] truncate">{event.location}</p>
+                                <p className="text-gray-700 text-[10px] truncate">{event.location}</p>
                               )}
                             </>
                           )}
