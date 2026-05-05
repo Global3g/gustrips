@@ -21,6 +21,7 @@ import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
 import { useToast } from '@/context/ToastContext';
+import { formatDateES } from '@/lib/utils/helpers';
 import type { AlbumPhoto } from '@/types';
 
 /* ─── Photo Album Page ──────────────────────────── */
@@ -29,7 +30,7 @@ export default function PhotosPage() {
   const params = useParams();
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
+  const { events, updateEvent } = useEvents(tripId);
   const { albumPhotos, addPhoto, deletePhoto, updateCaption } = useAlbum(tripId, trip);
   const { toast } = useToast();
 
@@ -39,29 +40,37 @@ export default function PhotosPage() {
   const [captionText, setCaptionText] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [showLinkModal, setShowLinkModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /* ── All photos: album + event photos, sorted by date ── */
+  /* ── All photos: album + event photos (deduplicated), sorted by date ── */
 
   const allPhotos = useMemo(() => {
     const photos: (AlbumPhoto & { source: 'album' | 'event'; eventTitle?: string })[] = [];
+    const albumUrls = new Set<string>();
 
-    // Album photos
+    // Album photos (include eventTitle if linked)
     for (const p of albumPhotos) {
-      photos.push({ ...p, source: 'album' });
+      albumUrls.add(p.url);
+      const linkedEvent = p.eventId ? events.find((e) => e.id === p.eventId) : undefined;
+      photos.push({ ...p, source: 'album', eventTitle: linkedEvent?.title });
     }
 
-    // Event photos
+    // Event photos — only add if NOT already in album (avoid duplicates from sync)
     for (const event of events) {
       if (event.photos && event.photos.length > 0) {
         for (const url of event.photos) {
-          photos.push({
-            url,
-            date: event.date,
-            uploadedAt: event.createdAt,
-            source: 'event',
-            eventTitle: event.title,
-          });
+          if (!albumUrls.has(url)) {
+            photos.push({
+              url,
+              date: event.date,
+              uploadedAt: event.createdAt,
+              source: 'event',
+              eventTitle: event.title,
+            });
+          }
         }
       }
     }
@@ -107,23 +116,54 @@ export default function PhotosPage() {
 
   const flatPhotos = useMemo(() => allPhotos, [allPhotos]);
 
+  /* ── Events for today (for linking dropdown) ── */
+
+  const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+
+  const eventsForSelectedDate = useMemo(() => {
+    return events.filter((e) => e.date === selectedDate);
+  }, [events, selectedDate]);
+
   /* ── Upload handler ── */
 
   const handleFiles = useCallback(
-    async (files: FileList | File[]) => {
+    (files: FileList | File[]) => {
       const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
       if (fileArray.length === 0) return;
 
+      // Always show linking modal to pick date and optionally link to event
+      setPendingFiles(fileArray);
+      setSelectedEventId('');
+      setShowLinkModal(true);
+    },
+    [],
+  );
+
+  const uploadFiles = useCallback(
+    async (fileArray: File[], eventId: string) => {
       setUploading(true);
-      const today = format(new Date(), 'yyyy-MM-dd');
+      const today = selectedDate;
       let successCount = 0;
 
       for (const file of fileArray) {
         try {
-          await addPhoto(file, today);
+          const photo = await addPhoto(file, today);
+
+          // If linked to an event, also add photo URL to event.photos[]
+          if (eventId) {
+            try {
+              const event = events.find((e) => e.id === eventId);
+              const currentPhotos = event?.photos ?? [];
+              await updateEvent(eventId, { photos: [...currentPhotos, photo.url] });
+            } catch {
+              // Non-critical — photo was saved to album
+            }
+          }
+
           successCount++;
         } catch (err) {
           console.error('Error uploading photo:', err);
+          toast('Error al subir foto', 'error');
         }
       }
 
@@ -137,7 +177,7 @@ export default function PhotosPage() {
         );
       }
     },
-    [addPhoto, toast],
+    [addPhoto, toast, events, updateEvent, tripId],
   );
 
   const handleFileInput = useCallback(
@@ -180,6 +220,15 @@ export default function PhotosPage() {
       if (photo.source !== 'album') return; // Only album photos can be deleted here
       setDeleting(photo.url);
       try {
+        // If photo is linked to an event, also remove from event.photos[]
+        if (photo.eventId) {
+          const event = events.find((e) => e.id === photo.eventId);
+          if (event) {
+            const updatedPhotos = (event.photos ?? []).filter((p) => p !== photo.url);
+            await updateEvent(photo.eventId, { photos: updatedPhotos });
+          }
+        }
+
         await deletePhoto(photo);
         toast('Foto eliminada', 'success');
         // Close lightbox if viewing deleted photo
@@ -198,7 +247,7 @@ export default function PhotosPage() {
         setDeleting(null);
       }
     },
-    [deletePhoto, toast, lightboxIndex, flatPhotos],
+    [deletePhoto, toast, lightboxIndex, flatPhotos, events, updateEvent],
   );
 
   /* ── Caption edit ── */
@@ -325,6 +374,87 @@ export default function PhotosPage() {
         onChange={handleFileInput}
       />
 
+      {/* ── Link to event modal ── */}
+      <AnimatePresence>
+        {showLinkModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            onClick={() => { setShowLinkModal(false); setPendingFiles([]); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Subir fotos</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                {pendingFiles.length === 1 ? '1 foto' : `${pendingFiles.length} fotos`} seleccionadas.
+              </p>
+              {/* Date picker */}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                min={trip?.startDate}
+                max={trip?.endDate}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent mb-4"
+              />
+              {/* Event linking */}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Vincular a evento (opcional)</label>
+              <select
+                value={selectedEventId}
+                onChange={(e) => setSelectedEventId(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent mb-4"
+              >
+                <option value="">Sin vincular</option>
+                {(() => {
+                  const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
+                  const grouped = new Map<string, typeof events>();
+                  for (const ev of sorted) {
+                    const list = grouped.get(ev.date) || [];
+                    list.push(ev);
+                    grouped.set(ev.date, list);
+                  }
+                  return [...grouped.entries()].map(([dateStr, evts]) => (
+                    <optgroup key={dateStr} label={formatDateES(dateStr)}>
+                      {evts.map((ev) => (
+                        <option key={ev.id} value={ev.id}>
+                          {ev.startTime ? `${ev.startTime} - ` : ''}{ev.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ));
+                })()}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => { setShowLinkModal(false); setPendingFiles([]); }}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    setShowLinkModal(false);
+                    uploadFiles(pendingFiles, selectedEventId);
+                    setPendingFiles([]);
+                  }}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+                >
+                  Subir {pendingFiles.length === 1 ? 'foto' : 'fotos'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Photo grid by day ── */}
       {totalPhotos === 0 ? (
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-100 p-12 text-center">
@@ -392,7 +522,7 @@ export default function PhotosPage() {
                       )}
 
                       {/* Event badge */}
-                      {photo.source === 'event' && photo.eventTitle && (
+                      {photo.eventTitle && (
                         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-blue-500/80 backdrop-blur-sm text-[10px] text-white font-semibold">
                           {photo.eventTitle}
                         </div>

@@ -76,7 +76,7 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="flex h-[calc(100vh-5rem)] lg:h-screen">
       {/* Trip Sidebar - desktop */}
-      <div className="hidden lg:block w-[280px] border-r border-white/[0.04] bg-[#0f1729] overflow-y-auto flex-shrink-0">
+      <div className="hidden lg:block w-[280px] border-r border-white/[0.04] bg-[#1e3a5f] overflow-y-auto flex-shrink-0">
         <TripSidebar
           tripId={tripId}
           trip={trip}
@@ -105,7 +105,7 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute top-1/3 left-0 w-80 h-80 bg-violet-200/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-rose-200/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative p-4 sm:p-6 lg:p-8">
+        <div className="relative p-5 sm:p-8 lg:p-12">
           {children}
         </div>
       </div>

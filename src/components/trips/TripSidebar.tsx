@@ -81,7 +81,7 @@ function CollapsibleSection({ title, defaultOpen = true, children, count }: {
     <div className="mb-1">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 w-full px-5 py-2.5 text-[10px] font-bold text-white/25 uppercase tracking-[0.15em] hover:text-white/45 transition-colors duration-200"
+        className="flex items-center gap-1.5 w-full px-5 py-2.5 text-[10px] font-bold text-white/75 uppercase tracking-[0.15em] hover:text-white/85 transition-colors duration-200"
       >
         <ChevronDown
           className={classNames(
@@ -91,7 +91,7 @@ function CollapsibleSection({ title, defaultOpen = true, children, count }: {
         />
         <span className="flex-1 text-left">{title}</span>
         {count !== undefined && count > 0 && (
-          <span className="text-[9px] font-semibold text-white/35 bg-white/[0.06] rounded-full px-2 py-0.5 normal-case tracking-normal border border-white/[0.06]">
+          <span className="text-[9px] font-semibold text-white/80 bg-white/[0.06] rounded-full px-2 py-0.5 normal-case tracking-normal border border-white/[0.06]">
             {count}
           </span>
         )}
@@ -134,8 +134,8 @@ function NavItem({ href, label, icon, isActive, badge, sublabel, muted, color }:
         isActive
           ? `${c.activeBg} ${c.activeText} font-semibold shadow-lg ${c.glow} backdrop-blur-sm border border-white/[0.06]`
           : muted
-            ? 'text-white/35 hover:text-white/60 hover:bg-white/[0.03]'
-            : 'text-white/55 hover:text-white/90 hover:bg-white/[0.05]',
+            ? 'text-white/80 hover:text-white/95 hover:bg-white/[0.03]'
+            : 'text-white hover:text-white hover:bg-white/[0.05]',
       )}
     >
       {/* Active indicator bar */}
@@ -147,14 +147,14 @@ function NavItem({ href, label, icon, isActive, badge, sublabel, muted, color }:
       )}
       <span className={classNames(
         'flex-shrink-0 transition-all duration-200',
-        isActive ? c.icon : muted ? 'text-white/20' : `${c.icon} opacity-40 group-hover:opacity-70`
+        isActive ? c.icon : muted ? 'text-white/70' : `${c.icon} opacity-40 group-hover:opacity-70`
       )}>
         {icon}
       </span>
       <div className="flex-1 min-w-0">
         <span className="truncate block leading-tight">{label}</span>
         {sublabel && (
-          <span className="text-[10px] text-white/30 block leading-tight mt-0.5">{sublabel}</span>
+          <span className="text-[10px] text-white/80 block leading-tight mt-0.5">{sublabel}</span>
         )}
       </div>
       {badge && (
@@ -200,10 +200,10 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
           : isTodayDay
             ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25'
             : isPast
-              ? 'bg-white/[0.04] text-white/20'
+              ? 'bg-white/[0.04] text-white/70'
               : eventCount > 0
-                ? 'bg-white/[0.08] text-white/50'
-                : 'bg-white/[0.04] text-white/20 group-hover:bg-white/[0.06]',
+                ? 'bg-white/[0.08] text-white'
+                : 'bg-white/[0.04] text-white/70 group-hover:bg-white/[0.06]',
       )}>
         <span className="text-[11px] font-bold">{dayNumber}</span>
       </div>
@@ -211,7 +211,7 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
       <div className="flex-1 min-w-0">
         <span className={classNames(
           'text-[12px] block leading-tight transition-colors duration-200',
-          isActive ? 'text-white font-semibold' : isPast ? 'text-white/20' : 'text-white/50'
+          isActive ? 'text-white font-semibold' : isPast ? 'text-white/70' : 'text-white'
         )}>
           {weekday} {dayLabel}
         </span>
@@ -235,7 +235,7 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
           ) : (
             <span className={classNames(
               'text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center',
-              isActive ? 'bg-orange-400/20 text-orange-300' : 'bg-white/[0.06] text-white/30',
+              isActive ? 'bg-orange-400/20 text-orange-300' : 'bg-white/[0.06] text-white/80',
             )}>
               {eventCount}
             </span>
@@ -253,7 +253,7 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
 function WeekLabel({ weekNumber, index }: { weekNumber: number; index: number }) {
   return (
     <div className="flex items-center gap-2 px-5 pt-2 pb-1">
-      <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.12em]">
+      <span className="text-[9px] font-bold text-white/70 uppercase tracking-[0.12em]">
         Semana {index + 1}
       </span>
       <div className="flex-1 h-px bg-gradient-to-r from-white/[0.06] to-transparent" />
@@ -323,8 +323,8 @@ function StatMiniCard({ icon, value, label, color }: {
       <div className={classNames('flex items-center justify-center mb-1', color)}>
         {icon}
       </div>
-      <div className="text-[13px] font-bold text-white/90 leading-none">{value}</div>
-      <div className="text-[9px] text-white/30 uppercase tracking-wider mt-0.5 leading-none truncate">{label}</div>
+      <div className="text-[13px] font-bold text-white leading-none">{value}</div>
+      <div className="text-[9px] text-white/80 uppercase tracking-wider mt-0.5 leading-none truncate">{label}</div>
     </div>
   );
 }
@@ -552,7 +552,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-[#0f1729] via-[#131e33] to-[#0c1320] relative overflow-hidden">
+    <div className="flex flex-col h-full bg-gradient-to-b from-[#1e3a5f] via-[#1a3352] to-[#162d48] relative overflow-hidden">
 
       {/* ====== BACKGROUND DECORATIVE ORBS ====== */}
       <div className="absolute top-12 -left-12 w-40 h-40 bg-blue-600/[0.07] rounded-full blur-3xl pointer-events-none" />
@@ -566,7 +566,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
       <div className="px-4 pt-4 pb-2 flex items-center justify-between relative z-10">
         <Link
           href={ROUTES.app.dashboard}
-          className="inline-flex items-center gap-1.5 text-[11px] text-white/30 hover:text-white/70 transition-all duration-200 rounded-lg px-2 py-1.5 -ml-1 hover:bg-white/[0.05] group"
+          className="inline-flex items-center gap-1.5 text-[11px] text-white/80 hover:text-white/70 transition-all duration-200 rounded-lg px-2 py-1.5 -ml-1 hover:bg-white/[0.05] group"
         >
           <ArrowLeft className="w-3 h-3 transition-transform duration-200 group-hover:-translate-x-0.5" />
           <span>Mis Viajes</span>
@@ -582,7 +582,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             {trip?.title || 'Cargando...'}
           </h2>
           {trip?.destination && (
-            <p className="text-white/50 text-[11px] mt-1 flex items-center gap-1 truncate">
+            <p className="text-white text-[11px] mt-1 flex items-center gap-1 truncate">
               <MapPin className="w-3 h-3 flex-shrink-0 text-rose-400/60" />
               {trip.destination}
             </p>
@@ -594,14 +594,14 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
           {/* Date + Duration + Status */}
           <div className="flex items-center flex-wrap gap-2 text-[11px]">
             {dateRange && (
-              <div className="flex items-center gap-1 text-white/35">
+              <div className="flex items-center gap-1 text-white/80">
                 <CalendarDays className="w-3 h-3" />
                 <span>{dateRange}</span>
               </div>
             )}
             {tripDays > 0 && (
-              <span className="inline-flex items-center text-[10px] font-bold text-white/50 bg-white/[0.06] backdrop-blur-sm rounded-full px-2.5 py-0.5 border border-white/[0.08]">
-                <Clock className="w-2.5 h-2.5 mr-1 text-white/30" />
+              <span className="inline-flex items-center text-[10px] font-bold text-white bg-white/[0.06] backdrop-blur-sm rounded-full px-2.5 py-0.5 border border-white/[0.08]">
+                <Clock className="w-2.5 h-2.5 mr-1 text-white/80" />
                 {tripDays} dias
               </span>
             )}
@@ -665,7 +665,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             {onScanDocument && (
               <button
                 onClick={onScanDocument}
-                className="p-1.5 mr-3 rounded-lg text-white/20 hover:text-violet-400 hover:bg-violet-500/10 transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5"
+                className="p-1.5 mr-3 rounded-lg text-white/70 hover:text-violet-400 hover:bg-violet-500/10 transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5"
                 title="Escanear documento con IA"
               >
                 <FileSearch className="w-3.5 h-3.5" />
@@ -702,7 +702,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
               {renderDayList()}
             </div>
             {showScrollFade && (
-              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#131e33] to-transparent pointer-events-none" />
+              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#1a3352] to-transparent pointer-events-none" />
             )}
           </div>
         </CollapsibleSection>
@@ -775,7 +775,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
           <button
             onClick={handleSidebarBackup}
             disabled={backingUp || !trip}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-white/30 hover:text-white/60 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] transition-all duration-200 disabled:opacity-40"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-white/80 hover:text-white/95 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] transition-all duration-200 disabled:opacity-40"
           >
             {backingUp ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

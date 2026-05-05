@@ -34,7 +34,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               role="main"
               className={classNames(
               'relative',
-              inTrip ? 'flex-1 min-w-0' : 'flex-1 min-w-0 pb-20 lg:pb-0 lg:ml-64',
+              inTrip ? 'flex-1 min-w-0' : 'flex-1 min-w-0 pb-20 lg:pb-0 lg:ml-64 p-5 sm:p-8 lg:p-10',
             )}>
               {/* Decorative orbs for main pages */}
               {!inTrip && (

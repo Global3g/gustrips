@@ -181,13 +181,34 @@ export default function ItineraryPage() {
         const event = events.find((e) => e.id === eventId);
         const currentPhotos = event?.photos ?? [];
         await updateEvent(eventId, { photos: [...currentPhotos, url] });
+
+        // Sync to gallery: also add to trip.albumPhotos[]
+        if (trip) {
+          const { arrayUnion: arrUnion } = await import('firebase/firestore');
+          const { doc: fbDoc, updateDoc: fbUpdateDoc } = await import('firebase/firestore');
+          const { nowISO } = await import('@/lib/utils/helpers');
+          const db = (await import('@/lib/firebase/client')).getClientDb();
+          const tripRef = fbDoc(db, 'trips', tripId);
+          const albumPhoto = {
+            url,
+            date: event?.date || format(new Date(), 'yyyy-MM-dd'),
+            caption: event?.title || undefined,
+            eventId,
+            uploadedAt: nowISO(),
+          };
+          await fbUpdateDoc(tripRef, {
+            albumPhotos: arrUnion(albumPhoto),
+            updatedAt: nowISO(),
+          });
+        }
+
         toast('Foto agregada', 'success');
       } catch (error) {
         console.error('Error al subir foto:', error);
         toast('Error al subir la foto', 'error');
       }
     },
-    [tripId, events, updateEvent, toast],
+    [tripId, events, updateEvent, toast, trip],
   );
 
   const handleDeletePhoto = useCallback(
@@ -205,13 +226,30 @@ export default function ItineraryPage() {
         const currentPhotos = event?.photos ?? [];
         const updatedPhotos = currentPhotos.filter((p) => p !== url);
         await updateEvent(eventId, { photos: updatedPhotos });
+
+        // Sync: also remove from trip.albumPhotos[] if present
+        if (trip?.albumPhotos) {
+          const matchingPhoto = trip.albumPhotos.find((p) => p.url === url);
+          if (matchingPhoto) {
+            const { arrayRemove: arrRemove } = await import('firebase/firestore');
+            const { doc: fbDoc, updateDoc: fbUpdateDoc } = await import('firebase/firestore');
+            const { nowISO } = await import('@/lib/utils/helpers');
+            const db = (await import('@/lib/firebase/client')).getClientDb();
+            const tripRef = fbDoc(db, 'trips', tripId);
+            await fbUpdateDoc(tripRef, {
+              albumPhotos: arrRemove(matchingPhoto),
+              updatedAt: nowISO(),
+            });
+          }
+        }
+
         toast('Foto eliminada', 'success');
       } catch (error) {
         console.error('Error al eliminar foto:', error);
         toast('Error al eliminar la foto', 'error');
       }
     },
-    [events, updateEvent, toast],
+    [events, updateEvent, toast, trip, tripId],
   );
 
   /* ---- CRUD Handlers ---- */
@@ -750,7 +788,7 @@ export default function ItineraryPage() {
       ) : (
         <div className="relative">
           {/* Timeline vertical line */}
-          <div className="absolute left-5 top-4 bottom-16 w-px bg-gray-200" />
+          <div className="absolute left-5 top-4 bottom-16 w-[3px] rounded-full" style={{ backgroundColor: '#1e3a5f' }} />
 
           <div className="space-y-0">
             <AnimatePresence>
@@ -791,7 +829,7 @@ export default function ItineraryPage() {
                     <div className="relative flex items-start gap-3 py-2">
                       {/* Timeline dot */}
                       <div className="relative z-10 flex-shrink-0 w-10 flex justify-center pt-4">
-                        <div className="w-2.5 h-2.5 rounded-full bg-white border-2 border-gray-300" />
+                        <div className="w-3 h-3 rounded-full bg-white border-[3px]" style={{ borderColor: '#1e3a5f' }} />
                       </div>
 
                       {/* Event card */}
@@ -832,7 +870,7 @@ export default function ItineraryPage() {
           {/* Inline "Add event" button at the bottom of the timeline */}
           <div className="relative flex items-start gap-3 py-3 mt-1">
             <div className="relative z-10 flex-shrink-0 w-10 flex justify-center pt-2">
-              <div className="w-2.5 h-2.5 rounded-full bg-gray-100 border-2 border-solid border-gray-300" />
+              <div className="w-3 h-3 rounded-full bg-white border-[3px]" style={{ borderColor: '#1e3a5f' }} />
             </div>
             <button
               onClick={() => setShowForm(true)}

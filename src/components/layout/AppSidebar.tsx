@@ -75,7 +75,7 @@ export default function AppSidebar() {
 
   return (
     <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 lg:left-0 z-40">
-      <div className="flex flex-col h-full relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #0f172a 0%, #0c1425 50%, #091120 100%)' }}>
+      <div className="flex flex-col h-full relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #1e3a5f 0%, #1a3352 50%, #162d48 100%)' }}>
 
         {/* ── Background orbs for depth ── */}
         <div className="absolute top-20 -left-10 w-40 h-40 bg-blue-600/8 rounded-full blur-3xl pointer-events-none" />
@@ -84,18 +84,8 @@ export default function AppSidebar() {
 
         {/* ── Logo ── */}
         <div className="relative flex items-center justify-center px-6 pt-6 pb-4">
-          <img src="/logo.png" alt="GusTrips" className="h-14 brightness-0 invert opacity-80" />
+          <img src="/logo.png" alt="GusTrips" className="h-[135px] w-auto object-contain" />
         </div>
-
-        {/* ── Greeting ── */}
-        {user && (
-          <div className="relative px-5 pb-4">
-            <p className="text-white/30 text-[11px] font-medium">{greeting},</p>
-            <p className="text-white/80 text-[14px] font-semibold truncate">
-              {user.displayName || user.email?.split('@')[0]}
-            </p>
-          </div>
-        )}
 
         {/* ── Divider ── */}
         <div className="mx-5 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
@@ -118,7 +108,7 @@ export default function AppSidebar() {
                   'flex items-center gap-3 px-4 py-3 rounded-xl text-[13px] font-medium transition-all duration-200 relative group',
                   isActive
                     ? `${colors.bg} ${colors.active} font-semibold shadow-lg ${colors.glow} backdrop-blur-sm`
-                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]',
+                    : 'text-white hover:text-white hover:bg-white/[0.04]',
                 )}
               >
                 {/* Active bar */}
@@ -131,7 +121,7 @@ export default function AppSidebar() {
                 <Icon
                   className={classNames(
                     'w-5 h-5 flex-shrink-0 transition-colors duration-200',
-                    isActive ? colors.icon : 'text-white/25 group-hover:text-white/40',
+                    isActive ? colors.icon : 'text-white/95 group-hover:text-white',
                   )}
                 />
                 <span>{item.label}</span>
@@ -144,13 +134,13 @@ export default function AppSidebar() {
         <div className="relative px-5 pb-3">
           <div className="mx-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
           <div className="flex items-center gap-2 px-1 mb-3">
-            <Compass className="w-3.5 h-3.5 text-white/20" />
-            <span className="text-[10px] font-bold text-white/20 uppercase tracking-[0.12em]">Acciones</span>
+            <Compass className="w-3.5 h-3.5 text-white/90" />
+            <span className="text-[10px] font-bold text-white/90 uppercase tracking-[0.12em]">Acciones</span>
           </div>
           <button
             onClick={handleGlobalBackup}
             disabled={backingUp}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-white/35 hover:text-white/60 hover:bg-white/[0.04] transition-all duration-200 disabled:opacity-40"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] text-white hover:text-white/95 hover:bg-white/[0.04] transition-all duration-200 disabled:opacity-40"
           >
             {backingUp ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -170,20 +160,20 @@ export default function AppSidebar() {
               <div className="relative">
                 <div className="absolute -inset-0.5 bg-gradient-to-br from-blue-500 via-violet-500 to-rose-500 rounded-full opacity-60 blur-[1px]" />
                 <div className="relative w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center ring-2 ring-slate-800">
-                  <span className="text-white/80 text-xs font-bold">
+                  <span className="text-white text-xs font-bold">
                     {getInitials(user.displayName || user.email)}
                   </span>
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white/70 text-[12px] font-medium truncate">
+                <p className="text-white text-[12px] font-medium truncate">
                   {user.displayName || 'Usuario'}
                 </p>
-                <p className="text-white/25 text-[10px] truncate">{user.email}</p>
+                <p className="text-white/95 text-[10px] truncate">{user.email}</p>
               </div>
               <button
                 onClick={() => signOut()}
-                className="text-white/20 hover:text-rose-400 transition-colors duration-200 p-1.5 rounded-lg hover:bg-white/[0.05]"
+                className="text-white/90 hover:text-rose-400 transition-colors duration-200 p-1.5 rounded-lg hover:bg-white/[0.05]"
                 title="Cerrar sesion"
                 aria-label="Cerrar sesion"
               >

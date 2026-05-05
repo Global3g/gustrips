@@ -39,6 +39,7 @@ export interface AlbumPhoto {
   url: string;
   date: string;
   caption?: string;
+  eventId?: string;
   uploadedAt: string;
 }
 
