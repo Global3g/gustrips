@@ -499,6 +499,7 @@ export default function ItineraryPage() {
             tripStartDate={trip?.startDate}
             tripEndDate={trip?.endDate}
             selectedDate={selectedDayStr}
+            onSelectedDateChange={(dateStr) => navigateToDay(parseISO(dateStr))}
             calendarView={calendarView}
             onCalendarViewChange={setCalendarView}
           />
@@ -533,81 +534,44 @@ export default function ItineraryPage() {
   }
 
   return (
-    <div className="space-y-0 max-w-3xl mx-auto relative">
-      {/* Location-based background photo */}
-      {dayLocationBg && viewMode === 'timeline' && (
-        <div
-          className="hidden lg:block pointer-events-none"
+    <>
+    {/* Location-based background photo — OUTSIDE main content stacking context */}
+    {dayLocationBg && viewMode === 'timeline' && (
+      <div
+        className="pointer-events-none left-0 lg:left-[280px]"
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 0,
+          overflow: 'hidden',
+        }}
+      >
+        <img
+          src={dayLocationBg}
+          alt=""
+          crossOrigin="anonymous"
+          referrerPolicy="no-referrer"
           style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: '280px',
-            zIndex: 0,
-            overflow: 'hidden',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            opacity: 0.45,
+            filter: 'saturate(0.4)',
           }}
-        >
-          <img
-            src={dayLocationBg}
-            alt=""
-            crossOrigin="anonymous"
-            referrerPolicy="no-referrer"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              opacity: 0.45,
-              filter: 'saturate(0.6)',
-            }}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(135deg, rgba(240,244,255,0.5) 0%, rgba(232,238,255,0.4) 50%, rgba(237,233,254,0.5) 100%)',
-            }}
-          />
-        </div>
-      )}
-      {/* Mobile version of background photo (no sidebar offset) */}
-      {dayLocationBg && viewMode === 'timeline' && (
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
         <div
-          className="lg:hidden pointer-events-none"
           style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            zIndex: 0,
-            overflow: 'hidden',
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(135deg, rgba(240,244,255,0.5) 0%, rgba(232,238,255,0.4) 50%, rgba(237,233,254,0.5) 100%)',
           }}
-        >
-          <img
-            src={dayLocationBg}
-            alt=""
-            crossOrigin="anonymous"
-            referrerPolicy="no-referrer"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              opacity: 0.35,
-              filter: 'saturate(0.5)',
-            }}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(135deg, rgba(240,244,255,0.5) 0%, rgba(232,238,255,0.4) 50%, rgba(237,233,254,0.5) 100%)',
-            }}
-          />
-        </div>
-      )}
+        />
+      </div>
+    )}
+    <div className="space-y-0 max-w-3xl mx-auto relative" style={{ zIndex: 1 }}>
       {/* View toggle */}
       <div className="flex items-center justify-end gap-1 mb-3">
         <button
@@ -622,7 +586,7 @@ export default function ItineraryPage() {
           onClick={() => setViewMode('timeline')}
           className={classNames(
             'p-2 rounded-lg transition-colors text-xs font-medium flex items-center gap-1.5',
-            viewMode === 'timeline' ? 'bg-red-100 text-red-800 font-bold' : 'text-black/60 hover:bg-white/50 hover:text-black'
+            viewMode === 'timeline' ? 'bg-red-100 text-red-800 font-bold' : 'text-gray-600 hover:bg-white/50 hover:text-black'
           )}
           aria-label="Vista por dia"
         >
@@ -633,7 +597,7 @@ export default function ItineraryPage() {
           onClick={() => setViewMode('agenda')}
           className={classNames(
             'p-2 rounded-lg transition-colors text-xs font-medium flex items-center gap-1.5',
-            (viewMode as string) === 'agenda' ? 'bg-red-100 text-red-800 font-bold' : 'text-black/60 hover:bg-white/50 hover:text-black'
+            (viewMode as string) === 'agenda' ? 'bg-red-100 text-red-800 font-bold' : 'text-gray-600 hover:bg-white/50 hover:text-black'
           )}
           aria-label="Vista calendario"
         >
@@ -644,7 +608,7 @@ export default function ItineraryPage() {
           onClick={() => setViewMode('all')}
           className={classNames(
             'p-2 rounded-lg transition-colors text-xs font-medium flex items-center gap-1.5',
-            viewMode === 'all' ? 'bg-red-100 text-red-800 font-bold' : 'text-black/60 hover:bg-white/50 hover:text-black'
+            viewMode === 'all' ? 'bg-red-100 text-red-800 font-bold' : 'text-gray-600 hover:bg-white/50 hover:text-black'
           )}
           aria-label="Vista completa del viaje"
         >
@@ -661,8 +625,8 @@ export default function ItineraryPage() {
           className={classNames(
             'w-9 h-9 rounded-lg flex items-center justify-center transition-colors',
             canGoPrev
-              ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              : 'text-gray-200 cursor-not-allowed',
+              ? 'text-gray-900 hover:bg-gray-100'
+              : 'text-gray-300 cursor-not-allowed',
           )}
           aria-label="Dia anterior"
         >
@@ -671,12 +635,12 @@ export default function ItineraryPage() {
 
         <div className="text-center" style={{ textShadow: '0 1px 3px rgba(255,255,255,0.8)' }}>
           <h1 className="text-xl font-extrabold text-black">
-            Dia {dayNumber} <span className="text-black/60 font-normal">de {totalDays}</span>
+            Dia {dayNumber} <span className="text-gray-600 font-normal">de {totalDays}</span>
           </h1>
-          <p className="text-black/80 text-sm font-semibold">{dayHeaderFormatted}</p>
+          <p className="text-gray-800 text-sm font-semibold">{dayHeaderFormatted}</p>
           {/* Editable day location */}
           <div className="mt-1 flex items-center justify-center gap-1">
-            <MapPin className="w-3 h-3 text-black/50 flex-shrink-0" />
+            <MapPin className="w-3 h-3 text-gray-500 flex-shrink-0" />
             <input
               type="text"
               defaultValue={dayLocationName}
@@ -687,7 +651,7 @@ export default function ItineraryPage() {
               }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               placeholder="¿Dónde estás este día?"
-              className="text-center text-xs font-semibold text-black/70 bg-transparent border-none outline-none placeholder:text-black/30 hover:text-black focus:text-black w-48 transition-colors"
+              className="text-center text-xs font-semibold text-gray-700 bg-transparent border-none outline-none placeholder:text-gray-300 hover:text-black focus:text-black w-48 transition-colors"
             />
           </div>
         </div>
@@ -698,8 +662,8 @@ export default function ItineraryPage() {
           className={classNames(
             'w-9 h-9 rounded-lg flex items-center justify-center transition-colors',
             canGoNext
-              ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              : 'text-gray-200 cursor-not-allowed',
+              ? 'text-gray-900 hover:bg-gray-100'
+              : 'text-gray-300 cursor-not-allowed',
           )}
           aria-label="Dia siguiente"
         >
@@ -872,16 +836,16 @@ export default function ItineraryPage() {
             </div>
             <button
               onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 text-sm font-bold text-black/70 hover:text-black hover:bg-white/60 px-3 py-2 rounded-xl transition-colors group"
+              className="flex items-center gap-2 text-sm font-bold text-gray-700 hover:text-black hover:bg-white/60 px-3 py-2 rounded-xl transition-colors group"
             >
-              <Plus className="w-4 h-4 text-black/50 group-hover:text-black transition-colors" />
+              <Plus className="w-4 h-4 text-gray-500 group-hover:text-black transition-colors" />
               Agregar evento
             </button>
             <button
               onClick={() => setShowScanModal(true)}
-              className="flex items-center gap-2 text-sm font-bold text-black/70 hover:text-black hover:bg-white/60 px-3 py-2 rounded-xl transition-colors group"
+              className="flex items-center gap-2 text-sm font-bold text-gray-700 hover:text-black hover:bg-white/60 px-3 py-2 rounded-xl transition-colors group"
             >
-              <FileSearch className="w-4 h-4 text-black/50 group-hover:text-black transition-colors" />
+              <FileSearch className="w-4 h-4 text-gray-500 group-hover:text-black transition-colors" />
               Escanear documento
             </button>
           </div>
@@ -948,5 +912,6 @@ export default function ItineraryPage() {
         tripId={tripId}
       />
     </div>
+    </>
   );
 }

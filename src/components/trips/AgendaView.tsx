@@ -71,6 +71,7 @@ interface AgendaViewProps {
   onReorder?: (events: TripEvent[]) => Promise<void>;
   onCreateAt?: (date: string, time: string) => void;
   selectedDate?: string;
+  onSelectedDateChange?: (date: string) => void;
   tripStartDate?: string;
   tripEndDate?: string;
   calendarView?: 'day' | 'week' | 'full';
@@ -79,7 +80,7 @@ interface AgendaViewProps {
 
 /* ─── Componente ──────────────────────────────────── */
 
-export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReorder, onCreateAt, selectedDate, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
+export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReorder, onCreateAt, selectedDate, onSelectedDateChange, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragInfoRef = useRef<{ event: TripEvent; durationMin: number; offsetY: number } | null>(null);
@@ -445,6 +446,45 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
           </button>
         ))}
 
+        {/* Day navigation arrows */}
+        {calendarView === 'day' && onSelectedDateChange && (
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => {
+                const currentDate = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+                const idx = dates.indexOf(currentDate);
+                if (idx > 0) onSelectedDateChange(dates[idx - 1]);
+              }}
+              disabled={(() => {
+                const currentDate = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+                return dates.indexOf(currentDate) <= 0;
+              })()}
+              className="p-1 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+              title="Día anterior"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <span className="text-[11px] text-gray-500 min-w-[80px] text-center">
+              {filteredDates.length > 0 && formatDateShortES(filteredDates[0])}
+            </span>
+            <button
+              onClick={() => {
+                const currentDate = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+                const idx = dates.indexOf(currentDate);
+                if (idx < dates.length - 1) onSelectedDateChange(dates[idx + 1]);
+              }}
+              disabled={(() => {
+                const currentDate = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
+                return dates.indexOf(currentDate) >= dates.length - 1;
+              })()}
+              className="p-1 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+              title="Día siguiente"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </div>
+        )}
+
         {/* Week navigation arrows */}
         {calendarView === 'week' && (
           <div className="ml-auto flex items-center gap-1">
@@ -694,16 +734,16 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                           {resizedHeight > 40 && (
                             <>
                               {/* Hora */}
-                              <p className="text-[10px] text-gray-700 leading-tight truncate">
+                              <p className="text-[10px] leading-tight truncate" style={{ color: "#111827" }}>
                                 {isContinuation
                                   ? `→ llega ${event.endTime || ''}`
                                   : (
                                     <>
                                       {event.startTime}
-                                      {tzAbbr && <span className="text-amber-600"> ({tzAbbr})</span>}
+                                      {tzAbbr && <span style={{ color: "#111827", fontWeight: 600 }}> ({tzAbbr})</span>}
                                       {event.endTime && ` – ${event.endTime}`}
                                       {event.details?.arrivalTimezone && (
-                                        <span className="text-amber-600">
+                                        <span style={{ color: "#111827", fontWeight: 600 }}>
                                           {' '}({getTimezoneAbbr(event.details.arrivalTimezone, event.details?.arrivalDate || date)})
                                         </span>
                                       )}
@@ -714,39 +754,33 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
 
                               {/* Detalles extra para vuelos */}
                               {event.type === 'flight' && !isContinuation && resizedHeight > 60 && (
-                                <p className="text-gray-700 text-[10px] leading-tight truncate">
+                                <p className="text-[10px] leading-tight truncate" style={{ color: "#111827" }}>
                                   {[event.details?.airline, event.details?.flightNumber].filter(Boolean).join(' · ')}
-                                  {flightDur && <span className="text-cyan-600 font-semibold"> · {flightDur}</span>}
+                                  {flightDur && <span style={{ color: "#111827", fontWeight: 600 }}> · {flightDur}</span>}
                                 </p>
                               )}
 
                               {/* Confirmación (vuelos) */}
                               {event.type === 'flight' && event.details?.confirmationCode && resizedHeight > 80 && (
-                                <p className="text-gray-700 text-[10px] truncate">
+                                <p className="text-[10px] truncate" style={{ color: "#111827" }}>
                                   Ref: {event.details.confirmationCode}
                                 </p>
                               )}
 
                               {/* Asiento + equipaje (vuelos) */}
                               {event.type === 'flight' && resizedHeight > 100 && (
-                                <p className="text-gray-700 text-[10px] truncate">
+                                <p className="text-[10px] truncate" style={{ color: "#111827" }}>
                                   {[event.details?.seatNumber && `Asiento ${event.details.seatNumber}`, event.details?.baggage].filter(Boolean).join(' · ')}
                                 </p>
                               )}
 
                               {/* Ubicación (no vuelos) */}
                               {event.type !== 'flight' && event.location && resizedHeight > 60 && (
-                                <p className="text-gray-700 text-[10px] truncate">{event.location}</p>
+                                <p className="text-[10px] truncate" style={{ color: "#111827" }}>{event.location}</p>
                               )}
                             </>
                           )}
 
-                          {/* Costo — posicionado al fondo */}
-                          {event.cost > 0 && resizedHeight > 50 && (
-                            <p className="text-emerald-600 text-[10px] font-semibold mt-auto">
-                              {formatCurrency(event.cost, event.currency)}
-                            </p>
-                          )}
 
                           {/* Handle de resize (barra al fondo) */}
                           {!isContinuation && (
