@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -45,7 +45,29 @@ const MORE_TABS = [
 export default function TripBottomNav({ tripId }: TripBottomNavProps) {
   const pathname = usePathname();
   const [showMore, setShowMore] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
   const basePath = `/trips/${tripId}`;
+
+  // Hide on scroll down, show on scroll up
+  useEffect(() => {
+    const scrollContainer = document.querySelector('.flex-1.overflow-y-auto');
+    if (!scrollContainer) return;
+
+    const handleScroll = () => {
+      const currentY = scrollContainer.scrollTop;
+      if (currentY > lastScrollY.current && currentY > 60) {
+        setHidden(true);
+        setShowMore(false);
+      } else {
+        setHidden(false);
+      }
+      lastScrollY.current = currentY;
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollContainer.removeEventListener('scroll', handleScroll);
+  }, []);
 
   function isActive(tabPath: string): boolean {
     const fullPath = `${basePath}${tabPath}`;
@@ -102,7 +124,7 @@ export default function TripBottomNav({ tripId }: TripBottomNavProps) {
       </AnimatePresence>
 
       {/* Bottom nav bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden safe-area-bottom">
+      <div className={`fixed bottom-0 left-0 right-0 z-50 lg:hidden safe-area-bottom transition-transform duration-300 ${hidden ? 'translate-y-full' : 'translate-y-0'}`}>
         <div className="px-3 pb-2 pt-1">
           <nav className="flex items-center justify-around rounded-2xl px-1 py-1.5 bg-white border border-gray-200 shadow-lg shadow-black/5">
             {/* Back to dashboard */}

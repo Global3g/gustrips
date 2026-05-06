@@ -8,6 +8,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+/* ── Fetch — required for PWA install prompt ── */
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
+
 /* ── Push event — show notification ── */
 self.addEventListener('push', (event) => {
   if (!event.data) return;
@@ -24,8 +29,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title || 'GusTrips', {
       body: body || '',
-      icon: icon || '/logo.png',
-      badge: badge || '/logo.png',
+      icon: icon || '/icon-192.png',
+      badge: badge || '/icon-192.png',
       tag: tag || 'gustrips-reminder',
       data: data || {},
       vibrate: [200, 100, 200],

@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useParams, usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import TripSidebar from '@/components/trips/TripSidebar';
-import TripBottomNav from '@/components/trips/TripBottomNav';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import NotificationBanner from '@/components/NotificationBanner';
 import { useEvents } from '@/hooks/useEvents';
@@ -89,7 +90,7 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
       </div>
 
       {/* Main content - scrollable, full width */}
-      <div className="flex-1 overflow-y-auto relative pb-20 lg:pb-0" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eeff 30%, #dbeafe 60%, #ede9fe 100%)' }}>
+      <div className="flex-1 overflow-y-auto relative" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eeff 30%, #dbeafe 60%, #ede9fe 100%)' }}>
         {/* Background cover image — only on non-itinerary pages */}
         {trip?.coverImage && !pathname.includes('/itinerary') && (
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -107,13 +108,17 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
         <div className="absolute top-1/3 left-0 w-80 h-80 bg-violet-200/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-rose-200/10 rounded-full blur-3xl pointer-events-none" />
         <NotificationBanner />
+        {/* Back to dashboard — mobile only */}
+        <div className="lg:hidden relative px-5 pt-4 pb-0">
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Inicio
+          </Link>
+        </div>
         <div className="relative p-5 sm:p-8 lg:p-12">
           {children}
         </div>
       </div>
-
-      {/* Mobile bottom nav for trip sections */}
-      <TripBottomNav tripId={tripId} />
 
       {/* Scan modal from sidebar */}
       <ScanDocumentModal

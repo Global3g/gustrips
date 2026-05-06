@@ -164,21 +164,20 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
           color: white !important;
         }
         .leaflet-control-zoom a {
-          background: rgba(15, 15, 25, 0.8) !important;
-          backdrop-filter: blur(10px) !important;
-          color: white !important;
-          border-color: rgba(255,255,255,0.15) !important;
+          background: white !important;
+          color: #374151 !important;
+          border-color: #e5e7eb !important;
         }
         .leaflet-control-zoom a:hover {
-          background: rgba(30, 30, 50, 0.9) !important;
+          background: #f3f4f6 !important;
         }
         .leaflet-control-attribution {
-          background: rgba(15, 15, 25, 0.6) !important;
-          color: rgba(255,255,255,0.3) !important;
+          background: rgba(255,255,255,0.8) !important;
+          color: #9ca3af !important;
           font-size: 10px !important;
         }
         .leaflet-control-attribution a {
-          color: rgba(255,255,255,0.4) !important;
+          color: #6b7280 !important;
         }
       `}</style>
       <MapContainer
@@ -189,7 +188,7 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
         <FitBounds positions={positions} />

@@ -25,7 +25,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <AuthGuard>
       <ToastProvider>
         <ErrorBoundary>
-          <div className="flex min-h-screen" style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #f0f4ff 0%, #e8eeff 30%, #dbeafe 60%, #ede9fe 100%)' }}>
+          <div className="flex min-h-screen" style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #0c1929 0%, #132438 50%, #0f1f33 100%)' }}>
             {/* Sidebar - desktop only, hidden inside trip views */}
             {!inTrip && <AppSidebar />}
 
@@ -36,12 +36,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               'relative',
               inTrip ? 'flex-1 min-w-0' : 'flex-1 min-w-0 pb-20 lg:pb-0 lg:ml-64 p-5 sm:p-8 lg:p-10',
             )}>
-              {/* Decorative orbs for main pages */}
+              {/* Decorative orbs */}
               {!inTrip && (
                 <>
-                  <div className="absolute top-10 right-10 w-80 h-80 bg-amber-100/20 rounded-full blur-3xl pointer-events-none" />
-                  <div className="absolute top-1/2 left-0 w-64 h-64 bg-orange-100/15 rounded-full blur-3xl pointer-events-none" />
-                  <div className="absolute bottom-20 right-1/3 w-56 h-56 bg-amber-200/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
                 </>
               )}
               <div className={classNames('relative', inTrip ? '' : 'animate-page-in')}>

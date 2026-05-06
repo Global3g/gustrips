@@ -1,10 +1,11 @@
-import type { ExpenseCategory } from '@/types';
+import type { ExpenseCategory, PaymentMethod } from '@/types';
 
 export interface ReceiptData {
   description: string;
   amount: number;
   currency: string;
   category: ExpenseCategory;
+  paymentMethod?: PaymentMethod;
 }
 
 /**
@@ -45,7 +46,7 @@ export async function extractReceiptData(file: File): Promise<ReceiptData | null
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          generationConfig: { thinkingConfig: { thinkingBudget: 0 } },
+          generationConfig: { thinkingConfig: { thinkingBudget: 1024 } },
           contents: [
             {
               parts: [
@@ -56,7 +57,7 @@ export async function extractReceiptData(file: File): Promise<ReceiptData | null
                   },
                 },
                 {
-                  text: `Extract from this receipt/ticket: merchant name or description, total amount (number only), currency (MXN/USD/EUR/GBP/CAD), and category (one of: flight, hotel, car_rental, activity, restaurant, transport, cruise, souvenirs, snacks, clothing, fuel, misc, other). Return JSON only: {"description", "amount", "currency", "category"}`,
+                  text: `Extract from this receipt/ticket: merchant name or description, total amount (number only), currency (MXN/USD/EUR/GBP/CAD), category (one of: flight, hotel, car_rental, activity, restaurant, transport, cruise, souvenirs, snacks, clothing, fuel, misc), and payment method (one of: cash, debit, credit, transfer, points, other — detect from "efectivo"/"contado"=cash, "tarjeta de débito"=debit, "tarjeta de crédito"/"TDC"/"visa"/"mastercard"=credit, "transferencia"/"SPEI"=transfer). Return JSON only: {"description", "amount", "currency", "category", "paymentMethod"}`,
                 },
               ],
             },
@@ -101,6 +102,7 @@ export async function extractReceiptData(file: File): Promise<ReceiptData | null
       amount?: number;
       currency?: string;
       category?: string;
+      paymentMethod?: string;
     };
 
     // Validate required fields
@@ -122,11 +124,18 @@ export async function extractReceiptData(file: File): Promise<ReceiptData | null
       ? parsed.currency!
       : 'MXN';
 
+    // Validate payment method
+    const validPaymentMethods: PaymentMethod[] = ['cash', 'debit', 'credit', 'transfer', 'points', 'other'];
+    const paymentMethod: PaymentMethod | undefined = validPaymentMethods.includes(parsed.paymentMethod as PaymentMethod)
+      ? (parsed.paymentMethod as PaymentMethod)
+      : undefined;
+
     return {
       description: parsed.description,
       amount: parsed.amount,
       currency,
       category,
+      paymentMethod,
     };
   } catch {
     return null;

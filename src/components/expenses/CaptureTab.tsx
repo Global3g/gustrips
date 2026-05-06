@@ -111,6 +111,7 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
         setAmount(String(result.amount));
         setCurrency(result.currency);
         setCategory(result.category);
+        if (result.paymentMethod) setPaymentMethod(result.paymentMethod);
         toast('Datos extraidos del ticket', 'success');
       }
     } catch {

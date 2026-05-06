@@ -220,19 +220,24 @@ export default function PhotosPage() {
 
   const handleDelete = useCallback(
     async (photo: typeof flatPhotos[number]) => {
-      if (photo.source !== 'album') return; // Only album photos can be deleted here
       setDeleting(photo.url);
       try {
-        // If photo is linked to an event, also remove from event.photos[]
-        if (photo.eventId) {
-          const event = events.find((e) => e.id === photo.eventId);
-          if (event) {
+        // Remove photo URL from ALL events that reference it
+        const linkedEvents = events.filter((e) => e.photos?.includes(photo.url));
+        for (const event of linkedEvents) {
+          try {
             const updatedPhotos = (event.photos ?? []).filter((p) => p !== photo.url);
-            await updateEvent(photo.eventId, { photos: updatedPhotos });
+            await updateEvent(event.id, { photos: updatedPhotos });
+          } catch {
+            // Non-critical — continue
           }
         }
 
-        await deletePhoto(photo);
+        // Remove from album if it's there
+        if (photo.source === 'album') {
+          await deletePhoto(photo);
+        }
+
         toast('Foto eliminada', 'success');
         // Close lightbox if viewing deleted photo
         if (lightboxIndex !== null && flatPhotos[lightboxIndex]?.url === photo.url) {
@@ -532,8 +537,8 @@ export default function PhotosPage() {
                       )}
 
                       {/* Action buttons on hover */}
-                      {photo.source === 'album' && (
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {photo.source === 'album' && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -544,7 +549,8 @@ export default function PhotosPage() {
                           >
                             <Pencil className="w-3 h-3" />
                           </button>
-                          <button
+                        )}
+                        <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDelete(photo);
@@ -560,7 +566,6 @@ export default function PhotosPage() {
                             )}
                           </button>
                         </div>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -666,8 +671,7 @@ export default function PhotosPage() {
             </button>
 
             {/* Delete */}
-            {flatPhotos[lightboxIndex].source === 'album' && (
-              <button
+            <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(flatPhotos[lightboxIndex!]);
@@ -681,7 +685,6 @@ export default function PhotosPage() {
                   <Trash2 className="w-5 h-5" />
                 )}
               </button>
-            )}
 
             {/* Nav arrows */}
             {lightboxIndex > 0 && (

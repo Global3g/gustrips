@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import TimezoneSelect from '@/components/ui/TimezoneSelect';
 import Textarea from '@/components/ui/Textarea';
+import PlacesAutocomplete from '@/components/ui/PlacesAutocomplete';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import { classNames } from '@/lib/utils/helpers';
@@ -453,6 +454,9 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
     setStep((prev) => Math.max(prev - 1, 0));
   };
 
+  // Fields that should use Places Autocomplete
+  const LOCATION_FIELDS = new Set(['address', 'pickupLocation', 'dropoffLocation', 'portName']);
+
   const renderField = (field: FieldDef) => {
     const value = details[field.key] || '';
     const wrapperClass = field.colSpan === 2 ? 'col-span-2' : '';
@@ -465,6 +469,26 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
             options={field.options}
             value={value}
             onChange={(e) => handleDetailChange(field.key, e.target.value)}
+            compact
+          />
+        </div>
+      );
+    }
+
+    // Use Places Autocomplete for location/address fields
+    if (LOCATION_FIELDS.has(field.key)) {
+      return (
+        <div key={field.key} className={wrapperClass}>
+          <PlacesAutocomplete
+            label={field.label}
+            value={value}
+            onChange={(v) => handleDetailChange(field.key, v)}
+            onSelect={(place) => {
+              handleDetailChange(field.key, place.address || place.name);
+              setLatitude(String(place.lat));
+              setLongitude(String(place.lng));
+            }}
+            placeholder={field.placeholder}
             compact
           />
         </div>
@@ -653,37 +677,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
         </div>
       )}
 
-      {/* Coordenadas (solo para activity, restaurant, hotel, car_rental) */}
-      {type && ['activity', 'restaurant', 'hotel', 'car_rental'].includes(type) && (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
-          <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
-            Ubicacion en mapa
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              label="Latitud"
-              type="number"
-              step="any"
-              placeholder="Ej. 20.6736"
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              compact
-            />
-            <Input
-              label="Longitud"
-              type="number"
-              step="any"
-              placeholder="Ej. -103.3440"
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              compact
-            />
-          </div>
-          <p className="text-[10px] text-gray-300">
-            Tip: busca las coordenadas en Google Maps
-          </p>
-        </div>
-      )}
+      {/* Coordenadas — auto-llenadas por Places Autocomplete */}
 
       {/* Salida y llegada para tipos que NO son vuelo ni hotel */}
       {type && type !== 'flight' && type !== 'hotel' && (

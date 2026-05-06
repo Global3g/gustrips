@@ -32,6 +32,15 @@ export interface Trip {
   dayLocations?: Record<string, string>; // { "2026-05-10": "Southampton, England", "2026-05-11": "Portland, England" }
   albumPhotos?: AlbumPhoto[];
   mealPreferences?: MealPreferences;
+  quickNotes?: QuickNote[];
+}
+
+// ─── Quick Note ───────────────────────────────────
+export interface QuickNote {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: string;
 }
 
 // ─── Album Photo ───────────────────────────────────
