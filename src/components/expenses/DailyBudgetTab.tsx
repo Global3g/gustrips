@@ -166,7 +166,7 @@ function EventCostRow({ event, currency, onCostChange, paidWithPoints, pointsUse
   const [editing, setEditing] = useState(false);
   const [localCost, setLocalCost] = useState(String(event.cost || 0));
 
-  const eventConfig = EVENT_TYPES[event.type] || EVENT_TYPES.other;
+  const eventConfig = EVENT_TYPES[event.type] || EVENT_TYPES.misc;
 
   const handleBlur = () => {
     setEditing(false);

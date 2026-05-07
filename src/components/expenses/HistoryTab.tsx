@@ -15,6 +15,11 @@ import {
   Car,
   Ship,
   MoreHorizontal,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
 } from 'lucide-react';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useEvents } from '@/hooks/useEvents';
@@ -39,7 +44,11 @@ const CATEGORY_ICONS: Record<EventType, LucideIcon> = {
   restaurant: UtensilsCrossed,
   transport: Car,
   cruise: Ship,
-  other: MoreHorizontal,
+  souvenirs: Gift,
+  snacks: Coffee,
+  clothing: ShoppingBag,
+  fuel: Fuel,
+  misc: Package,
 };
 
 interface HistoryTabProps {
@@ -231,8 +240,8 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
         <AnimatePresence mode="popLayout">
           {filteredExpenses.map((expense, idx) => {
             const eventType = getEventType(expense.eventId) as EventType;
-            const cfg = EVENT_TYPES[eventType] ?? EVENT_TYPES.other;
-            const Icon = CATEGORY_ICONS[eventType] ?? CATEGORY_ICONS.other;
+            const cfg = EVENT_TYPES[eventType] ?? EVENT_TYPES.misc;
+            const Icon = CATEGORY_ICONS[eventType] ?? CATEGORY_ICONS.misc;
             const eventName = getEventName(expense.eventId);
             const payerName = getMemberName(expense.paidBy);
 

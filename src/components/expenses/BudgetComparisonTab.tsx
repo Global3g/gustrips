@@ -140,7 +140,7 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
     return events
       .filter((e) => e.cost > 0 || expenseByEvent.has(e.id) || pointsByEvent.has(e.id))
       .map((e) => {
-        const cfg = EVENT_TYPES[e.type] ?? EVENT_TYPES.other;
+        const cfg = EVENT_TYPES[e.type] ?? EVENT_TYPES.misc;
         const planned = e.cost ?? 0;
         const actual = expenseByEvent.get(e.id) ?? 0;
         const pts = pointsByEvent.get(e.id);
