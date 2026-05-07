@@ -748,7 +748,7 @@ export default function PhotosPage() {
                       {/* Event type badge */}
                       {group.eventType && (
                         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
-                          <span>{EVENT_TYPES[group.eventType as EventType]?.label || group.eventType}</span>
+                          <span>{(EVENT_TYPES as any)[group.eventType]?.label || group.eventType}</span>
                         </div>
                       )}
                       {/* Event name badge (from details) */}
