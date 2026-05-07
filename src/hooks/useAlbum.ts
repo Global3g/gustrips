@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -82,7 +82,28 @@ interface UseAlbumReturn {
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
-  const albumPhotos: AlbumPhoto[] = trip?.albumPhotos ?? [];
+  // Deduplicate photos by URL (keep the last occurrence)
+  const rawPhotos = trip?.albumPhotos ?? [];
+  const photoMap = new Map<string, AlbumPhoto>();
+  rawPhotos.forEach((photo) => {
+    photoMap.set(photo.url, photo);
+  });
+  const albumPhotos: AlbumPhoto[] = Array.from(photoMap.values());
+
+  // Clean up duplicates in Firestore if detected
+  useEffect(() => {
+    if (rawPhotos.length > albumPhotos.length && albumPhotos.length > 0) {
+      const db = getClientDb();
+      const tripRef = doc(db, 'trips', tripId);
+      updateDoc(tripRef, {
+        albumPhotos,
+        updatedAt: nowISO(),
+      }).catch((err) => {
+        console.error('Error cleaning up duplicate photos:', err);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId, rawPhotos.length]);
 
   const addPhoto = useCallback(
     async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {
