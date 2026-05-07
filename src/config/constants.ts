@@ -18,7 +18,11 @@ export const EVENT_TYPES: Record<EventType, { label: string; icon: string; color
   restaurant: { label: 'Restaurante', icon: 'UtensilsCrossed', color: '#f97316' },
   transport: { label: 'Transporte', icon: 'Car', color: '#3b82f6' },
   cruise: { label: 'Puerto / Crucero', icon: 'Ship', color: '#7dd3fc' },
-  other: { label: 'Otro', icon: 'MoreHorizontal', color: '#6b7280' },
+  souvenirs: { label: 'Souvenirs', icon: 'Gift', color: '#e879f9' },
+  snacks: { label: 'Snacks', icon: 'Coffee', color: '#fb923c' },
+  clothing: { label: 'Ropa y Accesorios', icon: 'ShoppingBag', color: '#f43f5e' },
+  fuel: { label: 'Combustible', icon: 'Fuel', color: '#84cc16' },
+  misc: { label: 'Otros', icon: 'Package', color: '#94a3b8' },
 };
 
 export const EXPENSE_CATEGORIES: Record<ExpenseCategory, { label: string; icon: string; color: string }> = {
@@ -82,7 +86,11 @@ export const EVENT_TYPE_TO_DOC_CATEGORY: Record<EventType, DocumentCategory> = {
   activity: 'activity',
   transport: 'transport',
   cruise: 'cruise',
-  other: 'other',
+  souvenirs: 'other',
+  snacks: 'other',
+  clothing: 'other',
+  fuel: 'other',
+  misc: 'other',
 };
 
 export const CURRENCIES = ['MXN', 'USD', 'EUR', 'GBP', 'CAD'] as const;

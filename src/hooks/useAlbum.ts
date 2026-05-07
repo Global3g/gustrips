@@ -75,7 +75,7 @@ function cleanUndefined<T extends object>(obj: T): T {
 
 interface UseAlbumReturn {
   albumPhotos: AlbumPhoto[];
-  addPhoto: (file: File, date: string, caption?: string) => Promise<AlbumPhoto>;
+  addPhoto: (file: File, date: string, caption?: string, eventId?: string) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
 }
@@ -84,7 +84,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
   const albumPhotos: AlbumPhoto[] = trip?.albumPhotos ?? [];
 
   const addPhoto = useCallback(
-    async (file: File, date: string, caption?: string): Promise<AlbumPhoto> => {
+    async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {
       const storage = getClientStorage();
       const db = getClientDb();
       const timestamp = Date.now();
@@ -103,6 +103,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         uploadedAt: nowISO(),
       };
       if (caption) photo.caption = caption;
+      if (eventId) photo.eventId = eventId;
 
       const tripRef = doc(db, 'trips', tripId);
       await updateDoc(tripRef, {

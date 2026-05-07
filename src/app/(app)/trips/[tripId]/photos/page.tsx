@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, parseISO, eachDayOfInterval } from 'date-fns';
@@ -22,9 +22,60 @@ import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
 import { useToast } from '@/context/ToastContext';
 import { formatDateES } from '@/lib/utils/helpers';
+import { EVENT_TYPES } from '@/config/constants';
 import type { AlbumPhoto } from '@/types';
 
 /* ─── Photo Album Page ──────────────────────────── */
+
+/* Helper to get the detail field key for event name based on type */
+function getEventNameFieldKey(eventType: string): string | null {
+  switch (eventType) {
+    case 'restaurant':
+      return 'restaurantName';
+    case 'hotel':
+      return 'hotelName';
+    case 'activity':
+      return 'activityName';
+    case 'car_rental':
+      return 'rentalCompany';
+    case 'cruise':
+      return 'portName';
+    case 'flight':
+      return 'airline';
+    case 'transport':
+      return 'transportMode';
+    default:
+      return null;
+  }
+}
+
+/* Helper to extract event name from details */
+function getEventName(event: any): string | undefined {
+  if (!event || !event.details) return undefined;
+
+  switch (event.type) {
+    case 'restaurant':
+      return event.details.restaurantName;
+    case 'hotel':
+      return event.details.hotelName;
+    case 'activity':
+      return event.details.activityName;
+    case 'car_rental':
+      return event.details.rentalCompany;
+    case 'cruise':
+      return event.details.portName;
+    case 'flight':
+      if (event.details.airline) return event.details.airline;
+      if (event.details.origin && event.details.destination) {
+        return `${event.details.origin} → ${event.details.destination}`;
+      }
+      return undefined;
+    case 'transport':
+      return event.details.transportMode;
+    default:
+      return undefined;
+  }
+}
 
 export default function PhotosPage() {
   const params = useParams();
@@ -43,7 +94,29 @@ export default function PhotosPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [showLinkModal, setShowLinkModal] = useState(false);
+  const [modalCity, setModalCity] = useState('');
+  const [modalCountry, setModalCountry] = useState('');
+  const [modalEventName, setModalEventName] = useState('');
+  const [modalEventType, setModalEventType] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* ── Pre-fill fields when event is selected ── */
+  useEffect(() => {
+    if (selectedEventId) {
+      const event = events.find((e) => e.id === selectedEventId);
+      if (event) {
+        setModalCity(event.city || '');
+        setModalCountry(event.country || '');
+        setModalEventType(event.type || '');
+        setModalEventName(getEventName(event) || '');
+      }
+    } else {
+      setModalCity('');
+      setModalCountry('');
+      setModalEventType('');
+      setModalEventName('');
+    }
+  }, [selectedEventId, events]);
 
   /* ── All photos: album + event photos (deduplicated), sorted by date ── */
 
@@ -83,16 +156,70 @@ export default function PhotosPage() {
     });
   }, [albumPhotos, events]);
 
-  /* ── Group photos by day ── */
+  /* ── Group photos by day and event ── */
 
-  const photosByDay = useMemo(() => {
-    const groups: Record<string, typeof allPhotos> = {};
+  const photoGroups = useMemo(() => {
+    const groups: Array<{
+      key: string;
+      date: string;
+      eventName?: string;
+      eventType?: string;
+      eventCity?: string;
+      eventCountry?: string;
+      eventId?: string;
+      photos: typeof allPhotos;
+    }> = [];
+
+    // Group by date first
+    const byDate: Record<string, typeof allPhotos> = {};
     for (const photo of allPhotos) {
-      if (!groups[photo.date]) groups[photo.date] = [];
-      groups[photo.date].push(photo);
+      if (!byDate[photo.date]) byDate[photo.date] = [];
+      byDate[photo.date].push(photo);
     }
-    return groups;
-  }, [allPhotos]);
+
+    // For each date, subgroup by event
+    for (const [date, photos] of Object.entries(byDate)) {
+      const byEvent: Record<string, typeof allPhotos> = {};
+      const noEvent: typeof allPhotos = [];
+
+      for (const photo of photos) {
+        if (photo.eventId) {
+          const key = photo.eventId;
+          if (!byEvent[key]) byEvent[key] = [];
+          byEvent[key].push(photo);
+        } else {
+          noEvent.push(photo);
+        }
+      }
+
+      // Add event groups
+      for (const [eventId, eventPhotos] of Object.entries(byEvent)) {
+        const event = events.find((e) => e.id === eventId);
+        groups.push({
+          key: `${date}-${eventId}`,
+          date,
+          eventName: getEventName(event),
+          eventType: event?.type,
+          eventCity: event?.city,
+          eventCountry: event?.country,
+          eventId,
+          photos: eventPhotos,
+        });
+      }
+
+      // Add non-event photos
+      if (noEvent.length > 0) {
+        groups.push({
+          key: `${date}-no-event`,
+          date,
+          photos: noEvent,
+        });
+      }
+    }
+
+    // Sort by date
+    return groups.sort((a, b) => a.date.localeCompare(b.date));
+  }, [allPhotos, events]);
 
   /* ── Trip days for day numbering ── */
 
@@ -134,13 +261,17 @@ export default function PhotosPage() {
       // Always show linking modal to pick date and optionally link to event
       setPendingFiles(fileArray);
       setSelectedEventId('');
+      setModalCity('');
+      setModalCountry('');
+      setModalEventName('');
+      setModalEventType('');
       setShowLinkModal(true);
     },
     [],
   );
 
   const uploadFiles = useCallback(
-    async (fileArray: File[], eventId: string) => {
+    async (fileArray: File[], eventId: string, city?: string, country?: string, eventName?: string, eventType?: string) => {
       setUploading(true);
       const today = selectedDate;
       let successCount = 0;
@@ -148,14 +279,31 @@ export default function PhotosPage() {
       try {
         for (const file of fileArray) {
           try {
-            const photo = await addPhoto(file, today);
+            const photo = await addPhoto(file, today, undefined, eventId || undefined);
 
             // If linked to an event, also add photo URL to event.photos[]
             if (eventId) {
               try {
                 const event = events.find((e) => e.id === eventId);
                 const currentPhotos = event?.photos ?? [];
-                await updateEvent(eventId, { photos: [...currentPhotos, photo.url] });
+                const updates: any = { photos: [...currentPhotos, photo.url] };
+
+                // Update city/country if provided and different from event
+                if (city && city !== event?.city) updates.city = city;
+                if (country && country !== event?.country) updates.country = country;
+
+                // Update event name in details if provided
+                if (eventName && eventType) {
+                  const detailKey = getEventNameFieldKey(eventType);
+                  if (detailKey) {
+                    const currentDetails = event?.details || {};
+                    if (currentDetails[detailKey] !== eventName) {
+                      updates.details = { ...currentDetails, [detailKey]: eventName };
+                    }
+                  }
+                }
+
+                await updateEvent(eventId, updates);
               } catch (linkErr) {
                 console.error('Error vinculando foto al evento:', linkErr);
               }
@@ -301,13 +449,6 @@ export default function PhotosPage() {
     setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
   }, []);
 
-  /* ── Sorted day keys ── */
-
-  const sortedDays = useMemo(
-    () => Object.keys(photosByDay).sort(),
-    [photosByDay],
-  );
-
   const totalPhotos = flatPhotos.length;
 
   return (
@@ -390,7 +531,15 @@ export default function PhotosPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-            onClick={() => { setShowLinkModal(false); setPendingFiles([]); }}
+            onClick={() => {
+              setShowLinkModal(false);
+              setPendingFiles([]);
+              setSelectedEventId('');
+              setModalCity('');
+              setModalCountry('');
+              setModalEventName('');
+              setModalEventType('');
+            }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -440,9 +589,93 @@ export default function PhotosPage() {
                   ));
                 })()}
               </select>
+              {/* Event details fields (shown if event selected) */}
+              {selectedEventId && (
+                <div className="mb-4 space-y-3">
+                  {/* Event type and name */}
+                  <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
+                    <p className="text-xs font-medium text-purple-700 mb-2">Información del evento</p>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={modalEventType ? EVENT_TYPES[modalEventType as keyof typeof EVENT_TYPES]?.label || modalEventType : ''}
+                            disabled
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 bg-gray-50"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Nombre {modalEventType && `(${EVENT_TYPES[modalEventType as keyof typeof EVENT_TYPES]?.label})`}
+                        </label>
+                        <input
+                          type="text"
+                          value={modalEventName}
+                          onChange={(e) => setModalEventName(e.target.value)}
+                          placeholder={
+                            modalEventType === 'restaurant' ? 'Ej. Azia' :
+                            modalEventType === 'hotel' ? 'Ej. Hotel Playa' :
+                            modalEventType === 'activity' ? 'Ej. Snorkel' :
+                            'Nombre del lugar'
+                          }
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                    {!modalEventName && (
+                      <p className="text-xs text-purple-600 mt-2">
+                        💡 Agrega el nombre para identificar mejor este lugar
+                      </p>
+                    )}
+                  </div>
+
+                  {/* City and country */}
+                  <div className="p-3 bg-green-50 rounded-xl border border-green-200">
+                    <p className="text-xs font-medium text-green-700 mb-2">Ubicación</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Ciudad</label>
+                        <input
+                          type="text"
+                          value={modalCity}
+                          onChange={(e) => setModalCity(e.target.value)}
+                          placeholder="Ej. Mazatlán"
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">País</label>
+                        <input
+                          type="text"
+                          value={modalCountry}
+                          onChange={(e) => setModalCountry(e.target.value)}
+                          placeholder="Ej. México"
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                    {(!modalCity || !modalCountry) && (
+                      <p className="text-xs text-green-600 mt-2">
+                        💡 Agrega ciudad y país para recordar mejor este momento
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => { setShowLinkModal(false); setPendingFiles([]); }}
+                  onClick={() => {
+                    setShowLinkModal(false);
+                    setPendingFiles([]);
+                    setSelectedEventId('');
+                    setModalCity('');
+                    setModalCountry('');
+                    setModalEventName('');
+                    setModalEventType('');
+                  }}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
                 >
                   Cancelar
@@ -450,8 +683,13 @@ export default function PhotosPage() {
                 <button
                   onClick={() => {
                     setShowLinkModal(false);
-                    uploadFiles(pendingFiles, selectedEventId);
+                    uploadFiles(pendingFiles, selectedEventId, modalCity, modalCountry, modalEventName, modalEventType);
                     setPendingFiles([]);
+                    setSelectedEventId('');
+                    setModalCity('');
+                    setModalCountry('');
+                    setModalEventName('');
+                    setModalEventType('');
                   }}
                   className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors"
                 >
@@ -463,7 +701,7 @@ export default function PhotosPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Photo grid by day ── */}
+      {/* ── Photo grid by day and event ── */}
       {totalPhotos === 0 ? (
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-100 p-12 text-center">
           <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
@@ -475,11 +713,11 @@ export default function PhotosPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {sortedDays.map((dateStr) => {
-            const dayNum = tripDays[dateStr];
+          {photoGroups.map((group) => {
+            const dayNum = tripDays[group.date];
             let dayLabel: string;
             try {
-              const d = parseISO(dateStr);
+              const d = parseISO(group.date);
               const weekday = format(d, 'EEEE', { locale: es });
               const capitalWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
               const dateFormatted = format(d, "d 'de' MMMM", { locale: es });
@@ -487,27 +725,53 @@ export default function PhotosPage() {
                 ? `Dia ${dayNum} — ${capitalWeekday} ${dateFormatted}`
                 : `${capitalWeekday} ${dateFormatted}`;
             } catch {
-              dayLabel = dateStr;
+              dayLabel = group.date;
             }
 
-            const dayPhotos = photosByDay[dateStr];
-
             return (
-              <div key={dateStr}>
-                {/* Day header */}
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-sm">
-                    {dayNum || '#'}
+              <div key={group.key}>
+                {/* Group header with event info */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-sm">
+                      {dayNum || '#'}
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-800">{dayLabel}</h2>
+                    <span className="text-xs text-gray-400 font-medium">
+                      {group.photos.length} foto{group.photos.length !== 1 ? 's' : ''}
+                    </span>
                   </div>
-                  <h2 className="text-lg font-bold text-gray-800">{dayLabel}</h2>
-                  <span className="text-xs text-gray-400 font-medium">
-                    {dayPhotos.length} foto{dayPhotos.length !== 1 ? 's' : ''}
-                  </span>
+
+                  {/* Event and location info */}
+                  {(group.eventType || group.eventName) && (
+                    <div className="ml-11 flex flex-wrap items-center gap-2">
+                      {/* Event type badge */}
+                      {group.eventType && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
+                          <span>{EVENT_TYPES[group.eventType]?.label || group.eventType}</span>
+                        </div>
+                      )}
+                      {/* Event name badge (from details) */}
+                      {group.eventName && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold">
+                          <span>{group.eventName}</span>
+                        </div>
+                      )}
+                      {/* City and country badge */}
+                      {(group.eventCity || group.eventCountry) && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium">
+                          <span>
+                            {[group.eventCity, group.eventCountry].filter(Boolean).join(', ')}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Photo grid */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {dayPhotos.map((photo) => (
+                  {group.photos.map((photo) => (
                     <div
                       key={photo.url}
                       className="relative group rounded-xl overflow-hidden bg-gray-100 aspect-square cursor-pointer"
@@ -526,13 +790,6 @@ export default function PhotosPage() {
                       {photo.caption && (
                         <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <p className="text-white text-xs font-medium truncate">{photo.caption}</p>
-                        </div>
-                      )}
-
-                      {/* Event badge */}
-                      {photo.eventTitle && (
-                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-blue-500/80 backdrop-blur-sm text-[10px] text-white font-semibold">
-                          {photo.eventTitle}
                         </div>
                       )}
 

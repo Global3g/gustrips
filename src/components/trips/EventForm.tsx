@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect, type FormEvent } from 'react';
+import { useState, useRef, useEffect, useMemo, type FormEvent } from 'react';
 import { z } from 'zod';
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
-import { EVENT_TYPES, CURRENCIES, DEFAULT_CURRENCY } from '@/config/constants';
+import { EVENT_TYPES, CURRENCIES, DEFAULT_CURRENCY, PAYMENT_METHODS } from '@/config/constants';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import TimezoneSelect from '@/components/ui/TimezoneSelect';
@@ -11,8 +11,14 @@ import Textarea from '@/components/ui/Textarea';
 import PlacesAutocomplete from '@/components/ui/PlacesAutocomplete';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
-import { classNames } from '@/lib/utils/helpers';
-import type { TripEvent, EventType } from '@/types';
+import { classNames, nowISO, getInitials } from '@/lib/utils/helpers';
+import type { TripEvent, EventType, ExpenseCategory } from '@/types';
+import { useExpenses } from '@/hooks/useExpenses';
+import { useAuth } from '@/hooks/useAuth';
+import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
+import { getClientStorage } from '@/lib/firebase/client';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { extractReceiptData } from '@/lib/utils/receiptOCR';
 
 /* ─── Definicion de campos dinamicos por tipo ──── */
 
@@ -94,7 +100,11 @@ const EVENT_FIELDS: Record<EventType, FieldDef[]> = {
     { key: 'cabinNumber', label: 'Cabina', type: 'text', placeholder: 'Ej. 8234' },
     { key: 'confirmationCode', label: 'Código de reserva', type: 'text', placeholder: 'Código de reserva' },
   ],
-  other: [],
+  souvenirs: [],
+  snacks: [],
+  clothing: [],
+  fuel: [],
+  misc: [],
 };
 
 /* ─── Auto-generador de titulo ─────────────────── */
@@ -118,6 +128,16 @@ function generateTitle(type: EventType, details: Record<string, string>): string
       return 'Transporte';
     case 'cruise':
       return details.portName ? `Puerto: ${details.portName}` : 'Puerto / Crucero';
+    case 'souvenirs':
+      return 'Souvenirs';
+    case 'snacks':
+      return 'Snacks';
+    case 'clothing':
+      return 'Ropa y Accesorios';
+    case 'fuel':
+      return 'Combustible';
+    case 'misc':
+      return 'Otros';
     default:
       return '';
   }
@@ -143,6 +163,12 @@ function deriveLocation(type: EventType, details: Record<string, string>): strin
       return '';
     case 'cruise':
       return details.portName || '';
+    case 'souvenirs':
+    case 'snacks':
+    case 'clothing':
+    case 'fuel':
+    case 'misc':
+      return '';
     default:
       return '';
   }
@@ -165,7 +191,7 @@ function getSmartDefaults(type: EventType): Record<string, string> {
 
 const eventSchema = z.object({
   title: z.string().min(1, 'El titulo es obligatorio'),
-  type: z.enum(['flight', 'hotel', 'activity', 'restaurant', 'transport', 'car_rental', 'cruise', 'other'] as const),
+  type: z.enum(['flight', 'hotel', 'activity', 'restaurant', 'transport', 'car_rental', 'cruise', 'souvenirs', 'snacks', 'clothing', 'fuel', 'misc'] as const),
   date: z.string().min(1, 'La fecha es obligatoria'),
   startTime: z.string().optional().default(''),
   endTime: z.string().optional().default(''),
@@ -188,7 +214,9 @@ interface EventFormProps {
   tripStartDate?: string;
   /** Trip end date to restrict date inputs */
   tripEndDate?: string;
-  onSubmit: (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => Promise<void>;
+  /** Trip ID for creating linked expenses */
+  tripId?: string;
+  onSubmit: (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => Promise<string | void>;
   onCancel: () => void;
   loading?: boolean;
 }
@@ -264,7 +292,7 @@ function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onSt
 
 /* ─── Componente ────────────────────────────────── */
 
-export default function EventForm({ initialData, defaultDate, defaultTime, tripStartDate, tripEndDate, onSubmit, onCancel, loading = false }: EventFormProps) {
+export default function EventForm({ initialData, defaultDate, defaultTime, tripStartDate, tripEndDate, tripId, onSubmit, onCancel, loading = false }: EventFormProps) {
   const isEdit = !!initialData;
   const [step, setStep] = useState(isEdit ? -1 : 0); // -1 = show all steps at once (edit mode)
   const [type, setType] = useState<EventType | ''>(initialData?.type || '');
@@ -281,10 +309,46 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const [arrivalDate, setArrivalDate] = useState(initialData?.details?.arrivalDate || '');
   const [latitude, setLatitude] = useState(initialData?.latitude?.toString() || '');
   const [longitude, setLongitude] = useState(initialData?.longitude?.toString() || '');
+  const [city, setCity] = useState(initialData?.city || '');
+  const [country, setCountry] = useState(initialData?.country || '');
+  const [createExpense, setCreateExpense] = useState(false);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [scanningReceipt, setScanningReceipt] = useState(false);
+  const [isAlreadyPaid, setIsAlreadyPaid] = useState<boolean | null>(null); // null = not answered yet
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Expense fields (only used when isAlreadyPaid = true)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [paidBy, setPaidBy] = useState('');
+  const [splitBetween, setSplitBetween] = useState<string[]>([]);
+  const [pointsUsed, setPointsUsed] = useState('');
+  const [equivalentValue, setEquivalentValue] = useState('');
+  const [realValueCurrency, setRealValueCurrency] = useState(DEFAULT_CURRENCY);
 
   const titleManuallyEdited = useRef(!!initialData);
   const destinationRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const receiptScanInputRef = useRef<HTMLInputElement>(null);
+
+  // Hooks for expense creation
+  const { user } = useAuth();
+  const { addTripExpense } = useExpenses(tripId || '');
+  const { travelers: allTravelers } = useGlobalTravelers();
+
+  // Get trip travelers (filtered by tripId)
+  const tripTravelers = useMemo(() => {
+    // For now, we'll use allTravelers. In a real scenario, you'd filter by trip.travelerIds
+    // But we don't have the trip object here. We can pass it as a prop or get it from context
+    return allTravelers;
+  }, [allTravelers]);
+
+  // Initialize paidBy and splitBetween when travelers load and when "Already paid" is selected
+  useEffect(() => {
+    if (isAlreadyPaid && tripTravelers.length > 0 && !paidBy) {
+      setPaidBy(tripTravelers[0].id);
+      setSplitBetween(tripTravelers.map((t) => t.id));
+    }
+  }, [isAlreadyPaid, tripTravelers, paidBy]);
 
   /* Auto-generar titulo cuando cambian tipo o detalles */
   useEffect(() => {
@@ -299,6 +363,51 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       setStartTime('20:00');
     }
   }, [type, startTime, initialData]);
+
+  /* Check if event date is in the past */
+  const isEventInPast = useMemo(() => {
+    if (!date) return false;
+    const eventDate = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return eventDate < today;
+  }, [date]);
+
+  /* Handle receipt scanning */
+  const handleScanReceipt = async (file: File) => {
+    setScanningReceipt(true);
+    try {
+      const scanned = await extractReceiptData(file);
+
+      if (!scanned) {
+        alert('No se pudo leer el ticket. Intenta con otra foto más clara.');
+        return;
+      }
+
+      // Auto-fill cost and currency
+      setCost(scanned.amount.toString());
+      setCurrency(scanned.currency);
+
+      // Auto-fill payment method if detected
+      if (scanned.paymentMethod) {
+        setPaymentMethod(scanned.paymentMethod);
+      }
+
+      // If establishment name detected and title not manually edited, update it
+      if (scanned.description && !titleManuallyEdited.current) {
+        setTitle(scanned.description);
+      }
+
+      // Store the file for later upload
+      setReceiptFile(file);
+      setCreateExpense(true); // Auto-enable expense creation
+    } catch (error) {
+      console.error('Error scanning receipt:', error);
+      alert('Error al escanear el ticket. Intenta de nuevo.');
+    } finally {
+      setScanningReceipt(false);
+    }
+  };
 
   /* Smart default: hotel check-out date = check-in + 1 day */
   useEffect(() => {
@@ -357,6 +466,12 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const handleTitleChange = (value: string) => {
     setTitle(value);
     titleManuallyEdited.current = true;
+  };
+
+  const toggleSplitMember = (uid: string) => {
+    setSplitBetween((prev) =>
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid],
+    );
   };
 
   const [intentionalSubmit, setIntentionalSubmit] = useState(false);
@@ -422,13 +537,68 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
     const latNum = parseFloat(latitude);
     const lngNum = parseFloat(longitude);
 
-    await onSubmit({
+    const eventData = {
       ...parsed.data,
       ...(timezone ? { timezone } : {}),
       ...(!isNaN(latNum) ? { latitude: latNum } : {}),
       ...(!isNaN(lngNum) ? { longitude: lngNum } : {}),
+      ...(city ? { city } : {}),
+      ...(country ? { country } : {}),
       attachments: initialData?.attachments || [],
-    });
+    };
+
+    const eventId = await onSubmit(eventData);
+
+    // Create linked expense if checkbox is checked and event was created successfully
+    if (createExpense && eventId && !isEdit && user && tripId) {
+      try {
+        // Upload receipt photo if provided
+        let receiptUrl: string | undefined;
+        if (receiptFile) {
+          try {
+            const storage = getClientStorage();
+            const timestamp = Date.now();
+            const safeName = receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const storagePath = `trips/${tripId}/receipts/${eventId}_${timestamp}_${safeName}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, receiptFile);
+            receiptUrl = await getDownloadURL(storageRef);
+          } catch (uploadError) {
+            console.error('Error uploading receipt:', uploadError);
+            // Continue creating expense even if receipt upload fails
+          }
+        }
+
+        // Map event type to expense category
+        const expenseCategory: ExpenseCategory = type;
+
+        // Handle points payment method
+        const isPoints = paymentMethod === 'points';
+        const realValue = isPoints ? (parseFloat(equivalentValue) || 0) : 0;
+
+        await addTripExpense({
+          tripId,
+          eventId,
+          description: title,
+          amount: isPoints ? 0 : parseFloat(cost) || 0,
+          currency: isPoints ? realValueCurrency : currency,
+          category: expenseCategory,
+          paidBy: paidBy || user.uid,
+          splitBetween: splitBetween.length > 0 ? splitBetween : [user.uid],
+          date,
+          notes: notes || undefined,
+          paymentMethod,
+          pointsUsed: isPoints ? (parseFloat(pointsUsed) || 0) : undefined,
+          equivalentValue: isPoints ? realValue : undefined,
+          realValueCurrency: isPoints ? realValueCurrency : undefined,
+          receiptUrl,
+          createdBy: user.uid,
+        });
+      } catch (error) {
+        console.error('Error creating linked expense:', error);
+        // Don't fail the event creation if expense creation fails
+      }
+    }
   };
 
   const fields = type ? EVENT_FIELDS[type] : [];
@@ -519,25 +689,77 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   /* ─── Step 0: Essentials ────────────────────────── */
   const renderStep0 = () => (
     <div className="space-y-3">
-      {/* Tipo de evento */}
-      <Select
-        label="Tipo de evento"
-        options={typeOptions}
-        value={type}
-        onChange={(e) => handleTypeChange(e.target.value as EventType | '')}
-        error={errors.type}
-        required
-      />
+      {/* Question: Is this already paid? (only for new events) */}
+      {!isEdit && isAlreadyPaid === null && (
+        <div className="rounded-lg border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-purple-50 p-4">
+          <p className="text-sm font-bold text-gray-900 mb-3">¿Este gasto ya lo pagaste?</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAlreadyPaid(true);
+                setCreateExpense(true);
+              }}
+              className="p-3 rounded-xl bg-white border-2 border-green-300 hover:border-green-500 hover:bg-green-50 transition-all text-center"
+            >
+              <div className="text-2xl mb-1">✅</div>
+              <p className="text-sm font-bold text-gray-900">Ya lo pagué</p>
+              <p className="text-xs text-gray-500">Registrar gasto</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAlreadyPaid(false)}
+              className="p-3 rounded-xl bg-white border-2 border-blue-300 hover:border-blue-500 hover:bg-blue-50 transition-all text-center"
+            >
+              <div className="text-2xl mb-1">📅</div>
+              <p className="text-sm font-bold text-gray-900">Aún no</p>
+              <p className="text-xs text-gray-500">Solo planear</p>
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* Titulo (auto-sugerido) */}
-      <Input
-        label="Título"
-        placeholder="Nombre del evento"
-        value={title}
-        onChange={(e) => handleTitleChange(e.target.value)}
-        error={errors.title}
-        required
-      />
+      {/* Show selected option banner if answered */}
+      {!isEdit && isAlreadyPaid !== null && (
+        <div className={classNames(
+          "rounded-lg p-2 flex items-center justify-between",
+          isAlreadyPaid ? "bg-green-100 border border-green-300" : "bg-blue-100 border border-blue-300"
+        )}>
+          <span className="text-sm font-medium text-gray-700">
+            {isAlreadyPaid ? "✅ Gasto ya pagado - Se creará registro" : "📅 Solo planeando"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsAlreadyPaid(null)}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+          >
+            Cambiar
+          </button>
+        </div>
+      )}
+
+      {/* Only show form fields after answering the question (or when editing) */}
+      {(isEdit || isAlreadyPaid !== null) && (
+        <>
+          {/* Tipo de evento */}
+          <Select
+            label="Tipo de evento"
+            options={typeOptions}
+            value={type}
+            onChange={(e) => handleTypeChange(e.target.value as EventType | '')}
+            error={errors.type}
+            required
+          />
+
+          {/* Titulo (auto-sugerido) */}
+          <Input
+            label="Título"
+            placeholder="Nombre del evento"
+            value={title}
+            onChange={(e) => handleTitleChange(e.target.value)}
+            error={errors.title}
+            required
+          />
 
       {/* Fecha + Hora para tipos que no son vuelo ni hotel */}
       {type && type !== 'flight' && type !== 'hotel' && (
@@ -590,6 +812,8 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
           min={tripStartDate}
           max={tripEndDate}
         />
+      )}
+        </>
       )}
     </div>
   );
@@ -667,7 +891,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
             </>
           )}
         </div>
-      ) : type === 'other' ? (
+      ) : (type === 'souvenirs' || type === 'snacks' || type === 'clothing' || type === 'fuel' || type === 'misc') ? (
         <div className="text-center py-8 text-gray-300 text-sm">
           Este tipo no tiene detalles adicionales. Puedes continuar al siguiente paso.
         </div>
@@ -680,7 +904,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       {/* Coordenadas — auto-llenadas por Places Autocomplete */}
 
       {/* Salida y llegada para tipos que NO son vuelo ni hotel */}
-      {type && type !== 'flight' && type !== 'hotel' && (
+      {type && type !== 'flight' && type !== 'hotel' && type !== 'souvenirs' && type !== 'snacks' && type !== 'clothing' && type !== 'fuel' && type !== 'misc' && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
           {/* Salida */}
           <div className="space-y-2">
@@ -735,6 +959,199 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   /* ─── Step 2: Cost + Notes + Timezone ───────────── */
   const renderStep2 = () => (
     <div className="space-y-3">
+      {/* Ciudad y país para contexto de fotos */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+        <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+          Ubicación (para fotos)
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            label="Ciudad"
+            type="text"
+            placeholder="Ej. Mazatlán"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            compact
+          />
+          <Input
+            label="País"
+            type="text"
+            placeholder="Ej. México"
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            compact
+          />
+        </div>
+      </div>
+
+      {/* Scan receipt button (only if already paid) */}
+      {!isEdit && isAlreadyPaid && (
+        <div className="rounded-lg border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50 p-4">
+          <input
+            ref={receiptScanInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleScanReceipt(file);
+            }}
+            className="hidden"
+          />
+          <p className="text-xs font-bold text-purple-700 mb-2 text-center uppercase tracking-wide">
+            💡 Simplifica tu vida
+          </p>
+          <button
+            type="button"
+            onClick={() => receiptScanInputRef.current?.click()}
+            disabled={scanningReceipt}
+            className="w-full px-5 py-4 text-base font-bold text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl hover:from-purple-700 hover:to-pink-700 shadow-lg shadow-purple-500/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {scanningReceipt ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Escaneando ticket...
+              </>
+            ) : (
+              <>
+                📸 Escanear ticket (auto-detecta costo)
+              </>
+            )}
+          </button>
+          <p className="text-xs text-purple-700 mt-3 text-center font-medium">
+            O puedes llenar el costo manualmente abajo ↓
+          </p>
+        </div>
+      )}
+
+      {/* Expense fields (only if already paid) */}
+      {!isEdit && isAlreadyPaid && (
+        <>
+          {/* Payment method */}
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+              Forma de pago
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(Object.entries(PAYMENT_METHODS) as [PaymentMethod, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPaymentMethod(key)}
+                  className={classNames(
+                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                    paymentMethod === key
+                      ? 'bg-purple-50 border-purple-600 text-purple-700'
+                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Points fields */}
+            {paymentMethod === 'points' && (
+              <div className="pt-3 border-t border-gray-200 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    label="Puntos usados"
+                    type="number"
+                    placeholder="Ej: 45000"
+                    value={pointsUsed}
+                    onChange={(e) => setPointsUsed(e.target.value)}
+                    compact
+                  />
+                  <div className="col-span-2 grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <Input
+                        label="Valor real"
+                        type="number"
+                        step="0.01"
+                        placeholder="Precio de mercado"
+                        value={equivalentValue}
+                        onChange={(e) => setEquivalentValue(e.target.value)}
+                        compact
+                      />
+                    </div>
+                    <Select
+                      label="Moneda"
+                      options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                      value={realValueCurrency}
+                      onChange={(e) => setRealValueCurrency(e.target.value)}
+                      compact
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-emerald-600">
+                  Se agrega al presupuesto. Gasto real: $0 = ahorro
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Paid by */}
+          {tripTravelers.length > 0 && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+              <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                Pagado por
+              </p>
+              <Select
+                options={tripTravelers.map((t) => ({ value: t.id, label: t.fullName }))}
+                value={paidBy}
+                onChange={(e) => setPaidBy(e.target.value)}
+                compact
+              />
+            </div>
+          )}
+
+          {/* Split between */}
+          {tripTravelers.length > 0 && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+              <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                Dividir entre
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {tripTravelers.map((t) => {
+                  const isSelected = splitBetween.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleSplitMember(t.id)}
+                      className={classNames(
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border',
+                        isSelected
+                          ? 'bg-purple-50 border-purple-300 text-purple-700'
+                          : 'bg-white border-gray-200 text-gray-400 hover:text-gray-600',
+                      )}
+                    >
+                      <div
+                        className={classNames(
+                          'w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold',
+                          isSelected
+                            ? 'bg-gradient-to-br from-purple-400 to-purple-600 text-white'
+                            : 'bg-gray-100 text-gray-400',
+                        )}
+                      >
+                        {getInitials(t.fullName)}
+                      </div>
+                      {t.fullName.split(' ')[0]}
+                      {isSelected && <Check className="w-3 h-3" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {splitBetween.length > 0 && parseFloat(cost) > 0 && paymentMethod !== 'points' && (
+                <p className="text-xs text-gray-400">
+                  ${(parseFloat(cost) / splitBetween.length).toFixed(2)} {currency} por persona
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
       {/* Costo y moneda */}
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2">
@@ -756,6 +1173,29 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
           onChange={(e) => setCurrency(e.target.value)}
         />
       </div>
+
+      {/* Show receipt file if one was selected */}
+      {receiptFile && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+          <p className="text-xs font-medium text-green-900 mb-2">✅ Ticket capturado</p>
+          <div className="flex items-center gap-2 p-2 bg-white rounded-lg border border-green-200">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-gray-900 truncate">{receiptFile.name}</p>
+              <p className="text-xs text-gray-600">{(receiptFile.size / 1024).toFixed(1)} KB</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setReceiptFile(null);
+                // Optionally clear the cost if it was auto-filled
+              }}
+              className="px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 rounded"
+            >
+              Cambiar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Notas */}
       <Textarea

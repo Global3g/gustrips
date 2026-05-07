@@ -129,8 +129,8 @@ export interface TripInvite {
 }
 
 // ─── Event ──────────────────────────────────────────
-export type EventType = 'flight' | 'hotel' | 'activity' | 'restaurant' | 'transport' | 'car_rental' | 'cruise' | 'other';
-export type ExpenseCategory = Exclude<EventType, 'other'> | 'souvenirs' | 'snacks' | 'clothing' | 'fuel' | 'misc';
+export type EventType = 'flight' | 'hotel' | 'activity' | 'restaurant' | 'transport' | 'car_rental' | 'cruise' | 'souvenirs' | 'snacks' | 'clothing' | 'fuel' | 'misc';
+export type ExpenseCategory = EventType;
 export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'transfer' | 'points' | 'other';
 
 export interface TripEvent {
@@ -141,6 +141,8 @@ export interface TripEvent {
   startTime: string;
   endTime: string;
   location: string;
+  city?: string; // City name for photos context
+  country?: string; // Country name for photos context
   notes: string;
   cost: number;
   currency: string;

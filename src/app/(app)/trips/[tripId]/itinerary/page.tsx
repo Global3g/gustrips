@@ -254,15 +254,17 @@ export default function ItineraryPage() {
 
   /* ---- CRUD Handlers ---- */
 
-  const handleCreate = async (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => {
+  const handleCreate = async (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>): Promise<string> => {
     setFormLoading(true);
     try {
-      await createEvent(data);
+      const eventId = await createEvent(data);
       setShowForm(false);
       toast('Evento creado correctamente', 'success');
+      return eventId;
     } catch (error) {
       console.error('Error al crear evento:', error);
       toast('Error al crear el evento', 'error');
+      throw error;
     } finally {
       setFormLoading(false);
     }
@@ -546,6 +548,7 @@ export default function ItineraryPage() {
         {/* Create form (inside agenda view) */}
         {showForm && (
           <EventForm
+            tripId={tripId}
             defaultDate={defaultFormDate || selectedDayStr}
             defaultTime={defaultFormTime}
             tripStartDate={trip?.startDate}
@@ -559,6 +562,7 @@ export default function ItineraryPage() {
         {/* Edit form (inside agenda view) */}
         {editingEvent && (
           <EventForm
+            tripId={tripId}
             initialData={editingEvent}
             tripStartDate={trip?.startDate}
             tripEndDate={trip?.endDate}
@@ -909,6 +913,7 @@ export default function ItineraryPage() {
       {/* Modal - Create (pre-fill date with selected day) */}
       {showForm && (
         <EventForm
+          tripId={tripId}
           defaultDate={defaultFormDate || selectedDayStr}
           defaultTime={defaultFormTime}
           tripStartDate={trip?.startDate}
@@ -922,6 +927,7 @@ export default function ItineraryPage() {
       {/* Modal - Edit */}
       {editingEvent && (
         <EventForm
+          tripId={tripId}
           initialData={editingEvent}
           tripStartDate={trip?.startDate}
           tripEndDate={trip?.endDate}
