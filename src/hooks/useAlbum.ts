@@ -153,20 +153,18 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const db = getClientDb();
       const tripRef = doc(db, 'trips', tripId);
 
-      // Firestore arrayRemove/arrayUnion requires exact match
-      // So we remove old and add updated
-      const updatedPhoto: AlbumPhoto = { ...photo, caption };
+      // Get current photos and update the matching one
+      const currentPhotos = trip?.albumPhotos ?? [];
+      const updatedPhotos = currentPhotos.map((p) =>
+        p.url === photo.url ? { ...p, caption } : p
+      );
 
       await updateDoc(tripRef, {
-        albumPhotos: arrayRemove(cleanUndefined(photo)),
-        updatedAt: nowISO(),
-      });
-      await updateDoc(tripRef, {
-        albumPhotos: arrayUnion(cleanUndefined(updatedPhoto)),
+        albumPhotos: updatedPhotos,
         updatedAt: nowISO(),
       });
     },
-    [tripId],
+    [tripId, trip],
   );
 
   const updatePhoto = useCallback(
@@ -174,20 +172,18 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const db = getClientDb();
       const tripRef = doc(db, 'trips', tripId);
 
-      // Create updated photo with merged fields
-      const updatedPhoto: AlbumPhoto = { ...oldPhoto, ...updates };
+      // Get current photos and update the matching one
+      const currentPhotos = trip?.albumPhotos ?? [];
+      const updatedPhotos = currentPhotos.map((p) =>
+        p.url === oldPhoto.url ? cleanUndefined({ ...p, ...updates }) : p
+      );
 
-      // Remove old and add updated
       await updateDoc(tripRef, {
-        albumPhotos: arrayRemove(cleanUndefined(oldPhoto)),
-        updatedAt: nowISO(),
-      });
-      await updateDoc(tripRef, {
-        albumPhotos: arrayUnion(cleanUndefined(updatedPhoto)),
+        albumPhotos: updatedPhotos,
         updatedAt: nowISO(),
       });
     },
-    [tripId],
+    [tripId, trip],
   );
 
   return { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto };
