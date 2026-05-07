@@ -67,7 +67,7 @@ export async function scanDocument(file: File): Promise<ScannedEvent> {
                 text: `Analyze this travel document (boarding pass, hotel confirmation, restaurant reservation, car rental, etc.) and extract the following information. Return ONLY valid JSON, no markdown, no explanation.
 
 {
-  "type": "flight|hotel|restaurant|car_rental|activity|transport|other",
+  "type": "flight|hotel|restaurant|car_rental|activity|transport|cruise|souvenirs|snacks|clothing|fuel|misc",
   "title": "descriptive title in Spanish",
   "date": "YYYY-MM-DD (departure date for flights, check-in for hotels)",
   "startTime": "HH:MM (departure time for flights, check-in time for hotels) or null",
@@ -87,7 +87,7 @@ export async function scanDocument(file: File): Promise<ScannedEvent> {
   }
 }
 
-Return ONLY the JSON object. If you cannot determine the type, use "other". All text should be in the original language of the document.`,
+Return ONLY the JSON object. If you cannot determine the type, use "misc". All text should be in the original language of the document.`,
               },
             ],
           },
@@ -144,9 +144,9 @@ Return ONLY the JSON object. If you cannot determine the type, use "other". All 
   }
 
   // Ensure type is valid
-  const validTypes: EventType[] = ['flight', 'hotel', 'activity', 'restaurant', 'transport', 'car_rental', 'cruise', 'other'];
+  const validTypes: EventType[] = ['flight', 'hotel', 'activity', 'restaurant', 'transport', 'car_rental', 'cruise', 'souvenirs', 'snacks', 'clothing', 'fuel', 'misc'];
   if (!validTypes.includes(parsed.type)) {
-    parsed.type = 'other';
+    parsed.type = 'misc';
   }
 
   // Ensure details is an object
@@ -195,7 +195,7 @@ Return ONLY valid JSON array, no markdown, no explanation:
 
 [
   {
-    "type": "flight|hotel|restaurant|car_rental|activity|transport|cruise|other",
+    "type": "flight|hotel|restaurant|car_rental|activity|transport|cruise|souvenirs|snacks|clothing|fuel|misc",
     "title": "descriptive title in Spanish",
     "date": "YYYY-MM-DD",
     "startTime": "HH:MM (24h format) or null",
@@ -299,14 +299,14 @@ IMPORTANT:
   // Handle both single object and array responses
   const rawEvents: ScannedEvent[] = Array.isArray(parsed) ? parsed : [parsed as ScannedEvent];
 
-  const validTypes: EventType[] = ['flight', 'hotel', 'activity', 'restaurant', 'transport', 'car_rental', 'cruise', 'other'];
+  const validTypes: EventType[] = ['flight', 'hotel', 'activity', 'restaurant', 'transport', 'car_rental', 'cruise', 'souvenirs', 'snacks', 'clothing', 'fuel', 'misc'];
 
   // Validate and clean each event
   const cleaned = rawEvents
     .filter((e) => e && e.type && e.title && e.date)
     .map((e) => {
       if (!validTypes.includes(e.type)) {
-        return { ...e, type: 'other' as EventType };
+        return { ...e, type: 'misc' as EventType };
       }
       // Ensure details is an object
       const details: Record<string, string> = {};

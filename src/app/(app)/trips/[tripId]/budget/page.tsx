@@ -26,6 +26,11 @@ import {
   Receipt,
   PiggyBank,
   Trophy,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
 } from 'lucide-react';
 import { useEvents } from '@/hooks/useEvents';
 import { useTrip } from '@/hooks/useTrip';
@@ -54,7 +59,11 @@ const EVENT_ICON_MAP: Record<EventType, LucideIcon> = {
   restaurant: UtensilsCrossed,
   transport: Car,
   cruise: Ship,
-  other: MoreHorizontal,
+  souvenirs: Gift,
+  snacks: Coffee,
+  clothing: ShoppingBag,
+  fuel: Fuel,
+  misc: Package,
 };
 
 /* ─── Helpers ──────────────────────────────────────── */
