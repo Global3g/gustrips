@@ -100,11 +100,33 @@ const EVENT_FIELDS: Record<EventType, FieldDef[]> = {
     { key: 'cabinNumber', label: 'Cabina', type: 'text', placeholder: 'Ej. 8234' },
     { key: 'confirmationCode', label: 'Código de reserva', type: 'text', placeholder: 'Código de reserva' },
   ],
-  souvenirs: [],
-  snacks: [],
-  clothing: [],
-  fuel: [],
-  misc: [],
+  souvenirs: [
+    { key: 'storeName', label: 'Tienda', type: 'text', placeholder: 'Nombre de la tienda', colSpan: 2 },
+    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Ubicación', colSpan: 2 },
+    { key: 'items', label: 'Artículos', type: 'text', placeholder: 'Qué compraste', colSpan: 2 },
+  ],
+  snacks: [
+    { key: 'storeName', label: 'Lugar', type: 'text', placeholder: 'Tienda o restaurante', colSpan: 2 },
+    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Ubicación', colSpan: 2 },
+    { key: 'items', label: 'Qué compraste', type: 'text', placeholder: 'Ej. Café, sandwich', colSpan: 2 },
+  ],
+  clothing: [
+    { key: 'storeName', label: 'Tienda', type: 'text', placeholder: 'Nombre de la tienda', colSpan: 2 },
+    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Ubicación', colSpan: 2 },
+    { key: 'items', label: 'Artículos', type: 'text', placeholder: 'Qué compraste' },
+    { key: 'brand', label: 'Marca', type: 'text', placeholder: 'Ej. Nike, Zara' },
+  ],
+  fuel: [
+    { key: 'gasStation', label: 'Gasolinera', type: 'text', placeholder: 'Nombre de la gasolinera', colSpan: 2 },
+    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Ubicación', colSpan: 2 },
+    { key: 'liters', label: 'Litros', type: 'number', placeholder: 'Ej. 40' },
+    { key: 'pricePerLiter', label: 'Precio por litro', type: 'number', placeholder: 'Ej. 21.50' },
+  ],
+  misc: [
+    { key: 'placeName', label: 'Lugar', type: 'text', placeholder: 'Tienda o lugar', colSpan: 2 },
+    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Ubicación', colSpan: 2 },
+    { key: 'description', label: 'Descripción', type: 'text', placeholder: 'Qué compraste o hiciste', colSpan: 2 },
+  ],
 };
 
 /* ─── Auto-generador de titulo ─────────────────── */
@@ -129,15 +151,15 @@ function generateTitle(type: EventType, details: Record<string, string>): string
     case 'cruise':
       return details.portName ? `Puerto: ${details.portName}` : 'Puerto / Crucero';
     case 'souvenirs':
-      return 'Souvenirs';
+      return details.storeName ? `Souvenirs en ${details.storeName}` : 'Souvenirs';
     case 'snacks':
-      return 'Snacks';
+      return details.storeName ? `Snacks en ${details.storeName}` : 'Snacks';
     case 'clothing':
-      return 'Ropa y Accesorios';
+      return details.storeName ? `Ropa en ${details.storeName}` : 'Ropa y Accesorios';
     case 'fuel':
-      return 'Combustible';
+      return details.gasStation ? `Gasolina en ${details.gasStation}` : 'Combustible';
     case 'misc':
-      return 'Otros';
+      return details.placeName || 'Otros';
     default:
       return '';
   }
@@ -166,9 +188,11 @@ function deriveLocation(type: EventType, details: Record<string, string>): strin
     case 'souvenirs':
     case 'snacks':
     case 'clothing':
+      return details.address || details.storeName || '';
     case 'fuel':
+      return details.address || details.gasStation || '';
     case 'misc':
-      return '';
+      return details.address || details.placeName || '';
     default:
       return '';
   }
@@ -821,14 +845,20 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   /* ─── Step 1: Type-specific details ─────────────── */
   const renderStep1 = () => (
     <div className="space-y-3">
-      {type && fields.length > 0 ? (
+      {type && (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-2.5 space-y-2">
           <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
             Detalles de {EVENT_TYPES[type].label}
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {fields.map(renderField)}
-          </div>
+          {fields.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {fields.map(renderField)}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 text-center py-2">
+              No hay campos adicionales para este tipo
+            </p>
+          )}
           {/* Zona horaria para hotel */}
           {type === 'hotel' && (
             <div className="pt-1 border-t border-gray-200 mt-2">
@@ -890,14 +920,6 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
               </div>
             </>
           )}
-        </div>
-      ) : (type === 'souvenirs' || type === 'snacks' || type === 'clothing' || type === 'fuel' || type === 'misc') ? (
-        <div className="text-center py-8 text-gray-300 text-sm">
-          Este tipo no tiene detalles adicionales. Puedes continuar al siguiente paso.
-        </div>
-      ) : (
-        <div className="text-center py-8 text-gray-300 text-sm">
-          Selecciona un tipo de evento en el paso anterior.
         </div>
       )}
 
