@@ -436,19 +436,18 @@ export default function PhotosPage() {
 
   /* ── Photo download ── */
 
-  const downloadPhoto = useCallback(async (photo: typeof flatPhotos[number]) => {
+  const downloadPhoto = useCallback((photo: typeof flatPhotos[number]) => {
     try {
-      const response = await fetch(photo.url);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      // Use a simple anchor tag with download attribute
       const link = document.createElement('a');
-      link.href = url;
-      link.download = `photo_${photo.date || 'gustrips'}_${Date.now()}.jpg`;
+      link.href = photo.url;
+      link.download = `gustrips_${photo.date || 'photo'}_${Date.now()}.jpg`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      toast('Foto descargada', 'success');
+      toast('Descargando foto...', 'success');
     } catch (err) {
       console.error('Error downloading photo:', err);
       toast('Error al descargar foto', 'error');
