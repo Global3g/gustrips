@@ -148,7 +148,7 @@ export default function MapPage() {
 
                 <div className="space-y-2">
                   {dayEvents.map((event) => {
-                    const typeConfig = EVENT_TYPES[event.type as EventType] || EVENT_TYPES.other;
+                    const typeConfig = EVENT_TYPES[event.type as EventType] || EVENT_TYPES.misc;
 
                     return (
                       <div
