@@ -209,7 +209,7 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
 
         {/* Event markers */}
         {eventsWithCoords.map((event) => {
-          const typeConfig = EVENT_TYPES[event.type as EventType] || EVENT_TYPES.other;
+          const typeConfig = EVENT_TYPES[event.type as EventType] || EVENT_TYPES.misc;
           const icon = createCircleIcon(typeConfig.color);
 
           return (

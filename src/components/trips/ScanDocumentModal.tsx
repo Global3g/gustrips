@@ -24,6 +24,11 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
   type LucideIcon,
 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
@@ -43,7 +48,11 @@ const TYPE_ICONS: Record<EventType, LucideIcon> = {
   activity: MapPin,
   transport: Bus,
   cruise: Ship,
-  other: HelpCircle,
+  souvenirs: Gift,
+  snacks: Coffee,
+  clothing: ShoppingBag,
+  fuel: Fuel,
+  misc: Package,
 };
 
 const TYPE_COLORS: Record<EventType, string> = {
@@ -54,7 +63,11 @@ const TYPE_COLORS: Record<EventType, string> = {
   activity: 'bg-green-50 text-green-600 border-green-200',
   transport: 'bg-blue-50 text-blue-600 border-blue-200',
   cruise: 'bg-sky-50 text-sky-600 border-sky-200',
-  other: 'bg-gray-50 text-gray-600 border-gray-200',
+  souvenirs: 'bg-pink-50 text-pink-600 border-pink-200',
+  snacks: 'bg-amber-50 text-amber-600 border-amber-200',
+  clothing: 'bg-rose-50 text-rose-600 border-rose-200',
+  fuel: 'bg-lime-50 text-lime-600 border-lime-200',
+  misc: 'bg-gray-50 text-gray-600 border-gray-200',
 };
 
 const TYPE_EMOJIS: Record<EventType, string> = {
@@ -65,7 +78,11 @@ const TYPE_EMOJIS: Record<EventType, string> = {
   activity: '\uD83D\uDCCD',
   transport: '\uD83D\uDE8C',
   cruise: '\u26F4\uFE0F',
-  other: '\uD83C\uDF0A',
+  souvenirs: '\uD83C\uDF81',
+  snacks: '\u2615',
+  clothing: '\uD83D\uDECD\uFE0F',
+  fuel: '\u26FD',
+  misc: '\uD83D\uDCE6',
 };
 
 /* ---- Accepted file types ---- */
@@ -253,7 +270,7 @@ interface BulkEventRowProps {
 function BulkEventRow({ event, index, selected, expanded, onToggleSelect, onToggleExpand, onUpdateEvent }: BulkEventRowProps) {
   const TypeIcon = TYPE_ICONS[event.type] || HelpCircle;
   const typeConfig = EVENT_TYPES[event.type];
-  const typeColorClass = TYPE_COLORS[event.type] || TYPE_COLORS.other;
+  const typeColorClass = TYPE_COLORS[event.type] || TYPE_COLORS.misc;
   const emoji = TYPE_EMOJIS[event.type] || '';
 
   const dateDisplay = event.date
@@ -668,7 +685,7 @@ export default function ScanDocumentModal({ open, onClose, onConfirm, defaultDat
 
   const renderSelectType = () => {
     const evts = scannedData ? [scannedData] : bulkEvents;
-    const detectedType = evts[0]?.type || 'other';
+    const detectedType = evts[0]?.type || 'misc';
 
     const typeOptions = [
       { value: 'flight', label: 'Vuelo', icon: Plane, color: '#06b6d4' },
@@ -678,7 +695,11 @@ export default function ScanDocumentModal({ open, onClose, onConfirm, defaultDat
       { value: 'car_rental', label: 'Renta de Auto', icon: Car, color: '#eab308' },
       { value: 'transport', label: 'Transporte', icon: Bus, color: '#3b82f6' },
       { value: 'cruise', label: 'Puerto / Crucero', icon: Ship, color: '#7dd3fc' },
-      { value: 'other', label: 'Otro', icon: HelpCircle, color: '#6b7280' },
+      { value: 'souvenirs', label: 'Souvenirs', icon: Gift, color: '#e879f9' },
+      { value: 'snacks', label: 'Snacks', icon: Coffee, color: '#fb923c' },
+      { value: 'clothing', label: 'Ropa', icon: ShoppingBag, color: '#f43f5e' },
+      { value: 'fuel', label: 'Combustible', icon: Fuel, color: '#84cc16' },
+      { value: 'misc', label: 'Otros', icon: Package, color: '#94a3b8' },
     ];
 
     return (
@@ -984,7 +1005,7 @@ export default function ScanDocumentModal({ open, onClose, onConfirm, defaultDat
 
     const TypeIcon = TYPE_ICONS[scannedData.type] || HelpCircle;
     const typeConfig = EVENT_TYPES[scannedData.type];
-    const typeColorClass = TYPE_COLORS[scannedData.type] || TYPE_COLORS.other;
+    const typeColorClass = TYPE_COLORS[scannedData.type] || TYPE_COLORS.misc;
 
     return (
       <motion.div
