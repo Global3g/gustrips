@@ -21,6 +21,11 @@ import {
   MoreHorizontal,
   CalendarCheck,
   Sunset,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useTrip } from '@/hooks/useTrip';
@@ -40,6 +45,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
   CarFront,
   Ship,
   MoreHorizontal,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
 };
 
 const BG_ICON_COLORS: Record<EventType, string> = {
@@ -50,7 +60,11 @@ const BG_ICON_COLORS: Record<EventType, string> = {
   restaurant: 'bg-orange-50 text-orange-600',
   transport: 'bg-blue-50 text-blue-600',
   cruise: 'bg-sky-50 text-sky-600',
-  other: 'bg-gray-50 text-gray-600',
+  souvenirs: 'bg-pink-50 text-pink-600',
+  snacks: 'bg-amber-50 text-amber-600',
+  clothing: 'bg-rose-50 text-rose-600',
+  fuel: 'bg-lime-50 text-lime-600',
+  misc: 'bg-gray-50 text-gray-600',
 };
 
 const BORDER_COLORS: Record<EventType, string> = {
@@ -61,7 +75,11 @@ const BORDER_COLORS: Record<EventType, string> = {
   restaurant: 'border-l-orange-400',
   transport: 'border-l-blue-400',
   cruise: 'border-l-sky-400',
-  other: 'border-l-gray-400',
+  souvenirs: 'border-l-pink-400',
+  snacks: 'border-l-amber-400',
+  clothing: 'border-l-rose-400',
+  fuel: 'border-l-lime-400',
+  misc: 'border-l-gray-400',
 };
 
 /* ─── Component ────────────────────────────────────── */
