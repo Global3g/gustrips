@@ -12,7 +12,7 @@ import PlacesAutocomplete from '@/components/ui/PlacesAutocomplete';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import { classNames, nowISO, getInitials } from '@/lib/utils/helpers';
-import type { TripEvent, EventType, ExpenseCategory } from '@/types';
+import type { TripEvent, EventType, ExpenseCategory, PaymentMethod } from '@/types';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
