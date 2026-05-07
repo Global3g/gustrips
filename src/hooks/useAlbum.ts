@@ -78,6 +78,7 @@ interface UseAlbumReturn {
   addPhoto: (file: File, date: string, caption?: string, eventId?: string) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
+  updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
@@ -168,5 +169,26 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     [tripId],
   );
 
-  return { albumPhotos, addPhoto, deletePhoto, updateCaption };
+  const updatePhoto = useCallback(
+    async (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>): Promise<void> => {
+      const db = getClientDb();
+      const tripRef = doc(db, 'trips', tripId);
+
+      // Create updated photo with merged fields
+      const updatedPhoto: AlbumPhoto = { ...oldPhoto, ...updates };
+
+      // Remove old and add updated
+      await updateDoc(tripRef, {
+        albumPhotos: arrayRemove(cleanUndefined(oldPhoto)),
+        updatedAt: nowISO(),
+      });
+      await updateDoc(tripRef, {
+        albumPhotos: arrayUnion(cleanUndefined(updatedPhoto)),
+        updatedAt: nowISO(),
+      });
+    },
+    [tripId],
+  );
+
+  return { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto };
 }

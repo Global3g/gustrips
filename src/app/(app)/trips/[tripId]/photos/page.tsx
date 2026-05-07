@@ -16,6 +16,7 @@ import {
   ImagePlus,
   Pencil,
   Check,
+  Download,
 } from 'lucide-react';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
@@ -82,7 +83,7 @@ export default function PhotosPage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
   const { events, updateEvent } = useEvents(tripId);
-  const { albumPhotos, addPhoto, deletePhoto, updateCaption } = useAlbum(tripId, trip);
+  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto } = useAlbum(tripId, trip);
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);
@@ -98,6 +99,10 @@ export default function PhotosPage() {
   const [modalCountry, setModalCountry] = useState('');
   const [modalEventName, setModalEventName] = useState('');
   const [modalEventType, setModalEventType] = useState('');
+  const [editingPhoto, setEditingPhoto] = useState<AlbumPhoto | null>(null);
+  const [editPhotoCaption, setEditPhotoCaption] = useState('');
+  const [editPhotoDate, setEditPhotoDate] = useState('');
+  const [editPhotoEventId, setEditPhotoEventId] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ── Pre-fill fields when event is selected ── */
@@ -427,6 +432,60 @@ export default function PhotosPage() {
       setCaptionText('');
     },
     [updateCaption, captionText, toast],
+  );
+
+  /* ── Photo download ── */
+
+  const downloadPhoto = useCallback(async (photo: typeof flatPhotos[number]) => {
+    try {
+      const response = await fetch(photo.url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `photo_${photo.date || 'gustrips'}_${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast('Foto descargada', 'success');
+    } catch (err) {
+      console.error('Error downloading photo:', err);
+      toast('Error al descargar foto', 'error');
+    }
+  }, [toast]);
+
+  /* ── Photo edit modal ── */
+
+  const openEditPhotoModal = useCallback((photo: typeof flatPhotos[number]) => {
+    if (photo.source !== 'album') return;
+    setEditingPhoto(photo);
+    setEditPhotoCaption(photo.caption || '');
+    setEditPhotoDate(photo.date || '');
+    setEditPhotoEventId(photo.eventId || '');
+  }, []);
+
+  const savePhotoEdits = useCallback(
+    async () => {
+      if (!editingPhoto) return;
+      try {
+        const updates: Partial<AlbumPhoto> = {
+          caption: editPhotoCaption,
+          date: editPhotoDate,
+          eventId: editPhotoEventId || undefined,
+        };
+        await updatePhoto(editingPhoto, updates);
+        toast('Foto actualizada', 'success');
+        setEditingPhoto(null);
+        setEditPhotoCaption('');
+        setEditPhotoDate('');
+        setEditPhotoEventId('');
+      } catch (err) {
+        console.error('Error updating photo:', err);
+        toast('Error al actualizar foto', 'error');
+      }
+    },
+    [editingPhoto, editPhotoCaption, editPhotoDate, editPhotoEventId, updatePhoto, toast],
   );
 
   /* ── Lightbox navigation ── */
@@ -772,57 +831,67 @@ export default function PhotosPage() {
                 {/* Photo grid */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {group.photos.map((photo) => (
-                    <div
-                      key={photo.url}
-                      className="relative group rounded-xl overflow-hidden bg-gray-100 aspect-square cursor-pointer"
-                      onClick={() => openLightbox(photo)}
-                    >
-                      <img
-                        src={photo.url}
-                        alt={photo.caption || 'Foto del viaje'}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        loading="lazy"
-                      />
-                      {/* Overlay on hover */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                    <div key={photo.url} className="space-y-2">
+                      <div
+                        className="relative group rounded-xl overflow-hidden bg-gray-100 aspect-square cursor-pointer"
+                        onClick={() => openLightbox(photo)}
+                      >
+                        <img
+                          src={photo.url}
+                          alt={photo.caption || 'Foto del viaje'}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                        {/* Overlay on hover */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
 
-                      {/* Caption */}
-                      {photo.caption && (
-                        <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <p className="text-white text-xs font-medium truncate">{photo.caption}</p>
-                        </div>
-                      )}
-
-                      {/* Action buttons on hover */}
-                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {photo.source === 'album' && (
+                        {/* Action buttons - always visible on mobile, hover on desktop */}
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                          {photo.source === 'album' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditPhotoModal(photo);
+                              }}
+                              className="w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-gray-600 transition-colors shadow-sm"
+                              title="Editar foto"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              startEditCaption(photo);
+                              downloadPhoto(photo);
                             }}
-                            className="w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-gray-600 transition-colors shadow-sm"
-                            title="Editar leyenda"
+                            className="w-7 h-7 rounded-full bg-blue-500/80 hover:bg-blue-500 flex items-center justify-center text-white transition-colors shadow-sm"
+                            title="Descargar foto"
                           >
-                            <Pencil className="w-3 h-3" />
+                            <Download className="w-3 h-3" />
                           </button>
-                        )}
-                        <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(photo);
-                            }}
-                            disabled={deleting === photo.url}
-                            className="w-7 h-7 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center text-white transition-colors shadow-sm"
-                            title="Eliminar foto"
-                          >
-                            {deleting === photo.url ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-3 h-3" />
-                            )}
-                          </button>
-                        </div>
+                          <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(photo);
+                              }}
+                              disabled={deleting === photo.url}
+                              className="w-7 h-7 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center text-white transition-colors shadow-sm"
+                              title="Eliminar foto"
+                            >
+                              {deleting === photo.url ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
+                      </div>
+                      {/* Caption below photo */}
+                      {photo.caption && (
+                        <p className="text-gray-700 text-xs font-medium px-1 line-clamp-2">
+                          {photo.caption}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -880,6 +949,116 @@ export default function PhotosPage() {
                 >
                   <Check className="w-4 h-4 inline mr-1" />
                   Guardar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Photo edit modal ── */}
+      <AnimatePresence>
+        {editingPhoto && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={() => setEditingPhoto(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Editar detalles de la foto</h3>
+
+              {/* Photo preview */}
+              <div className="mb-4 rounded-xl overflow-hidden">
+                <img
+                  src={editingPhoto.url}
+                  alt="Preview"
+                  className="w-full h-48 object-cover"
+                />
+              </div>
+
+              <div className="space-y-4">
+                {/* Caption */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                    Leyenda
+                  </label>
+                  <input
+                    type="text"
+                    value={editPhotoCaption}
+                    onChange={(e) => setEditPhotoCaption(e.target.value)}
+                    placeholder="Escribe una leyenda..."
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    value={editPhotoDate}
+                    onChange={(e) => setEditPhotoDate(e.target.value)}
+                    min={trip?.startDate}
+                    max={trip?.endDate}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Event link */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                    Evento asociado
+                  </label>
+                  <select
+                    value={editPhotoEventId}
+                    onChange={(e) => setEditPhotoEventId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  >
+                    <option value="">Sin evento</option>
+                    {events
+                      .filter((e) => e.date === editPhotoDate)
+                      .map((event) => (
+                        <option key={event.id} value={event.id}>
+                          {event.title} ({EVENT_TYPES[event.type]?.label || event.type})
+                        </option>
+                      ))}
+                  </select>
+                  {editPhotoDate && events.filter((e) => e.date === editPhotoDate).length === 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      No hay eventos en esta fecha
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setEditingPhoto(null);
+                    setEditPhotoCaption('');
+                    setEditPhotoDate('');
+                    setEditPhotoEventId('');
+                  }}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={savePhotoEdits}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors flex items-center gap-1"
+                >
+                  <Check className="w-4 h-4" />
+                  Guardar cambios
                 </button>
               </div>
             </motion.div>
