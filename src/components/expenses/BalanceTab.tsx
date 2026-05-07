@@ -23,11 +23,20 @@ export function BalanceTab({ tripId }: BalanceTabProps) {
   const { travelers } = useGlobalTravelers();
 
   const currency = trip?.budgetCurrency ?? 'MXN';
-  const balances = useMemo(() => getBalances(), [getBalances]);
 
   // Map trip traveler IDs for quick lookup
   const tripTravelerIds = trip?.travelerIds || [];
   const tripTravelers = travelers.filter((t) => tripTravelerIds.includes(t.id));
+
+  const allBalances = useMemo(() => getBalances(), [getBalances]);
+
+  // Filter balances to only include travelers in this trip
+  const balances = useMemo(
+    () => allBalances.filter((debt) =>
+      tripTravelerIds.includes(debt.from) && tripTravelerIds.includes(debt.to)
+    ),
+    [allBalances, tripTravelerIds]
+  );
 
   const getMemberName = (uid: string): string => {
     // Check global travelers by ID
@@ -78,6 +87,7 @@ export function BalanceTab({ tripId }: BalanceTabProps) {
     }
 
     return [...net.entries()]
+      .filter(([uid]) => tripTravelerIds.includes(uid)) // Only show travelers in this trip
       .map(([uid, amount]) => ({
         uid,
         name: getMemberName(uid),
@@ -85,7 +95,8 @@ export function BalanceTab({ tripId }: BalanceTabProps) {
       }))
       .filter((entry) => Math.abs(entry.amount) > 0.01)
       .sort((a, b) => b.amount - a.amount);
-  }, [expenses, members]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, tripTravelerIds]);
 
   if (loading) {
     return (
