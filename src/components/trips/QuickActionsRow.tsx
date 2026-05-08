@@ -3,15 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Sparkles, CalendarPlus, Camera } from 'lucide-react';
+import { Receipt, CalendarPlus, Camera } from 'lucide-react';
 import EventForm from '@/components/trips/EventForm';
-import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import { useEvents } from '@/hooks/useEvents';
-import { useDocuments } from '@/hooks/useDocuments';
 import { useToast } from '@/context/ToastContext';
-import { EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
-import type { ScannedEvent } from '@/lib/utils/aiScanner';
-import type { DocumentCategory, Trip } from '@/types';
+import type { Trip } from '@/types';
 
 interface QuickActionsRowProps {
   tripId: string;
@@ -19,9 +15,9 @@ interface QuickActionsRowProps {
 }
 
 interface ActionConfig {
-  key: 'scan' | 'event' | 'photo';
+  key: 'expense' | 'photo' | 'event';
   label: string;
-  Icon: typeof Sparkles;
+  Icon: typeof Receipt;
   gradient: string;
   shadow: string;
   hoverShadow: string;
@@ -29,20 +25,12 @@ interface ActionConfig {
 
 const ACTIONS: ActionConfig[] = [
   {
-    key: 'scan',
-    label: 'Escanear',
-    Icon: Sparkles,
+    key: 'expense',
+    label: 'Gasto',
+    Icon: Receipt,
     gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 60%, #b45309 100%)',
     shadow: '0 8px 24px -6px rgba(245,158,11,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
     hoverShadow: '0 14px 32px -6px rgba(245,158,11,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
-  },
-  {
-    key: 'event',
-    label: 'Evento',
-    Icon: CalendarPlus,
-    gradient: 'linear-gradient(135deg, #3b82f6 0%, #4f46e5 60%, #4338ca 100%)',
-    shadow: '0 8px 24px -6px rgba(59,130,246,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
-    hoverShadow: '0 14px 32px -6px rgba(59,130,246,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
   },
   {
     key: 'photo',
@@ -52,15 +40,21 @@ const ACTIONS: ActionConfig[] = [
     shadow: '0 8px 24px -6px rgba(236,72,153,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
     hoverShadow: '0 14px 32px -6px rgba(236,72,153,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
   },
+  {
+    key: 'event',
+    label: 'Evento',
+    Icon: CalendarPlus,
+    gradient: 'linear-gradient(135deg, #3b82f6 0%, #4f46e5 60%, #4338ca 100%)',
+    shadow: '0 8px 24px -6px rgba(59,130,246,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
+    hoverShadow: '0 14px 32px -6px rgba(59,130,246,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
+  },
 ];
 
 export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) {
   const router = useRouter();
   const { createEvent } = useEvents(tripId);
-  const { uploadDocument } = useDocuments(tripId);
   const { toast } = useToast();
 
-  const [showScan, setShowScan] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
   const [submittingEvent, setSubmittingEvent] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -81,53 +75,8 @@ export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) 
     }
   };
 
-  const handleScanConfirm = async (scannedEvents: ScannedEvent[], file: File) => {
-    try {
-      let firstEventId: string | null = null;
-      for (const scannedEvent of scannedEvents) {
-        const eventData = {
-          title: scannedEvent.title,
-          type: scannedEvent.type,
-          date: scannedEvent.date,
-          startTime: scannedEvent.startTime || '',
-          endTime: scannedEvent.endTime || '',
-          location: scannedEvent.location || '',
-          notes: scannedEvent.notes || '',
-          cost: scannedEvent.cost || 0,
-          currency: scannedEvent.currency || 'MXN',
-          details: scannedEvent.details,
-          attachments: [] as string[],
-        };
-        const eventId = await createEvent(eventData);
-        if (!firstEventId) firstEventId = eventId;
-      }
-
-      if (firstEventId) {
-        const firstType = scannedEvents[0].type;
-        const category: DocumentCategory =
-          EVENT_TYPE_TO_DOC_CATEGORY[firstType as keyof typeof EVENT_TYPE_TO_DOC_CATEGORY] || 'other';
-        try {
-          await uploadDocument(file, { eventId: firstEventId, category });
-        } catch (err) {
-          console.error('Error uploading scanned doc:', err);
-        }
-      }
-
-      setShowScan(false);
-      const count = scannedEvents.length;
-      toast(
-        count === 1 ? 'Evento creado desde documento' : `${count} eventos creados`,
-        'success',
-      );
-    } catch (err) {
-      console.error('Error from scan confirm:', err);
-      toast('Error al crear los eventos', 'error');
-      throw err;
-    }
-  };
-
   const handleClick = (key: ActionConfig['key']) => {
-    if (key === 'scan') setShowScan(true);
+    if (key === 'expense') router.push(`/trips/${tripId}/expenses?capture=1`);
     else if (key === 'event') setShowEventForm(true);
     else if (key === 'photo') router.push(`/trips/${tripId}/photos?upload=1`);
   };
@@ -183,17 +132,6 @@ export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) 
           })}
         </div>
       </div>
-
-      {/* Scan modal */}
-      <ScanDocumentModal
-        open={showScan}
-        onClose={() => setShowScan(false)}
-        onConfirm={handleScanConfirm}
-        defaultDate={trip?.startDate}
-        travelerCount={trip?.travelerIds?.length ?? 1}
-        tripStartDate={trip?.startDate}
-        tripEndDate={trip?.endDate}
-      />
 
       {/* Event form modal — EventForm renders its own Modal wrapper */}
       {showEventForm && (

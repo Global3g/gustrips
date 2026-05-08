@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo, useEffect } from 'react';
+import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Camera,
@@ -94,6 +95,19 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripTravelers]);
+
+  /* ── Auto-open camera/file picker when arrived with ?capture=1 ── */
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const routeParams = useParams();
+  useEffect(() => {
+    if (searchParams.get('capture') !== '1') return;
+    const t = setTimeout(() => fileInputRef.current?.click(), 220);
+    const tripId = routeParams.tripId as string;
+    if (tripId) router.replace(`/trips/${tripId}/expenses`, { scroll: false });
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
