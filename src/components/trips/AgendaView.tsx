@@ -1,10 +1,12 @@
 'use client';
 
 import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
-import { format, parseISO, eachDayOfInterval, differenceInCalendarDays } from 'date-fns';
+import { format, parseISO, eachDayOfInterval, differenceInCalendarDays, isToday, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, addMonths, addDays } from 'date-fns';
 import { es } from 'date-fns/locale/es';
+import { AlertTriangle, Pencil, Copy, Trash2 } from 'lucide-react';
 import { EVENT_TYPES } from '@/config/constants';
 import { formatCurrency, getTimezoneAbbr, formatDateShortES } from '@/lib/utils/helpers';
+import EventPattern from '@/components/trips/EventPattern';
 import type { TripEvent } from '@/types';
 
 /* ─── Constantes ──────────────────────────────────── */
@@ -45,6 +47,118 @@ function formatHour(h: number): string {
   return `${h.toString().padStart(2, '0')}:00`;
 }
 
+function isEventInPast(event: TripEvent, displayDate: string, now: Date): boolean {
+  if (event.date && displayDate < event.date) return false;
+  try {
+    if (event.endTime && event.date) {
+      const end = new Date(`${event.date}T${event.endTime}`);
+      if (event.type === 'flight' && event.details?.arrivalDate) {
+        const arrEnd = new Date(`${event.details.arrivalDate}T${event.endTime}`);
+        if (!Number.isNaN(arrEnd.getTime())) return now > arrEnd;
+      }
+      if (event.type === 'hotel' && event.details?.checkOutDate) {
+        const checkOut = new Date(`${event.details.checkOutDate}T${event.details.checkOutTime || event.endTime}`);
+        if (!Number.isNaN(checkOut.getTime())) return now > checkOut;
+      }
+      if (!Number.isNaN(end.getTime())) return now > end;
+    }
+    if (event.startTime && event.date) {
+      const start = new Date(`${event.date}T${event.startTime}`);
+      if (!Number.isNaN(start.getTime())) return now > start;
+    }
+  } catch {}
+  return false;
+}
+
+/* ─── Conflictos visuales ─────────────────────────── */
+
+function findConflicts(events: TripEvent[], date: string): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  // Solo eventos timed que ORIGINAN en este día (excluye continuaciones multi-día)
+  const dayEvents = events
+    .filter((e) => e.startTime && e.date === date)
+    .map((e) => {
+      const startMin = timeToMinutes(e.startTime);
+      let endMin = e.endTime ? timeToMinutes(e.endTime) : startMin + 60;
+      if (endMin <= startMin) endMin = startMin + 60;
+      return { event: e, startMin, endMin };
+    });
+
+  for (let i = 0; i < dayEvents.length; i++) {
+    for (let j = i + 1; j < dayEvents.length; j++) {
+      const a = dayEvents[i];
+      const b = dayEvents[j];
+      if (a.startMin < b.endMin && b.startMin < a.endMin) {
+        const aList = result.get(a.event.id) || [];
+        aList.push(b.event.title);
+        result.set(a.event.id, aList);
+        const bList = result.get(b.event.id) || [];
+        bList.push(a.event.title);
+        result.set(b.event.id, bList);
+      }
+    }
+  }
+  return result;
+}
+
+/* ─── Asignación de lanes (side-by-side) ──────────── */
+
+function assignLanes(
+  events: { id: string; startMin: number; endMin: number }[],
+): Map<string, { laneIndex: number; laneCount: number }> {
+  const result = new Map<string, { laneIndex: number; laneCount: number }>();
+  if (events.length === 0) return result;
+
+  // Ordenar por startMin (tie-break: el de mayor duración primero)
+  const sorted = [...events].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+
+  const laneEnds: number[] = [];
+  const lanes = new Map<string, number>();
+  const clusterId = new Map<string, number>();
+  let nextCluster = 0;
+  let activeCluster = -1;
+  let activeMaxEnd = -Infinity;
+
+  for (const ev of sorted) {
+    if (ev.startMin >= activeMaxEnd) {
+      activeCluster = nextCluster++;
+      activeMaxEnd = ev.endMin;
+      laneEnds.length = 0;
+    } else {
+      activeMaxEnd = Math.max(activeMaxEnd, ev.endMin);
+    }
+    clusterId.set(ev.id, activeCluster);
+
+    let lane = -1;
+    for (let i = 0; i < laneEnds.length; i++) {
+      if (laneEnds[i] <= ev.startMin) {
+        lane = i;
+        break;
+      }
+    }
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(ev.endMin);
+    } else {
+      laneEnds[lane] = ev.endMin;
+    }
+    lanes.set(ev.id, lane);
+  }
+
+  const clusterMaxLane = new Map<number, number>();
+  lanes.forEach((laneIdx, id) => {
+    const c = clusterId.get(id) ?? 0;
+    clusterMaxLane.set(c, Math.max(clusterMaxLane.get(c) ?? 0, laneIdx + 1));
+  });
+
+  lanes.forEach((laneIdx, id) => {
+    const c = clusterId.get(id) ?? 0;
+    result.set(id, { laneIndex: laneIdx, laneCount: clusterMaxLane.get(c) ?? 1 });
+  });
+
+  return result;
+}
+
 /* ─── Drag & Resize state ─────────────────────────── */
 
 interface DragGhost {
@@ -68,6 +182,7 @@ interface AgendaViewProps {
   onEdit: (event: TripEvent) => void;
   onUpdate?: (eventId: string, data: Partial<TripEvent>) => Promise<void>;
   onDelete?: (eventId: string) => Promise<void>;
+  onDuplicate?: (event: TripEvent) => void;
   onReorder?: (events: TripEvent[]) => Promise<void>;
   onCreateAt?: (date: string, time: string) => void;
   selectedDate?: string;
@@ -78,9 +193,84 @@ interface AgendaViewProps {
   onCalendarViewChange?: (view: 'day' | 'week' | 'full') => void;
 }
 
+/* ─── MonthGrid (mini month picker) ───────────────── */
+
+function MonthGrid({ dates, selectedDate, onSelect }: {
+  dates: string[];
+  selectedDate: string;
+  onSelect: (d: string) => void;
+}) {
+  const [viewMonth, setViewMonth] = useState(() => parseISO(selectedDate));
+  const monthStart = startOfMonth(viewMonth);
+  const monthEnd = endOfMonth(viewMonth);
+  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
+  const dateSet = new Set(dates);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <button
+          type="button"
+          onClick={() => setViewMonth((m) => addMonths(m, -1))}
+          className="p-1 rounded hover:bg-gray-100 text-gray-500"
+          aria-label="Mes anterior"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+        </button>
+        <span className="text-sm font-bold text-gray-900 capitalize">
+          {format(viewMonth, "MMMM yyyy", { locale: es })}
+        </span>
+        <button
+          type="button"
+          onClick={() => setViewMonth((m) => addMonths(m, 1))}
+          className="p-1 rounded hover:bg-gray-100 text-gray-500"
+          aria-label="Mes siguiente"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
+          <div key={i} className="text-center text-[10px] font-bold text-gray-400 uppercase tracking-wide">{d}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day) => {
+          const dStr = format(day, 'yyyy-MM-dd');
+          const inTrip = dateSet.has(dStr);
+          const isSelected = dStr === selectedDate;
+          const inMonth = isSameMonth(day, viewMonth);
+          const todayCheck = isToday(day);
+          const baseCls = 'h-8 w-8 rounded-lg text-xs flex items-center justify-center transition-all';
+          const stateCls = isSelected
+            ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30'
+            : inTrip
+              ? 'text-gray-700 hover:bg-blue-50 hover:text-blue-600 font-medium'
+              : 'text-gray-300 cursor-not-allowed';
+          const dimCls = !inMonth && !isSelected ? 'opacity-40' : '';
+          const todayCls = todayCheck && !isSelected ? 'ring-1 ring-blue-300' : '';
+          return (
+            <button
+              key={dStr}
+              type="button"
+              onClick={() => inTrip && onSelect(dStr)}
+              disabled={!inTrip}
+              className={`${baseCls} ${stateCls} ${dimCls} ${todayCls}`.trim()}
+            >
+              {format(day, 'd')}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Componente ──────────────────────────────────── */
 
-export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReorder, onCreateAt, selectedDate, onSelectedDateChange, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
+export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDuplicate, onReorder, onCreateAt, selectedDate, onSelectedDateChange, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragInfoRef = useRef<{ event: TripEvent; durationMin: number; offsetY: number } | null>(null);
@@ -93,6 +283,56 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
   const resizeGhostRef = useRef<ResizeGhost | null>(null);
   const [resizeGhost, setResizeGhost] = useState<ResizeGhost | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [nowTick, setNowTick] = useState(0);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; event: TripEvent } | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+  const isMultiSelectMode = selectedEventIds.size > 0;
+
+  // Mobile media query
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  // Escape clears multi-select
+  useEffect(() => {
+    if (selectedEventIds.size === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedEventIds(new Set());
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedEventIds.size]);
+
+  // Toggle event id in selected set
+  const toggleSelectedEvent = useCallback((id: string) => {
+    setSelectedEventIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [contextMenu]);
 
   // Sync refs with state
   useEffect(() => { ghostRef.current = ghost; }, [ghost]);
@@ -147,8 +387,30 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
   /* ─── Rango de horas ────────────────────────────── */
 
   const { startHour, endHour } = useMemo(() => {
-    return { startHour: 6, endHour: 22 }; // 6 AM a 10 PM
-  }, []);
+    const mins: number[] = [];
+    for (const ev of events) {
+      if (ev.startTime) mins.push(timeToMinutes(ev.startTime));
+      if (ev.endTime) mins.push(timeToMinutes(ev.endTime));
+    }
+    if (mins.length === 0) return { startHour: 6, endHour: 22 };
+    const minMin = Math.min(...mins);
+    const maxMin = Math.max(...mins);
+    let sH = Math.max(0, Math.floor(minMin / 60) - 1);
+    let eH = Math.min(24, Math.ceil(maxMin / 60) + 1);
+    const MIN_WINDOW = 12;
+    if (eH - sH < MIN_WINDOW) {
+      const deficit = MIN_WINDOW - (eH - sH);
+      const expandUp = Math.ceil(deficit / 2);
+      const expandDown = deficit - expandUp;
+      sH = Math.max(0, sH - expandUp);
+      eH = Math.min(24, eH + expandDown);
+      if (eH - sH < MIN_WINDOW) {
+        if (sH === 0) eH = Math.min(24, sH + MIN_WINDOW);
+        else if (eH === 24) sH = Math.max(0, eH - MIN_WINDOW);
+      }
+    }
+    return { startHour: sH, endHour: eH };
+  }, [events]);
 
   const totalHours = endHour - startHour;
   const hours = Array.from({ length: totalHours }, (_, i) => startHour + i);
@@ -206,22 +468,24 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
 
   useEffect(() => {
     if (!scrollRef.current) return;
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (filteredDates.includes(todayStr) && nowMin >= startHour * 60 && nowMin < endHour * 60) {
+      scrollRef.current.scrollTop = Math.max(0, ((nowMin / 60) - startHour - 1) * HOUR_HEIGHT);
+      return;
+    }
     const first = events.find((e) => e.startTime);
     if (first) {
       const min = timeToMinutes(first.startTime);
       scrollRef.current.scrollTop = Math.max(0, ((min / 60) - startHour - 0.5) * HOUR_HEIGHT);
     }
-  }, [events, startHour]);
+  }, [events, startHour, endHour, filteredDates]);
 
   /* ─── Drag & Drop ──────────────────────────────── */
 
-  const handleDragStart = useCallback((e: React.PointerEvent, event: TripEvent) => {
+  const handleDragStart = useCallback((event: TripEvent, blockRect: DOMRect, clientY: number) => {
     if (!event.startTime) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const block = e.currentTarget as HTMLElement;
-    const rect = block.getBoundingClientRect();
 
     const sm = timeToMinutes(event.startTime);
     const em = event.endTime ? timeToMinutes(event.endTime) : sm + 60;
@@ -232,7 +496,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
     dragInfoRef.current = {
       event,
       durationMin: dur,
-      offsetY: e.clientY - rect.top,
+      offsetY: clientY - blockRect.top,
     };
 
     setGhost({ eventId: event.id, date: event.date, startMin: sm, durationMin: dur });
@@ -374,6 +638,31 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
     document.addEventListener('pointerup', onUp);
   }, [startHour, endHour, onUpdate]);
 
+  /* ─── Bulk actions sobre eventos seleccionados ──── */
+
+  const bulkShiftDays = useCallback((deltaDays: number) => {
+    if (!onUpdate) return;
+    const ids = Array.from(selectedEventIds);
+    ids.forEach((id) => {
+      const ev = events.find((e) => e.id === id);
+      if (!ev || !ev.date) return;
+      try {
+        const newDate = format(addDays(parseISO(ev.date), deltaDays), 'yyyy-MM-dd');
+        onUpdate?.(id, { date: newDate });
+      } catch {}
+    });
+    setSelectedEventIds(new Set());
+  }, [onUpdate, selectedEventIds, events]);
+
+  const bulkDelete = useCallback(() => {
+    if (!onDelete) return;
+    const ids = Array.from(selectedEventIds);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Eliminar ${ids.length} eventos? Esta accion no se puede deshacer.`)) return;
+    ids.forEach((id) => onDelete?.(id));
+    setSelectedEventIds(new Set());
+  }, [onDelete, selectedEventIds]);
+
   /* ─── Calcular posición de un evento en el grid ── */
 
   const getBlockPosition = (event: TripEvent, date: string) => {
@@ -431,7 +720,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
   return (
     <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
       {/* ─── View toggle bar ─────────────────── */}
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+      <div className="relative flex items-center gap-1 px-3 py-2 border-b border-gray-100 bg-gray-50/50">
         {(['day', 'week', 'full'] as const).map((v) => (
           <button
             key={v}
@@ -464,9 +753,12 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             </button>
-            <span className="text-[11px] text-gray-500 min-w-[80px] text-center">
+            <button
+              onClick={() => setShowMonthPicker((s) => !s)}
+              className="text-[11px] text-gray-700 font-semibold hover:bg-gray-100 rounded px-2 py-1 min-w-[90px] text-center transition-colors"
+            >
               {filteredDates.length > 0 && formatDateShortES(filteredDates[0])}
-            </span>
+            </button>
             <button
               onClick={() => {
                 const currentDate = selectedDate && dates.includes(selectedDate) ? selectedDate : dates[0];
@@ -500,9 +792,12 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             </button>
-            <span className="text-[11px] text-gray-500 min-w-[80px] text-center">
+            <button
+              onClick={() => setShowMonthPicker((s) => !s)}
+              className="text-[11px] text-gray-700 font-semibold hover:bg-gray-100 rounded px-2 py-1 min-w-[90px] text-center transition-colors"
+            >
               {filteredDates.length > 0 && `${formatDateShortES(filteredDates[0])} – ${formatDateShortES(filteredDates[filteredDates.length - 1])}`}
-            </span>
+            </button>
             <button
               onClick={() => setWeekOffset((o) => o + 1)}
               disabled={(() => {
@@ -517,22 +812,43 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
             </button>
           </div>
         )}
+
+        {showMonthPicker && (
+          <>
+            <div
+              className="fixed inset-0 z-30"
+              onClick={() => setShowMonthPicker(false)}
+            />
+            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-40 w-[300px] bg-white rounded-xl shadow-2xl border border-gray-200 p-4">
+              <MonthGrid
+                dates={dates}
+                selectedDate={selectedDate ?? dates[0]}
+                onSelect={(d) => {
+                  onSelectedDateChange?.(d);
+                  setShowMonthPicker(false);
+                }}
+              />
+            </div>
+          </>
+        )}
       </div>
       <div ref={scrollRef} className="overflow-auto max-h-[85vh]">
         <div className={`flex ${calendarView === 'full' ? 'min-w-max' : 'min-w-0 w-full'}`}>
 
           {/* ─── Columna de horas (sticky) ──────── */}
-          <div className={`${calendarView === 'day' ? 'w-16' : 'w-14'} flex-shrink-0 sticky left-0 z-20 bg-white`}>
+          <div className={`${isMobile ? 'w-10' : (calendarView === 'day' ? 'w-16' : 'w-14')} flex-shrink-0 sticky left-0 z-20 bg-white`}>
             <div className={`${calendarView === 'day' ? 'h-16' : 'h-12'} border-b border-gray-200`} />
             <div className="relative" style={{ height: totalHours * HOUR_HEIGHT }}>
               {hours.map((h) => (
                 <div
                   key={h}
-                  className="absolute w-full text-right pr-2"
+                  className={`absolute w-full text-right ${isMobile ? 'pr-1' : 'pr-2'}`}
                   style={{ top: (h - startHour) * HOUR_HEIGHT }}
                 >
                   <span className={`font-mono leading-none relative -top-[5px] ${
-                    calendarView === 'day' ? 'text-gray-400 text-xs' : 'text-gray-300 text-[10px]'
+                    isMobile
+                      ? 'text-gray-400 text-[8px]'
+                      : (calendarView === 'day' ? 'text-gray-400 text-xs' : 'text-gray-300 text-[10px]')
                   }`}>
                     {formatHour(h)}
                   </span>
@@ -547,6 +863,25 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
             const { timed, untimed } = eventsByDate[date];
             const isWeekend = [0, 6].includes(parseISO(date).getDay());
             const total = dayTotals[date];
+            const isDateToday = isToday(parseISO(date));
+
+            // Conflictos por día (excluye continuaciones multi-día)
+            const conflicts = findConflicts(events, date);
+
+            // Lanes side-by-side: solo eventos que originan en este día (no continuaciones)
+            const laneInputs = timed
+              .filter((e) => {
+                const isFlightCont = e.type === 'flight' && e.details?.arrivalDate && e.details.arrivalDate !== e.date && date !== e.date;
+                const isHotelCont = e.type === 'hotel' && e.details?.checkOutDate && e.details.checkOutDate !== e.date && date !== e.date;
+                return !isFlightCont && !isHotelCont;
+              })
+              .map((e) => {
+                const sm = timeToMinutes(e.startTime);
+                let em = e.endTime ? timeToMinutes(e.endTime) : sm + 60;
+                if (em <= sm) em = sm + 60;
+                return { id: e.id, startMin: sm, endMin: em };
+              });
+            const lanes = assignLanes(laneInputs);
 
             return (
               <div
@@ -557,14 +892,14 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                   calendarView === 'day'
                     ? { minWidth: '100%', width: '100%' }
                     : calendarView === 'week'
-                    ? { minWidth: 120, flex: 1 }
-                    : { minWidth: DAY_COL_MIN_W }
+                    ? { minWidth: isMobile ? 90 : 120, flex: 1 }
+                    : { minWidth: isMobile ? 120 : DAY_COL_MIN_W }
                 }
               >
                 {/* Header del día */}
                 <div
                   className={`${calendarView === 'day' ? 'h-16' : 'h-12'} flex flex-col items-center justify-center border-b border-gray-200 sticky top-0 z-10 ${
-                    isWeekend ? 'bg-gray-50' : 'bg-white'
+                    isDateToday ? 'bg-blue-50/70' : isWeekend ? 'bg-gray-50' : 'bg-white'
                   }`}
                 >
                   <span className={`text-gray-400 uppercase tracking-wide ${calendarView === 'day' ? 'text-xs' : 'text-[10px]'}`}>
@@ -573,6 +908,9 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                   <span className={`text-gray-900 font-bold ${calendarView === 'day' ? 'text-base' : 'text-xs'}`}>
                     {formatDateShortES(date)}
                   </span>
+                  {isDateToday && (
+                    <span className="mt-0.5 text-[9px] font-bold tracking-[0.15em] uppercase text-blue-600 bg-blue-100 rounded-full px-1.5 py-0.5 inline-block">HOY</span>
+                  )}
                 </div>
 
                 {/* Grid de tiempo */}
@@ -605,25 +943,84 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                     />
                   ))}
 
+                  {/* Líneas de media hora */}
+                  {hours.map((h) => (
+                    <div
+                      key={`half-${h}`}
+                      className="absolute w-full border-t border-dashed border-gray-100 pointer-events-none"
+                      style={{ top: (h - startHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
+                    />
+                  ))}
+
+                  {/* Línea de "ahora" */}
+                  {isDateToday && (() => {
+                    void nowTick;
+                    const now = new Date();
+                    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+                    if (nowMinutes < startHour * 60 || nowMinutes > endHour * 60) return null;
+                    const topPx = ((nowMinutes - startHour * 60) / 60) * HOUR_HEIGHT;
+                    return (
+                      <div
+                        className="absolute left-0 right-0 z-[3] pointer-events-none"
+                        style={{ top: topPx }}
+                      >
+                        <span className="absolute -top-2 -left-1 bg-red-500 text-white text-[10px] font-bold rounded px-1 leading-tight">
+                          {`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`}
+                        </span>
+                        <div className="absolute left-0 top-0 -translate-y-1/2 w-[10px] h-[10px] rounded-full bg-red-500" />
+                        <div className="bg-red-500 h-[2px] rounded shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
+                      </div>
+                    );
+                  })()}
+
                   {/* Eventos sin hora */}
                   {untimed.map((event, i) => {
                     const colors = AGENDA_COLORS[event.type] || AGENDA_COLORS.other;
+                    const typeColor = EVENT_TYPES[event.type]?.color || colors.border;
+                    void nowTick;
+                    const isPastBlock = isEventInPast(event, date, new Date());
+                    const conflictTitles = conflicts.get(event.id) || [];
+                    const hasConflict = conflictTitles.length > 0;
+                    const isSelected = selectedEventIds.has(event.id);
                     return (
                       <div
                         key={event.id}
                         data-event-block
-                        className="absolute left-1 right-1 rounded-md overflow-hidden cursor-pointer hover:brightness-125 transition-all"
+                        className={`absolute left-1 right-1 rounded-md overflow-hidden cursor-pointer hover:brightness-125 transition-all backdrop-blur-sm ${
+                          isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+                        }`}
                         style={{
                           top: 2 + i * 26,
                           height: 24,
-                          backgroundColor: colors.bg,
-                          borderLeft: `3px solid ${colors.border}`,
+                          background: `linear-gradient(135deg, ${typeColor}24 0%, rgba(255,255,255,0.78) 38%, rgba(255,255,255,0.65) 62%, ${typeColor}1c 100%)`,
+                          borderLeft: `3px solid ${typeColor}`,
+                          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 14px -8px ${typeColor}33`,
+                          opacity: isPastBlock ? 0.55 : 1,
+                          filter: isPastBlock ? 'saturate(0.5)' : 'none',
                         }}
-                        onClick={() => onEdit(event)}
+                        title={hasConflict ? `Solapa con: ${conflictTitles.join(', ')}` : undefined}
+                        onClick={(e) => {
+                          if (e.metaKey || e.ctrlKey || isMultiSelectMode) {
+                            e.stopPropagation();
+                            toggleSelectedEvent(event.id);
+                            return;
+                          }
+                          onEdit(event);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu({ x: e.clientX, y: e.clientY, event });
+                        }}
                       >
-                        <p className="px-1.5 text-[10px] font-semibold truncate leading-[24px]" style={{ color: colors.text }}>
+                        <p className="px-1.5 text-[10px] font-semibold truncate leading-[24px] relative z-[1]" style={{ color: colors.text }}>
                           {event.title}
                         </p>
+                        {hasConflict && (
+                          <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white flex items-center justify-center z-[2] pointer-events-none">
+                            <AlertTriangle className="text-red-500 w-3 h-3 animate-pulse" />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -636,10 +1033,14 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
 
                     const pos = getBlockPosition(event, date);
                     const colors = AGENDA_COLORS[event.type] || AGENDA_COLORS.other;
+                    const typeColor = EVENT_TYPES[event.type]?.color || colors.border;
                     const isFlightMulti = event.type === 'flight' && event.details?.arrivalDate && event.details.arrivalDate !== event.date;
                     const isHotelMulti = event.type === 'hotel' && event.details?.checkOutDate && event.details.checkOutDate !== event.date;
                     const isMultiDay = isFlightMulti || isHotelMulti;
                     const isContinuation = isMultiDay && date !== event.date;
+                    const laneInfo = !isContinuation ? lanes.get(event.id) : undefined;
+                    const conflictTitles = !isContinuation ? (conflicts.get(event.id) || []) : [];
+                    const hasConflict = conflictTitles.length > 0;
 
                     const tzAbbr = event.timezone ? getTimezoneAbbr(event.timezone, date) : '';
 
@@ -674,25 +1075,62 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                       ? Math.max(((resizeGhost.endMin - resizeGhost.startMin) / 60) * HOUR_HEIGHT, MIN_BLOCK_HEIGHT)
                       : pos.height;
 
+                    void nowTick;
+                    const isPastBlock = isEventInPast(event, date, new Date());
+
+                    const laneStyle: React.CSSProperties = laneInfo && laneInfo.laneCount > 1
+                      ? {
+                          left: `calc(${(laneInfo.laneIndex / laneInfo.laneCount) * 100}% + 4px)`,
+                          width: `calc(${100 / laneInfo.laneCount}% - 8px)`,
+                        }
+                      : {};
+
+                    const isSelected = selectedEventIds.has(event.id);
+
                     return (
                       <div
                         key={`${event.id}-${date}`}
                         data-event-block
-                        className={`absolute left-1 right-1 rounded-lg overflow-hidden z-[1] transition-opacity ${
+                        className={`absolute rounded-lg overflow-hidden z-[1] transition-opacity backdrop-blur-sm ${
+                          laneInfo && laneInfo.laneCount > 1 ? '' : 'left-1 right-1'
+                        } ${
                           isDragging ? 'opacity-30 pointer-events-none' : 'cursor-grab active:cursor-grabbing hover:brightness-110'
-                        } ${isContinuation ? 'opacity-60 border-dashed' : ''}`}
+                        } ${isContinuation ? 'border-dashed' : ''} ${
+                          isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+                        }`}
                         style={{
                           top: Math.max(pos.top, 0),
                           height: resizedHeight,
-                          backgroundColor: colors.bg,
-                          borderLeft: `3px solid ${colors.border}`,
+                          background: `linear-gradient(135deg, ${typeColor}24 0%, rgba(255,255,255,0.78) 38%, rgba(255,255,255,0.65) 62%, ${typeColor}1c 100%)`,
+                          borderLeft: `3px solid ${typeColor}`,
+                          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 14px -8px ${typeColor}33`,
                           touchAction: 'none',
+                          opacity: isPastBlock ? 0.55 : (isContinuation ? 0.6 : 1),
+                          filter: isPastBlock ? 'saturate(0.5)' : 'none',
+                          ...laneStyle,
+                        }}
+                        title={hasConflict ? `Solapa con: ${conflictTitles.join(', ')}` : undefined}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu({ x: e.clientX, y: e.clientY, event });
                         }}
                         onPointerDown={!isContinuation ? (e) => {
+                          // Multi-select: Cmd/Ctrl click or already in multi-select mode → toggle, no drag
+                          if (e.metaKey || e.ctrlKey || isMultiSelectMode) {
+                            e.stopPropagation();
+                            clickedEventRef.current = true;
+                            if (gridClickTimerRef.current) clearTimeout(gridClickTimerRef.current);
+                            toggleSelectedEvent(event.id);
+                            return;
+                          }
+
                           const startX = e.clientX;
                           const startY = e.clientY;
                           let dragged = false;
-                          const reactEvent = e;
+                          // Capture rect synchronously — currentTarget gets nulled later
+                          const blockEl = e.currentTarget as HTMLElement;
+                          const blockRect = blockEl.getBoundingClientRect();
 
                           const onMove = (ev: PointerEvent) => {
                             if (dragged) return;
@@ -702,7 +1140,7 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                               dragged = true;
                               document.removeEventListener('pointermove', onMove);
                               document.removeEventListener('pointerup', onUp);
-                              handleDragStart(reactEvent, event);
+                              handleDragStart(event, blockRect, startY);
                             }
                           };
 
@@ -721,7 +1159,17 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                           document.addEventListener('pointerup', onUp);
                         } : undefined}
                       >
-                        <div className="py-1.5 px-2 h-full flex flex-col overflow-hidden relative justify-start gap-0.5">
+                        {resizedHeight > 60 && (
+                          <div className="absolute inset-0 pointer-events-none" style={{ opacity: 0.06 }}>
+                            <EventPattern type={event.type} color={typeColor} />
+                          </div>
+                        )}
+                        {hasConflict && (
+                          <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white flex items-center justify-center z-[2] pointer-events-none">
+                            <AlertTriangle className="text-red-500 w-3 h-3 animate-pulse" />
+                          </div>
+                        )}
+                        <div className={`${isMobile ? 'py-0.5 px-1' : 'py-1.5 px-2'} h-full flex flex-col overflow-hidden relative z-[1] justify-start gap-0.5`}>
                           {/* Título */}
                           <p
                             className={`font-bold leading-tight truncate ${resizedHeight > 60 ? 'text-xs' : 'text-[11px]'}`}
@@ -803,6 +1251,18 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
                     );
                   })}
 
+                  {/* ─── Empty state (sin eventos) ── */}
+                  {untimed.length === 0 && timed.length === 0 && (
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[2] pointer-events-auto">
+                      <button
+                        onClick={() => onCreateAt?.(date, '12:00')}
+                        className="border-2 border-dashed border-gray-200 rounded-xl px-4 py-3 text-gray-400 text-xs hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/50 transition-colors"
+                      >
+                        + Agregar evento
+                      </button>
+                    </div>
+                  )}
+
                   {/* ─── Ghost del drag ─────────────── */}
                   {ghost && ghost.date === date && (
                     <div
@@ -835,6 +1295,111 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onReord
           })}
         </div>
       </div>
+      {isMultiSelectMode && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[55] bg-white rounded-2xl shadow-2xl border border-gray-200 px-4 py-2.5 flex items-center gap-3">
+          <span className="text-sm font-semibold text-gray-900">
+            {selectedEventIds.size} seleccionado{selectedEventIds.size !== 1 ? 's' : ''}
+          </span>
+          <div className="h-5 w-px bg-gray-200" />
+          <button
+            type="button"
+            onClick={() => bulkShiftDays(-1)}
+            className="text-xs font-semibold text-gray-700 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!onUpdate}
+          >
+            ← Día anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => bulkShiftDays(1)}
+            className="text-xs font-semibold text-gray-700 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!onUpdate}
+          >
+            Día siguiente →
+          </button>
+          {onDelete && (
+            <>
+              <div className="h-5 w-px bg-gray-200" />
+              <button
+                type="button"
+                onClick={bulkDelete}
+                className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors"
+              >
+                Eliminar
+              </button>
+            </>
+          )}
+          <div className="h-5 w-px bg-gray-200" />
+          <button
+            type="button"
+            onClick={() => setSelectedEventIds(new Set())}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+      {contextMenu && (
+        <>
+          {/* invisible backdrop to catch outside clicks */}
+          <div
+            className="fixed inset-0 z-[60]"
+            onClick={() => setContextMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+          />
+          <div
+            className="fixed z-[61] bg-white rounded-xl shadow-2xl border border-gray-200 py-1.5 min-w-[160px] overflow-hidden"
+            style={{
+              left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1024) - 180),
+              top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 768) - 150),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left"
+              onClick={() => {
+                onEdit(contextMenu.event);
+                setContextMenu(null);
+              }}
+            >
+              <Pencil className="w-3.5 h-3.5 text-gray-400" />
+              Editar
+            </button>
+            {onDuplicate && (
+              <button
+                type="button"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50 transition-colors text-left"
+                onClick={() => {
+                  onDuplicate?.(contextMenu.event);
+                  setContextMenu(null);
+                }}
+              >
+                <Copy className="w-3.5 h-3.5 text-violet-500" />
+                Duplicar
+              </button>
+            )}
+            {onDelete && (
+              <>
+                <div className="h-px bg-gray-100 my-1" />
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
+                  onClick={() => {
+                    if (window.confirm(`Eliminar "${contextMenu.event.title}"? Esta accion no se puede deshacer.`)) {
+                      onDelete?.(contextMenu.event.id);
+                    }
+                    setContextMenu(null);
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                  Eliminar
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

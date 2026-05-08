@@ -82,7 +82,7 @@ export default function PhotosPage() {
   const params = useParams();
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
-  const { events, updateEvent } = useEvents(tripId);
+  const { events, updateEvent, loading: eventsLoading } = useEvents(tripId);
   const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto } = useAlbum(tripId, trip);
   const { toast } = useToast();
 
@@ -760,7 +760,33 @@ export default function PhotosPage() {
       </AnimatePresence>
 
       {/* ── Photo grid by day and event ── */}
-      {totalPhotos === 0 ? (
+      {eventsLoading && totalPhotos === 0 ? (
+        <div className="space-y-8">
+          {[0, 1].map((groupIdx) => (
+            <div key={groupIdx}>
+              <div className="mb-4 flex items-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-lg bg-gray-200 animate-pulse"
+                  style={{ animationDelay: `${groupIdx * 120}ms` }}
+                />
+                <div
+                  className="h-5 w-48 bg-gray-200 rounded-lg animate-pulse"
+                  style={{ animationDelay: `${groupIdx * 120}ms` }}
+                />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div
+                    key={i}
+                    className="aspect-square bg-gray-200 rounded-xl animate-pulse"
+                    style={{ animationDelay: `${groupIdx * 120 + i * 60}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : totalPhotos === 0 ? (
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-100 p-12 text-center">
           <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
             <Camera className="w-10 h-10 text-gray-200" />

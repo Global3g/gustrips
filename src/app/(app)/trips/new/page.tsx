@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useTrips } from '@/hooks/useTrips';
@@ -15,6 +14,21 @@ export default function NewTripPage() {
   const { trips, createTrip } = useTrips();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+
+  const handleBack = () => {
+    if (typeof window !== 'undefined' && document.referrer) {
+      try {
+        const refOrigin = new URL(document.referrer).origin;
+        if (refOrigin === window.location.origin) {
+          router.back();
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    router.push(ROUTES.app.dashboard);
+  };
 
   const handleSubmit = async (data: {
     title: string;
@@ -63,12 +77,14 @@ export default function NewTripPage() {
         transition={{ duration: 0.4 }}
         className="flex items-center gap-3"
       >
-        <Link
-          href={ROUTES.app.dashboard}
+        <button
+          type="button"
+          onClick={handleBack}
+          aria-label="Volver"
           className="w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
         >
           <ArrowLeft className="w-5 h-5 text-gray-700" />
-        </Link>
+        </button>
         <div>
           <h1 className="text-gray-900 text-2xl font-bold">Nuevo Viaje</h1>
           <p className="text-gray-500 text-sm">Completa los datos para crear tu viaje</p>

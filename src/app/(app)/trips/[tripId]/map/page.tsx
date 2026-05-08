@@ -120,8 +120,34 @@ export default function MapPage() {
       </div>
 
       {eventsLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-gray-200 border-t-blue-400 rounded-full animate-spin" />
+        <div className="space-y-4">
+          <div className="h-6 w-44 bg-gray-200 rounded-lg animate-pulse" />
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="rounded-2xl bg-white/40 backdrop-blur-sm border border-gray-200/60 p-4 animate-pulse"
+              style={{ animationDelay: `${i * 100}ms` }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-3.5 h-3.5 rounded bg-gray-200" />
+                <div className="h-4 w-32 bg-gray-200 rounded" />
+              </div>
+              <div className="space-y-2">
+                {[0, 1].map((j) => (
+                  <div
+                    key={j}
+                    className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50/80"
+                  >
+                    <div className="w-3 h-3 rounded-full bg-gray-200 flex-shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3.5 w-2/3 bg-gray-200 rounded" />
+                      <div className="h-3 w-1/2 bg-gray-100 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ) : eventsWithCoords.length > 0 ? (
         <motion.div

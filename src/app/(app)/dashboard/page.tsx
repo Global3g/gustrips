@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plane, Plus, Search, MapPin, Calendar, Users, CalendarClock, ArrowRight, Globe, ListChecks } from 'lucide-react';
+import { Plane, Plus, Search, MapPin, Calendar, Users, CalendarClock, ArrowRight, Globe, ListChecks, CalendarDays, Receipt, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import { useTrips } from '@/hooks/useTrips';
@@ -143,6 +143,79 @@ function StatPill({ icon: Icon, value, label, color }: {
   );
 }
 
+/* ─── Empty state (first trip landing card) ──────── */
+
+function DashboardEmptyState() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="max-w-2xl mx-auto rounded-3xl p-8 sm:p-12 relative overflow-hidden border border-white/[0.08] my-12"
+      style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+    >
+      <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/15 rounded-full -translate-y-48 translate-x-48 blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-80 h-80 bg-violet-500/15 rounded-full translate-y-40 -translate-x-40 blur-3xl pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-rose-500/8 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 text-center">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.15, type: 'spring', stiffness: 200 }}
+          className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-blue-500/30 to-violet-500/30 ring-1 ring-white/[0.08] flex items-center justify-center mb-6"
+          style={{ boxShadow: '0 0 40px rgba(59,130,246,0.25)' }}
+        >
+          <Plane className="w-10 h-10 text-white" />
+        </motion.div>
+
+        <h2 className="text-white font-bold text-2xl sm:text-3xl tracking-tight">
+          ¡Comienza tu primer viaje!
+        </h2>
+        <p className="text-white/60 text-sm sm:text-base mt-3 max-w-md mx-auto">
+          Organiza vuelos, hoteles, actividades y todo lo que necesitas en un solo lugar. Comparte con amigos y familia.
+        </p>
+
+        <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Link
+            href={ROUTES.app.newTrip}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold shadow-lg shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto"
+          >
+            <Plus className="w-5 h-5" />
+            Crear mi primer viaje
+          </Link>
+        </div>
+
+        {/* Feature highlights */}
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            { icon: CalendarDays, label: 'Itinerario visual', desc: 'Día por día' },
+            { icon: Receipt, label: 'Gastos compartidos', desc: 'Sin discusiones' },
+            { icon: FileText, label: 'Documentos', desc: 'Todo a la mano' },
+          ].map((f, i) => {
+            const Icon = f.icon;
+            return (
+              <motion.div
+                key={f.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 + i * 0.1 }}
+                className="rounded-2xl p-4 bg-white/[0.03] border border-white/[0.06] backdrop-blur-sm"
+              >
+                <div className="w-10 h-10 mx-auto rounded-xl bg-white/[0.05] flex items-center justify-center mb-2.5">
+                  <Icon className="w-5 h-5 text-white/70" />
+                </div>
+                <p className="text-white text-sm font-semibold">{f.label}</p>
+                <p className="text-white/40 text-xs mt-0.5">{f.desc}</p>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ─── Main Page ───────────────────────────────────── */
 
 export default function DashboardPage() {
@@ -265,26 +338,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── Empty state ── */}
-      {!loading && trips.length === 0 && !error && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center py-16 rounded-2xl"
-          style={glass}
-        >
-          <div className="w-16 h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center mx-auto mb-4">
-            <Plane className="w-8 h-8 text-blue-400" />
-          </div>
-          <h2 className="text-white font-bold text-lg mb-1">Tu proxima aventura te espera</h2>
-          <p className="text-white/40 text-sm mb-5">Crea tu primer viaje y comienza a organizar</p>
-          <Link
-            href={ROUTES.app.newTrip}
-            className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Crear Viaje
-          </Link>
-        </motion.div>
-      )}
+      {!loading && trips.length === 0 && !error && <DashboardEmptyState />}
 
       {/* ── Hero trip ── */}
       {!loading && heroTrip && (

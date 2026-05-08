@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useMemo } from 'react';
+import { useParams } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plane,
   Hotel,
@@ -12,19 +13,28 @@ import {
   Shield,
   ExternalLink,
   ChevronDown,
+  Plus,
+  Trash2,
+  Bookmark,
+  X,
+  Loader2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { classNames } from '@/lib/utils/helpers';
+import { classNames, generateId, nowISO } from '@/lib/utils/helpers';
+import { useTrip } from '@/hooks/useTrip';
+import { useToast } from '@/context/ToastContext';
+import type { CustomLink, CustomLinkCategory } from '@/types';
 
 /* ─── Tipos ────────────────────────────────────── */
 
 interface QuickLink {
   name: string;
   url: string;
-  logo: string; // favicon URL
+  logo: string;
 }
 
 interface LinkCategory {
+  slug: CustomLinkCategory;
   label: string;
   icon: LucideIcon;
   color: string;
@@ -32,10 +42,29 @@ interface LinkCategory {
   links: QuickLink[];
 }
 
+/* ─── Helpers ──────────────────────────────────── */
+
+function getFaviconFromUrl(url: string): string {
+  try {
+    const u = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=64`;
+  } catch {
+    return '';
+  }
+}
+
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 /* ─── Datos ────────────────────────────────────── */
 
 const LINK_CATEGORIES: LinkCategory[] = [
   {
+    slug: 'vuelos',
     label: 'Vuelos',
     icon: Plane,
     color: 'border-blue-200 bg-blue-50',
@@ -48,6 +77,7 @@ const LINK_CATEGORIES: LinkCategory[] = [
     ],
   },
   {
+    slug: 'hoteles',
     label: 'Hoteles',
     icon: Hotel,
     color: 'border-violet-200 bg-violet-50',
@@ -61,6 +91,7 @@ const LINK_CATEGORIES: LinkCategory[] = [
     ],
   },
   {
+    slug: 'autos',
     label: 'Renta de Autos',
     icon: Car,
     color: 'border-cyan-200 bg-cyan-50',
@@ -73,6 +104,7 @@ const LINK_CATEGORIES: LinkCategory[] = [
     ],
   },
   {
+    slug: 'restaurantes',
     label: 'Restaurantes',
     icon: UtensilsCrossed,
     color: 'border-amber-200 bg-amber-50',
@@ -85,6 +117,7 @@ const LINK_CATEGORIES: LinkCategory[] = [
     ],
   },
   {
+    slug: 'tours',
     label: 'Tours y Actividades',
     icon: Compass,
     color: 'border-emerald-200 bg-emerald-50',
@@ -97,6 +130,7 @@ const LINK_CATEGORIES: LinkCategory[] = [
     ],
   },
   {
+    slug: 'mapas',
     label: 'Mapas y Transporte',
     icon: Map,
     color: 'border-rose-200 bg-rose-50',
@@ -108,6 +142,7 @@ const LINK_CATEGORIES: LinkCategory[] = [
     ],
   },
   {
+    slug: 'seguros',
     label: 'Seguros',
     icon: Shield,
     color: 'border-teal-200 bg-teal-50',
@@ -117,13 +152,159 @@ const LINK_CATEGORIES: LinkCategory[] = [
       { name: 'SafetyWing', url: 'https://www.safetywing.com', logo: 'https://www.safetywing.com/favicon.ico' },
     ],
   },
+  {
+    slug: 'otros',
+    label: 'Otros',
+    icon: Bookmark,
+    color: 'border-pink-200 bg-pink-50',
+    iconBg: 'bg-pink-50 text-pink-600',
+    links: [],
+  },
 ];
+
+/* ─── Add Link Bar (top) ───────────────────────── */
+
+function AddLinkBar({
+  onAdd,
+  totalCustom,
+}: {
+  onAdd: (name: string, url: string, category: CustomLinkCategory) => Promise<void>;
+  totalCustom: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [category, setCategory] = useState<CustomLinkCategory>('otros');
+  const [saving, setSaving] = useState(false);
+
+  const reset = () => {
+    setName('');
+    setUrl('');
+    setCategory('otros');
+    setOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim() || !url.trim()) return;
+    setSaving(true);
+    try {
+      await onAdd(name.trim(), normalizeUrl(url), category);
+      reset();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-pink-100 text-pink-600">
+          <Bookmark className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-gray-900 font-semibold text-sm">Mis enlaces</p>
+          <p className="text-gray-500 text-xs">{totalCustom} guardado{totalCustom !== 1 ? 's' : ''} en este viaje</p>
+        </div>
+        <button
+          onClick={() => setOpen((s) => !s)}
+          className={classNames(
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex-shrink-0',
+            open
+              ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              : 'bg-pink-500 text-white hover:bg-pink-600 shadow-sm'
+          )}
+        >
+          {open ? (
+            <>
+              <X className="w-3.5 h-3.5" /> Cerrar
+            </>
+          ) : (
+            <>
+              <Plus className="w-3.5 h-3.5" /> Agregar enlace
+            </>
+          )}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="px-4 pb-3 overflow-hidden"
+          >
+            <div className="bg-white rounded-lg border border-pink-200 p-3 space-y-2">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Nombre (ej. Reserva del hotel)"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-300 outline-none focus:border-pink-400 focus:ring-1 focus:ring-pink-400/30"
+              />
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                placeholder="https://..."
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-300 outline-none focus:border-pink-400 focus:ring-1 focus:ring-pink-400/30"
+              />
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Categoria</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as CustomLinkCategory)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 outline-none focus:border-pink-400 focus:ring-1 focus:ring-pink-400/30"
+                >
+                  {LINK_CATEGORIES.map((cat) => (
+                    <option key={cat.slug} value={cat.slug}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={reset}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={saving || !name.trim() || !url.trim()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-pink-500 hover:bg-pink-600 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  Agregar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 /* ─── Componente de categoria ──────────────────── */
 
-function CategorySection({ category }: { category: LinkCategory }) {
+function CategorySection({
+  category,
+  customLinks,
+  onDeleteCustom,
+}: {
+  category: LinkCategory;
+  customLinks: CustomLink[];
+  onDeleteCustom: (id: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(true);
   const Icon = category.icon;
+  const totalCount = category.links.length + customLinks.length;
+
+  if (totalCount === 0) return null;
 
   return (
     <div className={classNames('rounded-xl border overflow-hidden', category.color)}>
@@ -141,7 +322,7 @@ function CategorySection({ category }: { category: LinkCategory }) {
           <Icon className="w-4 h-4" />
         </div>
         <span className="flex-1 text-gray-900 font-semibold text-sm">{category.label}</span>
-        <span className="text-gray-300 text-xs">{category.links.length}</span>
+        <span className="text-gray-300 text-xs">{totalCount}</span>
         <motion.div
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: 0.2 }}
@@ -157,30 +338,79 @@ function CategorySection({ category }: { category: LinkCategory }) {
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
           transition={{ duration: 0.25, ease: 'easeInOut' }}
-          className="px-4 pb-3"
+          className="px-4 pb-3 space-y-2"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {category.links.map((link) => (
-              <a
-                key={link.url}
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
-              >
-                <img
-                  src={link.logo}
-                  alt={link.name}
-                  className="w-4 h-4 rounded-sm flex-shrink-0"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                />
-                <span className="text-gray-700 text-xs font-medium group-hover:text-gray-900 transition-colors truncate">
-                  {link.name}
-                </span>
-                <ExternalLink className="w-3 h-3 text-gray-200 group-hover:text-gray-400 ml-auto flex-shrink-0 transition-colors" />
-              </a>
-            ))}
-          </div>
+          {/* Custom links del viaje */}
+          {customLinks.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {customLinks.map((link) => (
+                <div
+                  key={link.id}
+                  className="group flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-white border border-pink-200 hover:border-pink-300 hover:shadow-sm transition-all duration-200"
+                >
+                  <img
+                    src={getFaviconFromUrl(link.url)}
+                    alt={link.name}
+                    className="w-4 h-4 rounded-sm flex-shrink-0"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 min-w-0 text-gray-700 text-xs font-medium hover:text-gray-900 transition-colors truncate"
+                  >
+                    {link.name}
+                  </a>
+                  <span className="text-[9px] font-bold text-pink-600 bg-pink-100 rounded-full px-1.5 py-0.5 flex-shrink-0">
+                    Mio
+                  </span>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-200 hover:text-pink-500 flex-shrink-0 transition-colors"
+                    title="Abrir"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <button
+                    onClick={() => onDeleteCustom(link.id)}
+                    className="text-gray-200 hover:text-red-500 flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Eliminar"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Predefinidos */}
+          {category.links.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {category.links.map((link) => (
+                <a
+                  key={link.url}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+                >
+                  <img
+                    src={link.logo}
+                    alt={link.name}
+                    className="w-4 h-4 rounded-sm flex-shrink-0"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <span className="text-gray-700 text-xs font-medium group-hover:text-gray-900 transition-colors truncate">
+                    {link.name}
+                  </span>
+                  <ExternalLink className="w-3 h-3 text-gray-200 group-hover:text-gray-400 ml-auto flex-shrink-0 transition-colors" />
+                </a>
+              ))}
+            </div>
+          )}
         </motion.div>
       )}
     </div>
@@ -190,11 +420,67 @@ function CategorySection({ category }: { category: LinkCategory }) {
 /* ─── Componente principal ─────────────────────── */
 
 export default function QuickLinks() {
+  const params = useParams();
+  const tripId = params.tripId as string;
+  const { trip, updateTrip } = useTrip(tripId);
+  const { toast } = useToast();
+
+  const customLinks = useMemo(() => trip?.customLinks ?? [], [trip?.customLinks]);
+
+  const linksByCategory = useMemo(() => {
+    const map: Record<CustomLinkCategory, CustomLink[]> = {
+      vuelos: [], hoteles: [], autos: [], restaurantes: [],
+      tours: [], mapas: [], seguros: [], otros: [],
+    };
+    for (const link of customLinks) {
+      const cat = (link.category && map[link.category]) ? link.category : 'otros';
+      map[cat].push(link);
+    }
+    return map;
+  }, [customLinks]);
+
+  const handleAdd = async (name: string, url: string, category: CustomLinkCategory) => {
+    if (!name || !url) {
+      toast('Completa nombre y URL', 'error');
+      return;
+    }
+    try {
+      const newLink: CustomLink = {
+        id: generateId(),
+        name,
+        url,
+        category,
+        createdAt: nowISO(),
+      };
+      await updateTrip({ customLinks: [...customLinks, newLink] });
+      toast('Link agregado', 'success');
+    } catch {
+      toast('Error al guardar el link', 'error');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await updateTrip({ customLinks: customLinks.filter((l) => l.id !== id) });
+      toast('Link eliminado', 'success');
+    } catch {
+      toast('Error al eliminar', 'error');
+    }
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-      {LINK_CATEGORIES.map((category) => (
-        <CategorySection key={category.label} category={category} />
-      ))}
+    <div className="space-y-4">
+      <AddLinkBar onAdd={handleAdd} totalCustom={customLinks.length} />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {LINK_CATEGORIES.map((category) => (
+          <CategorySection
+            key={category.slug}
+            category={category}
+            customLinks={linksByCategory[category.slug]}
+            onDeleteCustom={handleDelete}
+          />
+        ))}
+      </div>
     </div>
   );
 }

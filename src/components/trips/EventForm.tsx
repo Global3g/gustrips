@@ -2,7 +2,28 @@
 
 import { useState, useRef, useEffect, useMemo, type FormEvent } from 'react';
 import { z } from 'zod';
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Plane,
+  Hotel,
+  MapPin,
+  UtensilsCrossed,
+  Car,
+  CarFront,
+  Ship,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
+  MoreHorizontal,
+  Copy,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react';
 import { EVENT_TYPES, CURRENCIES, DEFAULT_CURRENCY, PAYMENT_METHODS } from '@/config/constants';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -19,6 +40,24 @@ import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { getClientStorage } from '@/lib/firebase/client';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { extractReceiptData } from '@/lib/utils/receiptOCR';
+
+/* ─── Mapa de iconos para tipos de evento ──────── */
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  Plane,
+  Hotel,
+  MapPin,
+  UtensilsCrossed,
+  Car,
+  CarFront,
+  Ship,
+  Gift,
+  Coffee,
+  ShoppingBag,
+  Fuel,
+  Package,
+  MoreHorizontal,
+};
 
 /* ─── Definicion de campos dinamicos por tipo ──── */
 
@@ -243,17 +282,13 @@ interface EventFormProps {
   onSubmit: (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => Promise<string | void>;
   onCancel: () => void;
   loading?: boolean;
+  /** Optional: only called when editing an existing event */
+  onDelete?: (eventId: string) => void;
+  /** Optional: only called when editing an existing event */
+  onDuplicate?: (event: TripEvent) => void;
 }
 
 /* ─── Opciones para selects ─────────────────────── */
-
-const typeOptions = [
-  { value: '', label: 'Seleccionar tipo...' },
-  ...Object.entries(EVENT_TYPES).map(([value, cfg]) => ({
-    value,
-    label: cfg.label,
-  })),
-];
 
 const currencyOptions = CURRENCIES.map((c) => ({ value: c, label: c }));
 
@@ -316,7 +351,7 @@ function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onSt
 
 /* ─── Componente ────────────────────────────────── */
 
-export default function EventForm({ initialData, defaultDate, defaultTime, tripStartDate, tripEndDate, tripId, onSubmit, onCancel, loading = false }: EventFormProps) {
+export default function EventForm({ initialData, defaultDate, defaultTime, tripStartDate, tripEndDate, tripId, onSubmit, onCancel, loading = false, onDelete, onDuplicate }: EventFormProps) {
   const isEdit = !!initialData;
   const [step, setStep] = useState(isEdit ? -1 : 0); // -1 = show all steps at once (edit mode)
   const [type, setType] = useState<EventType | ''>(initialData?.type || '');
@@ -353,6 +388,13 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const destinationRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const receiptScanInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  /* Dirty-check: become dirty as soon as any field changes */
+  const [dirty, setDirty] = useState(false);
+
+  /* Submit intent (declared early so handleClose / shortcut can reference) */
+  const [intentionalSubmit, setIntentionalSubmit] = useState(false);
 
   // Hooks for expense creation
   const { user } = useAuth();
@@ -380,6 +422,69 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       setTitle(generateTitle(type, details));
     }
   }, [type, details]);
+
+  /* Dirty tracking: any change to a tracked field marks the form dirty.
+     We skip the initial mount so loading initialData doesn't count. */
+  const dirtyInitMounted = useRef(false);
+  useEffect(() => {
+    if (!dirtyInitMounted.current) {
+      dirtyInitMounted.current = true;
+      return;
+    }
+    if (!dirty) setDirty(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    type,
+    title,
+    date,
+    startTime,
+    endTime,
+    notes,
+    cost,
+    currency,
+    details,
+    timezone,
+    arrivalTimezone,
+    arrivalDate,
+    latitude,
+    longitude,
+    city,
+    country,
+    paymentMethod,
+    paidBy,
+    splitBetween,
+    pointsUsed,
+    equivalentValue,
+    realValueCurrency,
+    receiptFile,
+    isAlreadyPaid,
+  ]);
+
+  /* Wrapper for closing: prompts confirmation if there are unsaved changes */
+  const handleClose = () => {
+    if (dirty && !loading) {
+      const confirmed = window.confirm('Hay cambios sin guardar. ¿Cerrar de todas formas?');
+      if (!confirmed) return;
+    }
+    onCancel();
+  };
+
+  /* Cmd/Ctrl + Enter to save */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        setIntentionalSubmit(true);
+        // Defer one microtask so state update is flushed before submit
+        Promise.resolve().then(() => {
+          formRef.current?.requestSubmit();
+        });
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* Smart default: restaurant time */
   useEffect(() => {
@@ -497,8 +602,6 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid],
     );
   };
-
-  const [intentionalSubmit, setIntentionalSubmit] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -715,8 +818,13 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
     <div className="space-y-3">
       {/* Question: Is this already paid? (only for new events) */}
       {!isEdit && isAlreadyPaid === null && (
-        <div className="rounded-lg border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-purple-50 p-4">
-          <p className="text-sm font-bold text-gray-900 mb-3">¿Este gasto ya lo pagaste?</p>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-sm font-semibold text-gray-900 mb-1 text-center">
+            ¿Ya pagaste este evento?
+          </p>
+          <p className="text-xs text-gray-500 mb-4 text-center">
+            Esto nos ayuda a saber si registrar un gasto o solo planearlo.
+          </p>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -724,20 +832,24 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
                 setIsAlreadyPaid(true);
                 setCreateExpense(true);
               }}
-              className="p-3 rounded-xl bg-white border-2 border-green-300 hover:border-green-500 hover:bg-green-50 transition-all text-center"
+              className="group flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-md hover:shadow-emerald-500/10 active:scale-[0.98] transition-all text-center"
             >
-              <div className="text-2xl mb-1">✅</div>
-              <p className="text-sm font-bold text-gray-900">Ya lo pagué</p>
-              <p className="text-xs text-gray-500">Registrar gasto</p>
+              <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                <Check className="w-5 h-5" strokeWidth={3} />
+              </div>
+              <p className="text-sm font-semibold text-emerald-900">Sí, ya pagué</p>
+              <p className="text-[11px] text-emerald-700/80 leading-tight">Registrar gasto</p>
             </button>
             <button
               type="button"
               onClick={() => setIsAlreadyPaid(false)}
-              className="p-3 rounded-xl bg-white border-2 border-blue-300 hover:border-blue-500 hover:bg-blue-50 transition-all text-center"
+              className="group flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-2xl bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:border-gray-400 hover:shadow-md hover:shadow-gray-500/10 active:scale-[0.98] transition-all text-center"
             >
-              <div className="text-2xl mb-1">📅</div>
-              <p className="text-sm font-bold text-gray-900">Aún no</p>
-              <p className="text-xs text-gray-500">Solo planear</p>
+              <div className="w-10 h-10 rounded-full bg-gray-500 text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                <Clock className="w-5 h-5" strokeWidth={2.5} />
+              </div>
+              <p className="text-sm font-semibold text-gray-900">No, aún no</p>
+              <p className="text-[11px] text-gray-600 leading-tight">Solo planear</p>
             </button>
           </div>
         </div>
@@ -765,15 +877,50 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       {/* Only show form fields after answering the question (or when editing) */}
       {(isEdit || isAlreadyPaid !== null) && (
         <>
-          {/* Tipo de evento */}
-          <Select
-            label="Tipo de evento"
-            options={typeOptions}
-            value={type}
-            onChange={(e) => handleTypeChange(e.target.value as EventType | '')}
-            error={errors.type}
-            required
-          />
+          {/* Tipo de evento — chip grid */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">
+              Tipo de evento <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {(Object.entries(EVENT_TYPES) as [EventType, typeof EVENT_TYPES[EventType]][]).map(
+                ([t, cfg]) => {
+                  const ChipIcon = ICON_MAP[cfg.icon] || MoreHorizontal;
+                  const active = type === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => handleTypeChange(t)}
+                      className={classNames(
+                        'relative flex flex-col items-center gap-1 rounded-xl py-3 px-2 transition-all border',
+                        active
+                          ? 'border-transparent shadow-md scale-[1.02]'
+                          : 'border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-600'
+                      )}
+                      style={
+                        active
+                          ? {
+                              backgroundColor: `${cfg.color}1c`,
+                              color: cfg.color,
+                              boxShadow: `0 0 0 1.5px ${cfg.color}, 0 6px 14px -8px ${cfg.color}66`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <ChipIcon className="w-4 h-4" />
+                      <span className="text-[10px] font-semibold leading-tight text-center">
+                        {cfg.label}
+                      </span>
+                    </button>
+                  );
+                }
+              )}
+            </div>
+            {errors.type && (
+              <p className="text-red-500 text-xs mt-1.5">{errors.type}</p>
+            )}
+          </div>
 
           {/* Titulo (auto-sugerido) */}
           <Input
@@ -1239,13 +1386,64 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
     </div>
   );
 
+  /* Rich header for the modal — shows event identity at a glance */
+  const typeColor = type ? EVENT_TYPES[type].color : '#94a3b8';
+  const TypeIcon: LucideIcon | null = type
+    ? ICON_MAP[EVENT_TYPES[type].icon] || MoreHorizontal
+    : null;
+  const richHeader = (
+    <div className="flex items-center gap-3 min-w-0">
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{
+          backgroundColor: `${typeColor}1c`,
+          color: typeColor,
+          boxShadow: `0 0 0 1px ${typeColor}30`,
+        }}
+      >
+        {TypeIcon ? <TypeIcon className="w-5 h-5" /> : <span className="text-xs font-bold">?</span>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <h3 className="text-gray-900 font-semibold text-base sm:text-lg leading-tight truncate">
+          {isEdit ? (title || 'Editar Evento') : (title || 'Nuevo Evento')}
+        </h3>
+        <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
+          {type && (
+            <span
+              className="font-bold tracking-wide uppercase"
+              style={{ color: typeColor }}
+            >
+              {EVENT_TYPES[type].label}
+            </span>
+          )}
+          {date && (
+            <>
+              <span>·</span>
+              <span>{date}</span>
+            </>
+          )}
+          {startTime && (
+            <>
+              <span>·</span>
+              <span>
+                {startTime}
+                {endTime ? ` – ${endTime}` : ''}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <Modal
       open
-      onClose={onCancel}
-      title={isEdit ? 'Editar Evento' : 'Nuevo Evento'}
+      onClose={handleClose}
+      size="xl"
+      titleSlot={richHeader}
     >
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
         {/* Edit mode: show all fields at once */}
         {step === -1 ? (
           <>
@@ -1254,13 +1452,49 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
               {type && <div className="border-t border-gray-200 pt-3">{renderStep1()}</div>}
               <div className="border-t border-gray-200 pt-3">{renderStep2()}</div>
             </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
-              <Button type="button" variant="ghost" onClick={onCancel} disabled={loading}>
-                Cancelar
-              </Button>
-              <Button type="submit" loading={loading} onClick={() => setIntentionalSubmit(true)}>
-                Guardar Cambios
-              </Button>
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                {isEdit && onDelete && initialData && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={Trash2}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Eliminar "${initialData.title}"? Esta accion no se puede deshacer.`
+                        )
+                      ) {
+                        onDelete(initialData.id);
+                      }
+                    }}
+                    disabled={loading}
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
+                    Eliminar
+                  </Button>
+                )}
+                {isEdit && onDuplicate && initialData && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={Copy}
+                    onClick={() => onDuplicate(initialData)}
+                    disabled={loading}
+                    className="text-violet-600 hover:bg-violet-50 hover:text-violet-700"
+                  >
+                    Duplicar
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="ghost" onClick={handleClose} disabled={loading}>
+                  Cancelar
+                </Button>
+                <Button type="submit" loading={loading} onClick={() => setIntentionalSubmit(true)}>
+                  Guardar Cambios
+                </Button>
+              </div>
             </div>
           </>
         ) : (
@@ -1276,7 +1510,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
         </div>
 
         {/* Navigation + Submit buttons */}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+        <div className="flex items-center justify-between gap-2 pt-3 mt-3 border-t border-gray-200">
           <div>
             {step > 0 && (
               <Button
@@ -1296,7 +1530,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
             <Button
               type="button"
               variant="ghost"
-              onClick={onCancel}
+              onClick={handleClose}
               disabled={loading}
             >
               Cancelar
@@ -1318,19 +1552,6 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
                 onClick={() => setIntentionalSubmit(true)}
               >
                 {isEdit ? 'Guardar Cambios' : 'Crear Evento'}
-              </Button>
-            )}
-
-            {/* Allow quick submit from step 0 only */}
-            {step === 0 && canAdvanceFromStep0 && (
-              <Button
-                type="submit"
-                variant="secondary"
-                size="sm"
-                loading={loading}
-                onClick={() => setIntentionalSubmit(true)}
-              >
-                {isEdit ? 'Guardar' : 'Crear'}
               </Button>
             )}
           </div>

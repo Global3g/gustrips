@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useParams, usePathname } from 'next/navigation';
-import Link from 'next/link';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import TripSidebar from '@/components/trips/TripSidebar';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
@@ -18,12 +17,26 @@ import type { DocumentCategory } from '@/types';
 export default function TripLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const pathname = usePathname();
+  const router = useRouter();
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
   const { events, createEvent } = useEvents(tripId);
   const { uploadDocument } = useDocuments(tripId);
   const { toast } = useToast();
   const [showSidebarScan, setShowSidebarScan] = useState(false);
+
+  const handleBack = () => {
+    if (typeof window !== 'undefined' && document.referrer) {
+      try {
+        const refOrigin = new URL(document.referrer).origin;
+        if (refOrigin === window.location.origin) {
+          router.back();
+          return;
+        }
+      } catch { /* fall through */ }
+    }
+    router.push('/dashboard');
+  };
 
   const handleSidebarScanConfirm = async (scannedEvents: ScannedEvent[], file: File) => {
     try {
@@ -109,11 +122,18 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-rose-200/10 rounded-full blur-3xl pointer-events-none" />
         <NotificationBanner />
         {/* Back to dashboard — mobile only */}
-        <div className="lg:hidden relative px-5 pt-4 pb-0">
-          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Inicio
-          </Link>
+        <div className="lg:hidden sticky top-0 z-40 backdrop-blur-md bg-white/75 border-b border-gray-200/40 px-4 py-2.5 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleBack}
+            aria-label="Volver"
+            className="w-10 h-10 rounded-full bg-white shadow-md ring-1 ring-gray-200/60 flex items-center justify-center text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <span className="text-sm font-semibold text-gray-700 truncate flex-1">
+            {trip?.title || 'Volver'}
+          </span>
         </div>
         <div className="relative p-5 sm:p-8 lg:p-12">
           {children}

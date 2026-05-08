@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { format, parseISO, eachDayOfInterval, addDays, subDays, isSameDay } from 'date-fns';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useParams, useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { format, parseISO, eachDayOfInterval, addDays, subDays, isSameDay, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale/es';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Plane, List, Clock, Layers, FileSearch, MapPin, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Plane, List, Clock, Layers, FileSearch, MapPin, Sparkles, Footprints, AlertTriangle, StickyNote, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const AgendaView = dynamic(() => import('@/components/trips/AgendaView'), { ssr: false });
@@ -21,7 +21,7 @@ import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import AutoGenerateModal from '@/components/trips/AutoGenerateModal';
 import Button from '@/components/ui/Button';
 import { classNames, getTimezoneAbbr, getTimezoneOffset, formatDateHeaderES } from '@/lib/utils/helpers';
-import { ROUTES, EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
+import { ROUTES, EVENT_TYPE_TO_DOC_CATEGORY, EVENT_TYPES } from '@/config/constants';
 import type { ScannedEvent } from '@/lib/utils/aiScanner';
 import type { TripEvent, DocumentCategory } from '@/types';
 
@@ -37,10 +37,111 @@ function getEffectiveIncomingTimezone(event: TripEvent): string | undefined {
   return event.timezone;
 }
 
+/* ---- Event status (past / live / future) ---- */
+type EventStatus = 'past' | 'live' | 'future';
+
+function getEventStatus(event: TripEvent): EventStatus {
+  if (!event.startTime || !event.date) return 'future';
+  try {
+    const now = new Date();
+    const start = new Date(`${event.date}T${event.startTime}`);
+    const end = event.endTime ? new Date(`${event.date}T${event.endTime}`) : start;
+    if (Number.isNaN(start.getTime())) return 'future';
+    if (now > end) return 'past';
+    if (differenceInMinutes(start, now) <= 0) return 'live';
+    return 'future';
+  } catch {
+    return 'future';
+  }
+}
+
+function buildThreadGradient(events: TripEvent[]): string {
+  if (events.length === 0) return '#1e3a5f';
+  if (events.length === 1) return EVENT_TYPES[events[0].type].color;
+  const stops = events.map((e, i) => {
+    const pct = Math.round((i / (events.length - 1)) * 100);
+    return `${EVENT_TYPES[e.type].color} ${pct}%`;
+  });
+  return `linear-gradient(to bottom, ${stops.join(', ')})`;
+}
+
+/* ---- Travel time hint between consecutive events ---- */
+type TravelHint = {
+  gapMinutes: number;
+  fromLocation: string;
+  toLocation: string;
+  tone: 'tight' | 'short' | 'comfortable';
+};
+
+function calculateTravelHint(prev: TripEvent, next: TripEvent): TravelHint | null {
+  const skipTypes = new Set(['flight', 'transport', 'car_rental']);
+  if (skipTypes.has(prev.type) || skipTypes.has(next.type)) return null;
+  if (!prev.endTime || !next.startTime || !prev.date || !next.date) return null;
+  if (!prev.location?.trim() || !next.location?.trim()) return null;
+
+  const norm = (s: string) => s.trim().toLowerCase();
+  if (norm(prev.location) === norm(next.location)) return null;
+
+  try {
+    const end = new Date(`${prev.date}T${prev.endTime}`);
+    const start = new Date(`${next.date}T${next.startTime}`);
+    const gap = Math.round((start.getTime() - end.getTime()) / 60000);
+    if (gap < 5) return null;
+
+    const tone: TravelHint['tone'] = gap < 15 ? 'tight' : gap < 60 ? 'short' : 'comfortable';
+    return { gapMinutes: gap, fromLocation: prev.location.trim(), toLocation: next.location.trim(), tone };
+  } catch {
+    return null;
+  }
+}
+
+function formatGap(min: number): string {
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function eventMatchesSearch(ev: TripEvent, query: string): boolean {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  if (ev.title?.toLowerCase().includes(q)) return true;
+  if (ev.location?.toLowerCase().includes(q)) return true;
+  if (ev.notes?.toLowerCase().includes(q)) return true;
+  if (ev.details) {
+    for (const v of Object.values(ev.details)) {
+      if (typeof v === 'string' && v.toLowerCase().includes(q)) return true;
+    }
+  }
+  return false;
+}
+
+function getWeatherInfo(code: number): { emoji: string; label: string } {
+  if (code === 0) return { emoji: '☀️', label: 'Despejado' };
+  if (code <= 3) return { emoji: '⛅', label: 'Parcialmente nublado' };
+  if (code <= 48) return { emoji: '🌫️', label: 'Niebla' };
+  if (code <= 57) return { emoji: '🌦️', label: 'Llovizna' };
+  if (code <= 67) return { emoji: '🌧️', label: 'Lluvia' };
+  if (code <= 77) return { emoji: '🌨️', label: 'Nieve' };
+  if (code <= 82) return { emoji: '🌧️', label: 'Aguaceros' };
+  if (code <= 86) return { emoji: '🌨️', label: 'Tormentas de nieve' };
+  if (code <= 99) return { emoji: '⛈️', label: 'Tormenta' };
+  return { emoji: '🌤️', label: 'Variable' };
+}
+
+type WeatherInfo = {
+  code: number;
+  tempMax: number;
+  tempMin: number;
+  emoji: string;
+  label: string;
+};
+
 export default function ItineraryPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
   const tripId = params.tripId as string;
 
   const { trip, updateTrip } = useTrip(tripId);
@@ -58,10 +159,44 @@ export default function ItineraryPage() {
   const [showAutoGenModal, setShowAutoGenModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<TripEvent | null>(null);
   const [formLoading, setFormLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<'timeline' | 'agenda' | 'all'>('timeline');
-  const [calendarView, setCalendarView] = useState<'day' | 'week' | 'full'>('full');
+  const [viewMode, setViewMode] = useState<'timeline' | 'agenda' | 'all'>(() => {
+    const v = searchParams.get('view');
+    return v === 'timeline' || v === 'agenda' || v === 'all' ? v : 'timeline';
+  });
+  const [calendarView, setCalendarView] = useState<'day' | 'week' | 'full'>(() => {
+    const c = searchParams.get('calView');
+    return c === 'day' || c === 'week' || c === 'full' ? c : 'full';
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('view', viewMode);
+    if (viewMode === 'agenda') {
+      params.set('calView', calendarView);
+    } else {
+      params.delete('calView');
+    }
+    const next = `${pathname}?${params.toString()}`;
+    const current = `${pathname}?${searchParams.toString()}`;
+    if (next !== current) {
+      router.replace(next, { scroll: false });
+    }
+  }, [viewMode, calendarView, pathname, router, searchParams]);
   const [defaultFormDate, setDefaultFormDate] = useState('');
   const [defaultFormTime, setDefaultFormTime] = useState('');
+
+  /* ---- Day notes state ---- */
+  const [draftNote, setDraftNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
+  /* ---- Search state ---- */
+  const [searchQuery, setSearchQuery] = useState('');
+
+  /* ---- Keyboard shortcuts ---- */
+  const viewModeRef = useRef(viewMode);
+  const goPrevDayRef = useRef<() => void>(() => {});
+  const goNextDayRef = useRef<() => void>(() => {});
+  useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
 
   /* ---- Compute all trip days ---- */
 
@@ -87,8 +222,12 @@ export default function ItineraryPage() {
         // fallback
       }
     }
-    // Default to first day of trip
-    if (tripDays.length > 0) return tripDays[0];
+    // Default to today if it falls within the trip range
+    if (tripDays.length > 0) {
+      const todayMatch = tripDays.find((d) => isSameDay(d, new Date()));
+      if (todayMatch) return todayMatch;
+      return tripDays[0];
+    }
     return new Date();
   }, [searchParams, tripDays]);
 
@@ -121,18 +260,86 @@ export default function ItineraryPage() {
     if (canGoNext) navigateToDay(addDays(selectedDay, 1));
   };
 
+  useEffect(() => { goPrevDayRef.current = goPrevDay; });
+  useEffect(() => { goNextDayRef.current = goNextDay; });
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement;
+      const tag = active?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((active as HTMLElement)?.isContentEditable) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          if (viewModeRef.current === 'timeline') {
+            e.preventDefault();
+            goPrevDayRef.current();
+          }
+          break;
+        case 'ArrowRight':
+          if (viewModeRef.current === 'timeline') {
+            e.preventDefault();
+            goNextDayRef.current();
+          }
+          break;
+        case '1':
+          e.preventDefault();
+          setViewMode('timeline');
+          break;
+        case '2':
+          e.preventDefault();
+          setViewMode('agenda');
+          break;
+        case '3':
+          e.preventDefault();
+          setViewMode('all');
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setShowForm(false);
+          setShowScanModal(false);
+          setShowAutoGenModal(false);
+          break;
+        case 'n':
+          e.preventDefault();
+          setShowForm(true);
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  /* ---- Trip completed/over flag — disables past-event mute on cards ---- */
+  const tripCompleted = useMemo(() => {
+    if (!trip) return false;
+    if (trip.status === 'completed') return true;
+    try {
+      const end = parseISO(trip.endDate);
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      return end < todayStart;
+    } catch {
+      return false;
+    }
+  }, [trip]);
+
   /* ---- Events for selected day, sorted by startTime ---- */
 
   const dayEvents = useMemo(() => {
     return events
       .filter((e) => e.date === selectedDayStr)
+      .filter((e) => eventMatchesSearch(e, searchQuery))
       .sort((a, b) => {
         if (!a.startTime && !b.startTime) return 0;
         if (!a.startTime) return 1;
         if (!b.startTime) return -1;
         return a.startTime.localeCompare(b.startTime);
       });
-  }, [events, selectedDayStr]);
+  }, [events, selectedDayStr, searchQuery]);
 
   /* ---- Document handlers ---- */
 
@@ -251,6 +458,32 @@ export default function ItineraryPage() {
     },
     [events, updateEvent, toast, trip, tripId],
   );
+
+  /* ---- Reorder handler (timeline drag-to-reorder) ---- */
+
+  const handleReorderDay = useCallback(async (newOrder: TripEvent[]) => {
+    // Strategy: collect all start/end times of the original order, then reassign them in the new order.
+    // This preserves the ORIGINAL time slots but switches WHICH event is in each slot.
+    if (newOrder.length !== dayEvents.length) return;
+    if (newOrder.every((e, i) => e.id === dayEvents[i].id)) return; // no change
+
+    const slots = dayEvents.map((e) => ({ startTime: e.startTime, endTime: e.endTime }));
+
+    for (let i = 0; i < newOrder.length; i++) {
+      const target = slots[i];
+      const ev = newOrder[i];
+      if (ev.startTime !== target.startTime || ev.endTime !== target.endTime) {
+        try {
+          await updateEvent(ev.id, { startTime: target.startTime, endTime: target.endTime });
+        } catch (err) {
+          console.error('Error reordenando evento', err);
+          toast('Error al reordenar', 'error');
+          return;
+        }
+      }
+    }
+    toast('Eventos reordenados', 'success');
+  }, [dayEvents, updateEvent, toast]);
 
   /* ---- CRUD Handlers ---- */
 
@@ -463,6 +696,87 @@ export default function ItineraryPage() {
     tryFetch();
   }, [dayLocationName]);
 
+  /* ---- Weather for the selected day ---- */
+
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWeather(null);
+
+    (async () => {
+      // Source 1: first event with coords
+      let lat: number | null = null;
+      let lon: number | null = null;
+      const first = dayEvents.find(e => e.latitude !== undefined && e.longitude !== undefined);
+      if (first) {
+        lat = first.latitude!;
+        lon = first.longitude!;
+      } else {
+        // Source 2: dayLocationName -> geocode (Source 3: trip.destination as fallback)
+        const cityQuery = (dayLocationName || trip?.destination || '').trim();
+        if (!cityQuery) return;
+        try {
+          const cacheKey = `geo:${cityQuery.toLowerCase()}`;
+          const cached = typeof window !== 'undefined' ? sessionStorage.getItem(cacheKey) : null;
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            lat = parsed.lat;
+            lon = parsed.lon;
+          } else {
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityQuery)}&count=1`);
+            if (!geoRes.ok) return;
+            const geoData = await geoRes.json();
+            const r = geoData?.results?.[0];
+            if (!r) return;
+            lat = r.latitude;
+            lon = r.longitude;
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem(cacheKey, JSON.stringify({ lat, lon }));
+            }
+          }
+        } catch {
+          return;
+        }
+      }
+
+      if (lat == null || lon == null) return;
+      if (cancelled) return;
+
+      // Fetch weather
+      try {
+        const cacheKey = `weather:${lat},${lon}:${selectedDayStr}`;
+        const cached = typeof window !== 'undefined' ? sessionStorage.getItem(cacheKey) : null;
+        let payload;
+        if (cached) {
+          payload = JSON.parse(cached);
+        } else {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date=${selectedDayStr}&end_date=${selectedDayStr}`;
+          const res = await fetch(url);
+          if (!res.ok) return;
+          payload = await res.json();
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+          }
+        }
+
+        if (cancelled) return;
+
+        const code = payload?.daily?.weather_code?.[0];
+        const tempMax = Math.round(payload?.daily?.temperature_2m_max?.[0]);
+        const tempMin = Math.round(payload?.daily?.temperature_2m_min?.[0]);
+        if (code === undefined || Number.isNaN(tempMax) || Number.isNaN(tempMin)) return;
+
+        const { emoji, label } = getWeatherInfo(code);
+        setWeather({ code, tempMax, tempMin, emoji, label });
+      } catch {
+        /* ignore */
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedDayStr, dayLocationName, trip?.destination, dayEvents]);
+
   const handleSetDayLocation = async (location: string) => {
     if (!trip) return;
     const dayLocations = { ...(trip.dayLocations || {}), [selectedDayStr]: location };
@@ -473,12 +787,58 @@ export default function ItineraryPage() {
     }
   };
 
+  /* ---- Day notes (per-day text saved to trip.dayNotes) ---- */
+  const dayNotes = (trip as any)?.dayNotes as Record<string, string> | undefined;
+
+  useEffect(() => {
+    setDraftNote(dayNotes?.[selectedDayStr] ?? '');
+  }, [selectedDayStr, dayNotes]);
+
+  const handleSaveNote = async () => {
+    if (!trip) return;
+    const trimmed = draftNote.trim();
+    const next = { ...(dayNotes ?? {}) };
+    if (trimmed) next[selectedDayStr] = trimmed;
+    else delete next[selectedDayStr];
+    setSavingNote(true);
+    try {
+      await updateTrip({ dayNotes: next } as any);
+    } catch (err) {
+      console.error('Error guardando nota del día:', err);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   /* ---- Render ---- */
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-2 border-gray-200 border-t-blue-400 rounded-full animate-spin" />
+      <div className="max-w-3xl mx-auto py-6 space-y-3">
+        <div className="space-y-2 mb-2">
+          <div className="h-7 w-48 bg-gray-200 rounded-lg animate-pulse" />
+          <div className="h-4 w-32 bg-gray-100 rounded animate-pulse" />
+        </div>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="rounded-2xl bg-white/40 backdrop-blur-sm border border-gray-200/60 p-5 animate-pulse"
+            style={{ animationDelay: `${i * 100}ms` }}
+          >
+            <div className="flex items-start gap-5">
+              <div className="space-y-2">
+                <div className="h-7 w-14 bg-gray-200 rounded" />
+                <div className="h-4 w-10 bg-gray-100 rounded" />
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-16 bg-gray-100 rounded" />
+                <div className="h-5 w-2/3 bg-gray-200 rounded" />
+                <div className="h-3 w-1/2 bg-gray-100 rounded" />
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-gray-100" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -568,6 +928,8 @@ export default function ItineraryPage() {
             tripEndDate={trip?.endDate}
             onSubmit={handleUpdate}
             onCancel={() => setEditingEvent(null)}
+            onDelete={(eventId) => { handleDelete(eventId); setEditingEvent(null); }}
+            onDuplicate={(ev) => { handleDuplicate(ev); setEditingEvent(null); }}
             loading={formLoading}
           />
         )}
@@ -599,8 +961,8 @@ export default function ItineraryPage() {
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            opacity: 0.45,
-            filter: 'saturate(0.4)',
+            opacity: 0.64,
+            filter: 'saturate(1) brightness(1.1)',
           }}
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
@@ -608,7 +970,7 @@ export default function ItineraryPage() {
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'linear-gradient(135deg, rgba(240,244,255,0.5) 0%, rgba(232,238,255,0.4) 50%, rgba(237,233,254,0.5) 100%)',
+            background: 'linear-gradient(135deg, rgba(240,244,255,0.3) 0%, rgba(232,238,255,0.22) 50%, rgba(237,233,254,0.3) 100%)',
           }}
         />
       </div>
@@ -696,6 +1058,43 @@ export default function ItineraryPage() {
               className="text-center text-xs font-semibold text-gray-700 bg-transparent border-none outline-none placeholder:text-gray-300 hover:text-black focus:text-black w-48 transition-colors"
             />
           </div>
+          {/* Weather chip */}
+          {weather && (
+            <div className="mt-2 flex items-center justify-center">
+              <span
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-white/60 backdrop-blur-sm border border-gray-200/60 text-gray-700 shadow-sm"
+                title={weather.label}
+              >
+                <span className="text-base leading-none">{weather.emoji}</span>
+                <span className="tabular-nums">{weather.tempMin}°/{weather.tempMax}°</span>
+              </span>
+            </div>
+          )}
+          {/* Day notes (timeline only) */}
+          {viewMode === 'timeline' && (
+            <details className="mt-3 group">
+              <summary className="text-[11px] text-gray-500 hover:text-gray-700 cursor-pointer flex items-center justify-center gap-1 select-none">
+                <StickyNote className="w-3 h-3" />
+                <span>Notas del día</span>
+                {dayNotes?.[selectedDayStr] && (
+                  <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
+                )}
+              </summary>
+              <div className="mt-2 max-w-xl mx-auto">
+                <textarea
+                  value={draftNote}
+                  onChange={(e) => setDraftNote(e.target.value)}
+                  onBlur={handleSaveNote}
+                  placeholder="Recordatorios, ideas, lo que pasó..."
+                  rows={3}
+                  className="w-full text-sm text-gray-700 bg-amber-50/60 border border-amber-200/40 rounded-xl px-3 py-2 placeholder:text-amber-700/40 outline-none focus:bg-amber-50 focus:border-amber-300 transition-colors resize-none"
+                />
+                {savingNote && (
+                  <p className="text-[10px] text-gray-400 mt-1">Guardando...</p>
+                )}
+              </div>
+            </details>
+          )}
         </div>
 
         <button
@@ -712,6 +1111,37 @@ export default function ItineraryPage() {
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
+      )}
+
+      {/* Search bar (timeline only) */}
+      {viewMode === 'timeline' && (
+        <div className="flex items-center gap-2 mb-4 max-w-3xl mx-auto">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar eventos..."
+              className="w-full pl-9 pr-9 py-2 text-sm bg-white/70 backdrop-blur-sm border border-gray-200/60 rounded-xl outline-none focus:border-blue-300 focus:bg-white transition-colors placeholder:text-gray-400"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                aria-label="Limpiar"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <span className="text-xs text-gray-500 whitespace-nowrap">
+              {dayEvents.length} encontrado{dayEvents.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       )}
 
       {/* ─── VIEW: ALL (complete trip) ─── */}
@@ -751,6 +1181,7 @@ export default function ItineraryPage() {
                         onDeleteDocument={handleDeleteDocument}
                         onAddPhoto={handleAddPhoto}
                         onDeletePhoto={handleDeletePhoto}
+                        tripCompleted={tripCompleted}
                       />
                     ))}
                   </div>
@@ -791,10 +1222,30 @@ export default function ItineraryPage() {
         </div>
       ) : (
         <div className="relative">
-          {/* Timeline vertical line */}
-          <div className="absolute left-5 top-4 bottom-16 w-[3px] rounded-full" style={{ backgroundColor: '#1e3a5f' }} />
+          {/* Timeline thread — gradient through event colors */}
+          <div
+            className="absolute left-[21px] top-4 bottom-16 w-[3px] rounded-full pointer-events-none"
+            style={{
+              background: buildThreadGradient(dayEvents),
+              opacity: 0.55,
+              boxShadow: '0 0 14px rgba(255,255,255,0.4)',
+            }}
+          />
+          {/* Glow trail */}
+          <div
+            className="absolute left-[19px] top-4 bottom-16 w-[7px] rounded-full pointer-events-none blur-md"
+            style={{
+              background: buildThreadGradient(dayEvents),
+              opacity: 0.25,
+            }}
+          />
 
-          <div className="space-y-0">
+          <Reorder.Group
+            axis="y"
+            values={dayEvents}
+            onReorder={handleReorderDay}
+            className="space-y-3"
+          >
             <AnimatePresence>
               {dayEvents.map((event, evIdx) => {
                 // Timezone change pills
@@ -807,13 +1258,16 @@ export default function ItineraryPage() {
                 }
 
                 return (
-                  <motion.div
+                  <Reorder.Item
                     key={event.id}
+                    value={event}
                     layout
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: 10 }}
                     transition={{ delay: evIdx * 0.05, duration: 0.3 }}
+                    whileDrag={{ scale: 1.02, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', zIndex: 20 }}
+                    className="relative"
                   >
                     {/* Timezone change pill */}
                     {fromTz && toTz && fromTz !== toTz && (
@@ -829,11 +1283,69 @@ export default function ItineraryPage() {
                       </div>
                     )}
 
+                    {/* Travel time hint pill */}
+                    {evIdx > 0 && (() => {
+                      const hint = calculateTravelHint(dayEvents[evIdx - 1], event);
+                      if (!hint) return null;
+                      const HintIcon = hint.tone === 'tight' ? AlertTriangle : (hint.tone === 'short' ? Footprints : Clock);
+                      const colorClass = hint.tone === 'tight'
+                        ? 'text-red-700 bg-red-50 border-red-500/20'
+                        : hint.tone === 'short'
+                        ? 'text-blue-700 bg-blue-50 border-blue-500/20'
+                        : 'text-gray-600 bg-gray-50 border-gray-300/30';
+                      const lineClass = hint.tone === 'tight' ? 'bg-red-500/30' : hint.tone === 'short' ? 'bg-blue-500/30' : 'bg-gray-300/30';
+                      const message = hint.tone === 'tight'
+                        ? `Solo ${formatGap(hint.gapMinutes)} para ir a ${hint.toLocation}`
+                        : hint.tone === 'short'
+                        ? `${formatGap(hint.gapMinutes)} para llegar a ${hint.toLocation}`
+                        : `${formatGap(hint.gapMinutes)} hasta ${hint.toLocation}`;
+                      return (
+                        <div className="flex items-center gap-2 py-1.5 pl-10 my-0.5">
+                          <div className={classNames('flex-1 h-px', lineClass)} />
+                          <span className={classNames('flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border', colorClass)} title={`Desde: ${hint.fromLocation}`}>
+                            <HintIcon className="w-3 h-3" />
+                            {message}
+                          </span>
+                          <div className={classNames('flex-1 h-px', lineClass)} />
+                        </div>
+                      );
+                    })()}
+
                     {/* Timeline dot + event card */}
                     <div className="relative flex items-start gap-3 py-2">
-                      {/* Timeline dot */}
+                      {/* Timeline node — colored by event type, status-aware */}
                       <div className="relative z-10 flex-shrink-0 w-10 flex justify-center pt-4">
-                        <div className="w-3 h-3 rounded-full bg-white border-[3px]" style={{ borderColor: '#1e3a5f' }} />
+                        {(() => {
+                          const dotColor = EVENT_TYPES[event.type].color;
+                          const status = getEventStatus(event);
+                          return (
+                            <div className="relative">
+                              {status === 'live' && (
+                                <span
+                                  className="absolute inset-0 rounded-full animate-ping"
+                                  style={{ background: dotColor, opacity: 0.55 }}
+                                />
+                              )}
+                              <div
+                                className={classNames(
+                                  'relative rounded-full transition-all duration-300',
+                                  status === 'live' ? 'w-4 h-4' : 'w-3.5 h-3.5'
+                                )}
+                                style={{
+                                  background:
+                                    status === 'future' ? 'white' : dotColor,
+                                  border: `3px solid ${dotColor}`,
+                                  boxShadow:
+                                    status === 'live'
+                                      ? `0 0 0 3px white, 0 0 16px ${dotColor}`
+                                      : status === 'past'
+                                      ? `0 0 0 2px white, 0 1px 4px rgba(0,0,0,0.08)`
+                                      : `0 0 0 2px white, 0 0 8px ${dotColor}66`,
+                                }}
+                              />
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Event card */}
@@ -848,6 +1360,7 @@ export default function ItineraryPage() {
                           onDeleteDocument={handleDeleteDocument}
                           onAddPhoto={handleAddPhoto}
                           onDeletePhoto={handleDeletePhoto}
+                          tripCompleted={tripCompleted}
                         />
                       </div>
                     </div>
@@ -865,16 +1378,21 @@ export default function ItineraryPage() {
                         <div className="flex-1 h-px bg-amber-500/30" />
                       </div>
                     )}
-                  </motion.div>
+                  </Reorder.Item>
                 );
               })}
             </AnimatePresence>
-          </div>
+          </Reorder.Group>
 
           {/* Inline "Add event" button at the bottom of the timeline */}
           <div className="relative flex items-start gap-3 py-3 mt-1">
             <div className="relative z-10 flex-shrink-0 w-10 flex justify-center pt-2">
-              <div className="w-3 h-3 rounded-full bg-white border-[3px]" style={{ borderColor: '#1e3a5f' }} />
+              <div
+                className="w-4 h-4 rounded-full bg-white border-[2px] border-dashed flex items-center justify-center text-gray-400"
+                style={{ borderColor: '#9ca3af' }}
+              >
+                <Plus className="w-2.5 h-2.5" />
+              </div>
             </div>
             <button
               onClick={() => setShowForm(true)}
@@ -933,6 +1451,8 @@ export default function ItineraryPage() {
           tripEndDate={trip?.endDate}
           onSubmit={handleUpdate}
           onCancel={() => setEditingEvent(null)}
+          onDelete={(eventId) => { handleDelete(eventId); setEditingEvent(null); }}
+          onDuplicate={(ev) => { handleDuplicate(ev); setEditingEvent(null); }}
           loading={formLoading}
         />
       )}

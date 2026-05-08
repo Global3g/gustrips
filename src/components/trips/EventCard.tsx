@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import {
   Plane,
   Hotel,
@@ -12,25 +12,26 @@ import {
   Ship,
   MoreHorizontal,
   Trash2,
-  DollarSign,
   ChevronDown,
   Pencil,
   Paperclip,
   FileText,
   X,
   Eye,
-  Image,
+  Image as ImageIcon,
   File as FileIcon,
   Copy,
   Camera,
+  Wine,
+  Coffee,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale/es';
-import { EVENT_TYPES, EVENT_TYPE_TO_DOC_CATEGORY, DOCUMENT_CATEGORIES } from '@/config/constants';
+import { differenceInMinutes } from 'date-fns';
+import { EVENT_TYPES, EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
 import { classNames, formatCurrency, getTimezoneAbbr } from '@/lib/utils/helpers';
 import DocumentUpload from '@/components/trips/DocumentUpload';
 import PhotoGallery from '@/components/trips/PhotoGallery';
+import EventPattern from '@/components/trips/EventPattern';
 import type { TripEvent, EventType, TripAttachment, DocumentCategory } from '@/types';
 
 /* ---- Icon map ---- */
@@ -44,38 +45,6 @@ const ICON_MAP: Record<string, LucideIcon> = {
   CarFront,
   Ship,
   MoreHorizontal,
-};
-
-/* ---- Left border colors by type ---- */
-
-const BORDER_COLORS: Record<EventType, string> = {
-  flight: 'border-l-cyan-400',
-  hotel: 'border-l-violet-400',
-  car_rental: 'border-l-yellow-400',
-  activity: 'border-l-green-400',
-  restaurant: 'border-l-orange-400',
-  transport: 'border-l-blue-400',
-  cruise: 'border-l-sky-400',
-  souvenirs: 'border-l-pink-400',
-  snacks: 'border-l-amber-400',
-  clothing: 'border-l-rose-400',
-  fuel: 'border-l-lime-400',
-  misc: 'border-l-gray-400',
-};
-
-const BG_ICON_COLORS: Record<EventType, string> = {
-  flight: 'bg-cyan-50 text-cyan-600',
-  hotel: 'bg-violet-50 text-violet-600',
-  car_rental: 'bg-yellow-50 text-yellow-600',
-  activity: 'bg-green-50 text-green-600',
-  restaurant: 'bg-orange-50 text-orange-600',
-  transport: 'bg-blue-50 text-blue-600',
-  cruise: 'bg-sky-50 text-sky-600',
-  souvenirs: 'bg-pink-50 text-pink-600',
-  snacks: 'bg-amber-50 text-amber-600',
-  clothing: 'bg-rose-50 text-rose-600',
-  fuel: 'bg-lime-50 text-lime-600',
-  misc: 'bg-gray-100 text-gray-500',
 };
 
 /* ---- Detail labels ---- */
@@ -126,6 +95,61 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getRestaurantIcon(event: TripEvent): LucideIcon {
+  // Normalize title: lowercase + strip diacritics so "desayuno", "Almuérzo", etc. match.
+  const title = (event.title || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+
+  if (/\b(desayuno|breakfast|brunch)\b/.test(title)) return Coffee;
+  if (/\b(cena|dinner|supper)\b/.test(title)) return Wine;
+  if (/\b(comida|almuerzo|lunch)\b/.test(title)) return UtensilsCrossed;
+
+  // Fall back to startTime windows
+  const t = event.startTime;
+  if (t && /^\d{2}:\d{2}/.test(t)) {
+    const [hStr, mStr] = t.split(':');
+    const h = Number(hStr);
+    const m = Number(mStr);
+    if (Number.isFinite(h) && Number.isFinite(m)) {
+      const minutes = h * 60 + m;
+      const inRange = (lo: number, hi: number) => minutes >= lo && minutes <= hi;
+      if (inRange(5 * 60, 10 * 60 + 30)) return Coffee;       // 05:00 - 10:30
+      if (inRange(11 * 60, 15 * 60 + 30)) return UtensilsCrossed; // 11:00 - 15:30
+      if (inRange(18 * 60, 23 * 60)) return Wine;             // 18:00 - 23:00
+    }
+  }
+
+  return UtensilsCrossed;
+}
+
+type StatusTone = 'live' | 'soon' | 'past' | null;
+
+function getEventStatus(event: TripEvent): { label: string; tone: StatusTone } | null {
+  if (!event.startTime || !event.date) return null;
+  try {
+    const now = new Date();
+    const start = new Date(`${event.date}T${event.startTime}`);
+    const end = event.endTime ? new Date(`${event.date}T${event.endTime}`) : start;
+    if (Number.isNaN(start.getTime())) return null;
+
+    if (now >= start && now <= end) return { label: 'EN CURSO', tone: 'live' };
+
+    const minsUntil = differenceInMinutes(start, now);
+    if (minsUntil < 0) {
+      const minsAgo = Math.abs(minsUntil);
+      if (minsAgo < 60 * 6) return { label: 'PASADO', tone: 'past' };
+      return null;
+    }
+    if (minsUntil < 60) return { label: `EN ${minsUntil}m`, tone: 'soon' };
+    if (minsUntil < 60 * 12) return { label: `EN ${Math.floor(minsUntil / 60)}h`, tone: 'soon' };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /* ---- Props ---- */
 
 interface EventCardProps {
@@ -138,6 +162,8 @@ interface EventCardProps {
   onDeleteDocument?: (docId: string, url: string) => Promise<void>;
   onAddPhoto?: (eventId: string, file: File) => Promise<void>;
   onDeletePhoto?: (eventId: string, url: string) => Promise<void>;
+  /** Trip is completed or past its end date — disable the past-event mute so the itinerary stays vibrant for review/sharing. */
+  tripCompleted?: boolean;
 }
 
 export default function EventCard({
@@ -150,12 +176,117 @@ export default function EventCard({
   onDeleteDocument,
   onAddPhoto,
   onDeletePhoto,
+  tripCompleted = false,
 }: EventCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [LeafletComponents, setLeafletComponents] = useState<any>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const hasScrolledRef = useRef(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    if (event.latitude == null || event.longitude == null) return;
+    if (LeafletComponents) return;
+    Promise.all([import('react-leaflet'), import('leaflet')])
+      .then(([RL, LMod]) => {
+        const L = (LMod as any).default ?? LMod;
+        delete (L.Icon.Default.prototype as any)._getIconUrl;
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+          iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+          shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        });
+        setLeafletComponents({
+          MapContainer: RL.MapContainer,
+          TileLayer: RL.TileLayer,
+          Marker: RL.Marker,
+          Popup: RL.Popup,
+        });
+      })
+      .catch(() => {});
+  }, [expanded, event.latitude, event.longitude, LeafletComponents]);
+
+  useEffect(() => {
+    if (event.latitude == null || event.longitude == null) return;
+    if (typeof document === 'undefined') return;
+    const id = 'leaflet-css-link';
+    if (document.getElementById(id)) return;
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+  }, [event.latitude, event.longitude]);
+
+  /* Mouse-tracked 3D tilt */
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [3, -3]), { stiffness: 280, damping: 22 });
+  const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-3, 3]), { stiffness: 280, damping: 22 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    mouseX.set(x);
+    mouseY.set(y);
+  };
+
+  const handleMouseLeave = () => {
+    mouseX.set(0);
+    mouseY.set(0);
+  };
 
   const typeConfig = EVENT_TYPES[event.type];
   const Icon = ICON_MAP[typeConfig.icon] || MoreHorizontal;
+  const RenderedIcon = event.type === 'restaurant' ? getRestaurantIcon(event) : Icon;
+  const typeColor = typeConfig.color;
+
+  const status = useMemo(() => getEventStatus(event), [event, tick]);
+
+  /* Past detection — independent of the badge's 6h cutoff. Mutes ALL past events. */
+  const isPast = useMemo(() => {
+    if (!event.date) return false;
+    try {
+      const now = new Date();
+      if (event.endTime) {
+        const end = new Date(`${event.date}T${event.endTime}`);
+        if (!Number.isNaN(end.getTime())) return now > end;
+      }
+      if (event.startTime) {
+        const start = new Date(`${event.date}T${event.startTime}`);
+        if (!Number.isNaN(start.getTime())) return now > start;
+      }
+      // No time info — compare date against today (start of day)
+      const eventDay = new Date(`${event.date}T00:00:00`);
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      return eventDay < todayStart;
+    } catch {
+      return false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, tick]);
+
+  /* Scroll live event into view on first mount */
+  useEffect(() => {
+    if (hasScrolledRef.current) return;
+    if (status?.tone === 'live' && cardRef.current) {
+      hasScrolledRef.current = true;
+      const t = setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [status?.tone]);
 
   const details = event.details || {};
   const hasDetails = Object.values(details).some((v) => v?.trim());
@@ -169,17 +300,15 @@ export default function EventCard({
   const docCategory: DocumentCategory = EVENT_TYPE_TO_DOC_CATEGORY[event.type] || 'other';
   const docCount = eventDocuments.length;
 
-  /* Flight duration calculation */
+  /* Flight duration calculation (preserved) */
   const flightDuration = (() => {
     if (event.type !== 'flight' || !event.startTime || !event.endTime) return '';
     const depDate = event.date;
     const arrDate = details.arrivalDate || event.date;
     if (!depDate) return '';
-
     try {
       const depMs = new Date(`${depDate}T${event.startTime}`).getTime();
       const arrMs = new Date(`${arrDate}T${event.endTime}`).getTime();
-
       let diffMs = arrMs - depMs;
       if (event.timezone && details.arrivalTimezone) {
         const refDate = new Date(`${depDate}T${event.startTime}`);
@@ -191,7 +320,6 @@ export default function EventCard({
         const arrOffset = getOffset(details.arrivalTimezone);
         diffMs = diffMs - (arrOffset - depOffset);
       }
-
       if (diffMs <= 0) return '';
       const totalMin = Math.round(diffMs / 60000);
       const h = Math.floor(totalMin / 60);
@@ -202,307 +330,576 @@ export default function EventCard({
     }
   })();
 
-  /* Time range display */
-  const timeRange = (() => {
-    if (!event.startTime && !event.endTime) return null;
-    const parts: string[] = [];
-    if (event.startTime) parts.push(event.startTime);
-    if (event.endTime) parts.push(event.endTime);
-    return parts.join(' - ');
-  })();
+  const hasTime = !!event.startTime;
+
+  const isLive = status?.tone === 'live';
 
   return (
-    <motion.div
-      layout
-      className={classNames(
-        'bg-white rounded-xl border border-gray-200 border-l-4 overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition-shadow',
-        BORDER_COLORS[event.type]
-      )}
-      onClick={() => setExpanded(!expanded)}
-    >
-      {/* Main row: clean timeline card layout */}
-      <div className="flex items-start gap-3 px-4 py-3">
-        {/* Type icon */}
+    <div className="relative">
+      {/* Outer pulsing halo (live only) — sits behind the card */}
+      {isLive && (
         <div
-          className={classNames(
-            'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
-            BG_ICON_COLORS[event.type]
-          )}
+          aria-hidden
+          className="absolute -inset-1 rounded-3xl pointer-events-none animate-pulse"
+          style={{
+            background: `radial-gradient(circle, ${typeColor}66, transparent 60%)`,
+            filter: 'blur(14px)',
+            zIndex: 0,
+          }}
+        />
+      )}
+    <motion.div
+      ref={cardRef}
+      layout
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onClick={() => setExpanded(!expanded)}
+      style={{ rotateX, rotateY, transformPerspective: 1200 }}
+      animate={{
+        opacity: isPast && !tripCompleted ? 0.62 : 1,
+        filter: isPast && !tripCompleted ? 'saturate(0.55)' : 'saturate(1)',
+        scale: isLive ? 1.015 : 1,
+      }}
+      whileHover={{
+        scale: isLive ? 1.02 : 1.005,
+        opacity: isPast && !tripCompleted ? 0.88 : 1,
+        filter: isPast && !tripCompleted ? 'saturate(0.85)' : 'saturate(1)',
+      }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      className="relative rounded-2xl cursor-pointer group overflow-hidden"
+    >
+      {/* L1 — Gradient mesh backdrop colored by event type */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(135deg, ${typeColor}1f 0%, rgba(255,255,255,0.7) 38%, rgba(255,255,255,0.6) 62%, ${typeColor}17 100%)`,
+        }}
+      />
+
+      {/* L2 — Glass blur (lets the city background bleed through softly) */}
+      <div className="absolute inset-0 bg-white/35 backdrop-blur-xl" />
+
+      {/* L3 — Type-color aura blob (top right) */}
+      <div
+        className="absolute -top-20 -right-20 w-56 h-56 rounded-full blur-3xl pointer-events-none transition-opacity duration-500 opacity-70 group-hover:opacity-100"
+        style={{ background: `${typeColor}55` }}
+      />
+
+      {/* L3.5 — Extra emerald aura when live (bottom-left), pulses */}
+      {isLive && (
+        <div
+          aria-hidden
+          className="absolute -bottom-16 -left-16 w-48 h-48 rounded-full blur-3xl pointer-events-none animate-pulse"
+          style={{ background: 'rgba(16,185,129,0.40)' }}
+        />
+      )}
+
+      {/* AHORA — animated gradient stripe at the top (live only) */}
+      {isLive && (
+        <div
+          aria-hidden
+          className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl overflow-hidden pointer-events-none z-20"
         >
-          <Icon className="w-4.5 h-4.5" />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          {/* Line 1: Title */}
-          <h4 className="text-gray-900 font-semibold text-sm truncate">{event.title}</h4>
-
-          {/* Line 2: Time range */}
-          {timeRange && (
-            <p className="text-gray-500 text-xs mt-0.5">
-              {timeRange}
-              {departureTzAbbr && <span className="text-amber-500 ml-1">({departureTzAbbr})</span>}
-              {flightDuration && <span className="text-cyan-600 font-medium ml-1.5">{flightDuration}</span>}
-            </p>
-          )}
-
-          {/* Line 3: Location */}
-          {event.location && (
-            <p className="flex items-center gap-1 text-gray-400 text-xs mt-0.5 truncate">
-              <MapPin className="w-3 h-3 flex-shrink-0" />
-              {event.location}
-            </p>
-          )}
-        </div>
-
-        {/* Right side: cost + doc count + expand arrow */}
-        <div className="flex items-center gap-2 flex-shrink-0 mt-1">
-          {/* Doc count badge */}
-          {docCount > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-50 text-gray-400">
-              <Paperclip className="w-2.5 h-2.5" />
-              {docCount}
-            </span>
-          )}
-
-          {/* Cost */}
-          {event.cost > 0 && (
-            <span className="text-emerald-600 text-xs font-medium whitespace-nowrap">
-              {formatCurrency(event.cost, event.currency)}
-            </span>
-          )}
-
-          {/* Expand arrow */}
           <motion.div
-            animate={{ rotate: expanded ? 180 : 0 }}
-            transition={{ duration: 0.2 }}
-            className="text-gray-300"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </motion.div>
+            className="h-full w-1/2"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${typeColor}, transparent)`,
+            }}
+            animate={{ x: ['-100%', '300%'] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
+          />
+        </div>
+      )}
+
+      {/* L4 — Inner top highlight (glass edge) */}
+      <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent pointer-events-none" />
+
+      {/* L4.5 — Decorative pattern unique to event type */}
+      <div className="absolute inset-0 opacity-[0.11] pointer-events-none transition-opacity duration-500 group-hover:opacity-[0.18]">
+        <EventPattern type={event.type} color={typeColor} />
+      </div>
+
+      {/* L5 — Vertical accent bar */}
+      <div
+        className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full pointer-events-none"
+        style={{
+          background: `linear-gradient(to bottom, ${typeColor}, ${typeColor}66)`,
+          boxShadow: `0 0 14px ${typeColor}90`,
+        }}
+      />
+
+      {/* L6 — Outer subtle border */}
+      <div
+        className="absolute inset-0 rounded-2xl pointer-events-none transition-colors duration-300"
+        style={{
+          border: '1px solid rgba(255,255,255,0.45)',
+          boxShadow: `0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 24px -12px ${typeColor}33`,
+        }}
+      />
+
+      {/* CONTENT */}
+      <div className="relative z-10 p-4 sm:p-5">
+        <div className="flex items-start gap-3 sm:gap-5">
+          {/* TIME HERO (or icon if no time) */}
+          {hasTime ? (
+            <div className="flex-shrink-0 pt-0.5">
+              <p
+                className="text-xl sm:text-[26px] font-extrabold tabular-nums tracking-tight leading-none"
+                style={{ color: typeColor, textShadow: `0 1px 0 rgba(255,255,255,0.6)` }}
+              >
+                {event.startTime}
+              </p>
+              {event.endTime && event.endTime !== event.startTime && (
+                <>
+                  <div className="w-7 h-px bg-gray-300/70 my-1.5" />
+                  <p className="text-sm sm:text-[15px] text-gray-500 tabular-nums leading-none font-semibold">
+                    {event.endTime}
+                  </p>
+                </>
+              )}
+              {flightDuration && (
+                <p
+                  className="text-[9px] mt-2.5 font-mono tracking-[0.18em] uppercase font-bold"
+                  style={{ color: typeColor, opacity: 0.7 }}
+                >
+                  {flightDuration}
+                </p>
+              )}
+              {departureTzAbbr && !flightDuration && (
+                <p className="text-[9px] text-gray-400 mt-2 font-mono tracking-[0.15em] uppercase">
+                  {departureTzAbbr}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex-shrink-0 pt-1">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110"
+                style={{
+                  backgroundColor: `${typeColor}1c`,
+                  color: typeColor,
+                  boxShadow: `0 0 0 1px ${typeColor}30, 0 6px 14px ${typeColor}30`,
+                }}
+              >
+                <RenderedIcon className="w-6 h-6" />
+              </div>
+            </div>
+          )}
+
+          {/* MAIN CONTENT */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start gap-2.5">
+              <div className="flex-1 min-w-0">
+                {/* Type label as small caps */}
+                <p
+                  className="text-[9px] font-extrabold tracking-[0.18em] uppercase leading-none mb-1.5"
+                  style={{ color: typeColor }}
+                >
+                  {typeConfig.label}
+                </p>
+                {/* Title */}
+                <h4 className="text-gray-900 font-bold text-[15px] leading-tight tracking-tight">
+                  {event.title}
+                </h4>
+                {/* Location */}
+                {event.location && (
+                  <p className="flex items-center gap-1 text-gray-500 text-xs mt-1.5 truncate">
+                    <MapPin className="w-3 h-3 flex-shrink-0" style={{ color: typeColor }} />
+                    {event.location}
+                  </p>
+                )}
+              </div>
+
+              {/* Right side: status + icon halo */}
+              <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                {status && (
+                  <span
+                    className={classNames(
+                      'inline-flex items-center gap-1 text-[9px] font-bold tracking-[0.1em] uppercase px-2 py-0.5 rounded-full transition-all',
+                      status.tone === 'live' && 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/40',
+                      status.tone === 'soon' && 'bg-amber-50 text-amber-700 border border-amber-200',
+                      status.tone === 'past' && 'bg-gray-100 text-gray-400 border border-gray-200',
+                    )}
+                  >
+                    {status.tone === 'live' && (
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                    )}
+                    {status.label}
+                  </span>
+                )}
+
+                {hasTime && (
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-[-6deg]"
+                    style={{
+                      backgroundColor: `${typeColor}1c`,
+                      color: typeColor,
+                      boxShadow: `0 0 0 1px ${typeColor}30, 0 4px 12px ${typeColor}30`,
+                    }}
+                  >
+                    <RenderedIcon className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom meta row */}
+            <div className="flex items-center gap-2.5 mt-3 flex-wrap">
+              {event.cost > 0 && (
+                <span
+                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg"
+                  style={{
+                    backgroundColor: 'rgba(16,185,129,0.13)',
+                    color: '#047857',
+                    border: '1px solid rgba(16,185,129,0.22)',
+                  }}
+                >
+                  {formatCurrency(event.cost, event.currency)}
+                </span>
+              )}
+              {docCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-500 bg-white/60 border border-gray-200/60 rounded-full px-2 py-0.5 backdrop-blur-sm">
+                  <Paperclip className="w-2.5 h-2.5" />
+                  {docCount}
+                </span>
+              )}
+              {arrivalTzAbbr && departureTzAbbr && arrivalTzAbbr !== departureTzAbbr && (
+                <span className="text-[9px] text-amber-600 font-mono tracking-[0.15em] uppercase font-bold">
+                  {departureTzAbbr} → {arrivalTzAbbr}
+                </span>
+              )}
+              <div className="ml-auto inline-flex items-center gap-1 text-[10px] text-gray-400 font-medium">
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  {expanded ? 'Cerrar' : 'Detalles'}
+                </span>
+                <motion.div
+                  animate={{ rotate: expanded ? 180 : 0 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </motion.div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Expanded content */}
+      {/* EXPANDED CONTENT */}
       <AnimatePresence>
         {expanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="overflow-hidden"
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="relative z-10 overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-1 border-t border-gray-100">
-              {/* Type badge */}
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-gray-400 text-xs">Tipo:</span>
-                <span
-                  className="text-xs font-medium px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: `${typeConfig.color}25`, color: typeConfig.color }}
-                >
-                  {typeConfig.label}
-                </span>
-              </div>
-
-              {/* Type-specific details */}
-              {hasDetails && (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-3">
-                  {Object.entries(details).map(([key, value]) =>
-                    value?.trim() && key !== 'arrivalTimezone' && key !== 'arrivalDate' ? (
-                      <div key={key} className="min-w-0">
-                        <span className="text-gray-400 text-[11px] block">{DETAIL_LABELS[key] || key}</span>
-                        <span className="text-gray-800 text-sm truncate block">{value}</span>
-                      </div>
-                    ) : null
-                  )}
-                </div>
-              )}
-
-              {/* Notes */}
-              {event.notes && (
-                <p className="text-gray-600 text-sm mb-3 leading-relaxed">{event.notes}</p>
-              )}
-
-              {/* Photo gallery */}
-              {onAddPhoto && onDeletePhoto && (
-                <div className="mb-3" onClick={(e) => e.stopPropagation()}>
-                  {(event.photos?.length ?? 0) > 0 && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <Camera className="w-3 h-3 text-gray-400" />
-                      <span className="text-gray-400 text-xs font-medium">
-                        Fotos ({event.photos!.length})
-                      </span>
-                    </div>
-                  )}
-                  <PhotoGallery
-                    photos={event.photos ?? []}
-                    onAddPhoto={(file) => onAddPhoto(event.id, file)}
-                    onDeletePhoto={(url) => onDeletePhoto(event.id, url)}
-                  />
-                </div>
-              )}
-
-              {/* Attached documents list */}
-              {eventDocuments.length > 0 && (
-                <div className="mb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Paperclip className="w-3 h-3 text-gray-400" />
-                    <span className="text-gray-400 text-xs font-medium">
-                      Documentos adjuntos ({eventDocuments.length})
-                    </span>
-                  </div>
-                  <div className="space-y-1.5">
-                    {eventDocuments.map((doc) => {
-                      const isImage = doc.type.startsWith('image/');
-                      const isPdf = doc.type === 'application/pdf';
-                      const DocIcon = isPdf ? FileText : isImage ? Image : FileIcon;
-
-                      return (
-                        <div
-                          key={doc.id}
-                          className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 group/doc"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DocIcon className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
-                          <span className="text-gray-700 text-xs truncate flex-1">
-                            {doc.name}
+            <div className="px-5 pb-5">
+              <div
+                className="pt-4"
+                style={{ borderTop: '1px solid rgba(255,255,255,0.6)' }}
+              >
+                {/* Type-specific details */}
+                {hasDetails && (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-4">
+                    {Object.entries(details).map(([key, value]) =>
+                      value?.trim() && key !== 'arrivalTimezone' && key !== 'arrivalDate' ? (
+                        <div key={key} className="min-w-0">
+                          <span
+                            className="text-[9px] block font-bold tracking-[0.12em] uppercase mb-0.5"
+                            style={{ color: typeColor, opacity: 0.75 }}
+                          >
+                            {DETAIL_LABELS[key] || key}
                           </span>
-                          <span className="text-gray-300 text-[10px] flex-shrink-0">
-                            {formatFileSize(doc.size)}
+                          <span className="text-gray-800 text-sm font-medium truncate block">
+                            {value}
                           </span>
-                          {(isImage || isPdf) && (
-                            <a
-                              href={doc.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1 text-gray-300 hover:text-gray-600 transition-colors opacity-0 group-hover/doc:opacity-100"
-                              aria-label="Ver"
-                            >
-                              <Eye className="w-3 h-3" />
-                            </a>
-                          )}
-                          {onDeleteDocument && (
-                            <button
-                              onClick={() => {
-                                if (window.confirm(`Eliminar "${doc.name}"?`)) {
-                                  onDeleteDocument(doc.id, doc.url);
-                                }
-                              }}
-                              className="p-1 text-red-400/40 hover:text-red-400 transition-colors opacity-0 group-hover/doc:opacity-100"
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
                         </div>
-                      );
-                    })}
+                      ) : null
+                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Document upload overlay */}
-              <AnimatePresence>
-                {showDocUpload && onUploadDocument && onDeleteDocument && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden mb-3"
+                {event.latitude != null && event.longitude != null && LeafletComponents && (
+                  <div
+                    className="mb-4 rounded-xl overflow-hidden border border-gray-200 shadow-sm"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-gray-600 text-xs font-medium">
-                          Adjuntar documento
-                        </span>
-                        <button
-                          onClick={() => setShowDocUpload(false)}
-                          className="p-1 text-gray-300 hover:text-gray-600 transition-colors"
-                          aria-label="Cerrar"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <DocumentUpload
-                        documents={[]}
-                        onUpload={onUploadDocument}
-                        onDelete={onDeleteDocument}
-                        category={docCategory}
-                        eventId={event.id}
-                        hideCategorySelector
-                        compact
-                      />
+                    <div className="flex items-center gap-2 px-3 py-2 bg-white/60 backdrop-blur-sm border-b border-gray-200/60">
+                      <MapPin className="w-3 h-3" style={{ color: typeColor }} />
+                      <span
+                        className="text-[10px] font-bold tracking-[0.12em] uppercase"
+                        style={{ color: typeColor }}
+                      >
+                        Ubicacion
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps/?q=${event.latitude},${event.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto text-[10px] text-blue-600 hover:text-blue-700 font-semibold"
+                      >
+                        Abrir en Maps
+                      </a>
                     </div>
-                  </motion.div>
+                    <div style={{ height: 160 }}>
+                      <LeafletComponents.MapContainer
+                        center={[event.latitude, event.longitude]}
+                        zoom={14}
+                        style={{ height: '100%', width: '100%' }}
+                        scrollWheelZoom={false}
+                        attributionControl={false}
+                      >
+                        <LeafletComponents.TileLayer
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          attribution="&copy; OpenStreetMap"
+                        />
+                        <LeafletComponents.Marker position={[event.latitude, event.longitude]}>
+                          <LeafletComponents.Popup>
+                            {event.location || event.title}
+                          </LeafletComponents.Popup>
+                        </LeafletComponents.Marker>
+                      </LeafletComponents.MapContainer>
+                    </div>
+                  </div>
                 )}
-              </AnimatePresence>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(event);
-                  }}
-                  aria-label={`Editar evento ${event.title}`}
-                  className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Editar
-                </button>
-
-                {onDuplicate && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDuplicate(event);
+                {/* Notes */}
+                {event.notes && (
+                  <div
+                    className="text-gray-700 text-sm mb-4 leading-relaxed rounded-xl p-3"
+                    style={{
+                      backgroundColor: 'rgba(255,255,255,0.55)',
+                      border: '1px solid rgba(255,255,255,0.7)',
                     }}
-                    aria-label={`Duplicar evento ${event.title}`}
-                    className="flex items-center gap-1.5 text-violet-600 hover:text-violet-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-violet-50 transition-colors"
                   >
-                    <Copy className="w-3.5 h-3.5" />
-                    Duplicar
-                  </button>
+                    {event.notes}
+                  </div>
                 )}
 
-                {onUploadDocument && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDocUpload(!showDocUpload);
-                    }}
-                    className={classNames(
-                      'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors',
-                      showDocUpload
-                        ? 'text-amber-600 bg-amber-50'
-                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                {/* Photo gallery */}
+                {onAddPhoto && onDeletePhoto && (
+                  <div className="mb-4" onClick={(e) => e.stopPropagation()}>
+                    {(event.photos?.length ?? 0) > 0 && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <Camera className="w-3 h-3" style={{ color: typeColor }} />
+                        <span
+                          className="text-[10px] font-bold tracking-[0.12em] uppercase"
+                          style={{ color: typeColor }}
+                        >
+                          Fotos ({event.photos!.length})
+                        </span>
+                      </div>
                     )}
-                  >
-                    <Paperclip className="w-3.5 h-3.5" />
-                    Adjuntar
-                  </button>
+                    <PhotoGallery
+                      photos={event.photos ?? []}
+                      onAddPhoto={(file) => onAddPhoto(event.id, file)}
+                      onDeletePhoto={(url) => onDeletePhoto(event.id, url)}
+                    />
+                  </div>
                 )}
 
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (window.confirm(`Eliminar "${event.title}"? Esta accion no se puede deshacer.`)) {
-                      onDelete(event.id);
-                    }
-                  }}
-                  aria-label={`Eliminar evento ${event.title}`}
-                  className="flex items-center gap-1.5 text-red-600 hover:text-red-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Eliminar
-                </button>
+                {/* Attached documents list */}
+                {eventDocuments.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Paperclip className="w-3 h-3" style={{ color: typeColor }} />
+                      <span
+                        className="text-[10px] font-bold tracking-[0.12em] uppercase"
+                        style={{ color: typeColor }}
+                      >
+                        Documentos ({eventDocuments.length})
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {eventDocuments.map((doc) => {
+                        const isImage = doc.type.startsWith('image/');
+                        const isPdf = doc.type === 'application/pdf';
+                        const DocIcon = isPdf ? FileText : isImage ? ImageIcon : FileIcon;
+
+                        return (
+                          <div
+                            key={doc.id}
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 group/doc backdrop-blur-sm"
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.6)',
+                              border: '1px solid rgba(255,255,255,0.7)',
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <DocIcon className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span className="text-gray-700 text-xs truncate flex-1 font-medium">
+                              {doc.name}
+                            </span>
+                            <span className="text-gray-400 text-[10px] flex-shrink-0">
+                              {formatFileSize(doc.size)}
+                            </span>
+                            {(isImage || isPdf) && (
+                              <a
+                                href={doc.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 text-gray-400 hover:text-gray-700 transition-colors opacity-0 group-hover/doc:opacity-100"
+                                aria-label="Ver"
+                              >
+                                <Eye className="w-3 h-3" />
+                              </a>
+                            )}
+                            {onDeleteDocument && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`Eliminar "${doc.name}"?`)) {
+                                    onDeleteDocument(doc.id, doc.url);
+                                  }
+                                }}
+                                className="p-1 text-red-400/50 hover:text-red-500 transition-colors opacity-0 group-hover/doc:opacity-100"
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Document upload overlay */}
+                <AnimatePresence>
+                  {showDocUpload && onUploadDocument && onDeleteDocument && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden mb-4"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        className="rounded-xl p-3 backdrop-blur-sm"
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.6)',
+                          border: '1px solid rgba(255,255,255,0.75)',
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span
+                            className="text-[10px] font-bold tracking-[0.12em] uppercase"
+                            style={{ color: typeColor }}
+                          >
+                            Adjuntar documento
+                          </span>
+                          <button
+                            onClick={() => setShowDocUpload(false)}
+                            className="p-1 text-gray-400 hover:text-gray-700 transition-colors"
+                            aria-label="Cerrar"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <DocumentUpload
+                          documents={[]}
+                          onUpload={onUploadDocument}
+                          onDelete={onDeleteDocument}
+                          category={docCategory}
+                          eventId={event.id}
+                          hideCategorySelector
+                          compact
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(event);
+                    }}
+                    aria-label={`Editar evento ${event.title}`}
+                    className="inline-flex items-center gap-1.5 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all backdrop-blur-sm"
+                    style={{
+                      backgroundColor: 'rgba(59,130,246,0.1)',
+                      border: '1px solid rgba(59,130,246,0.2)',
+                    }}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Editar
+                  </button>
+
+                  {onDuplicate && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDuplicate(event);
+                      }}
+                      aria-label={`Duplicar evento ${event.title}`}
+                      className="inline-flex items-center gap-1.5 text-violet-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all backdrop-blur-sm"
+                      style={{
+                        backgroundColor: 'rgba(139,92,246,0.1)',
+                        border: '1px solid rgba(139,92,246,0.2)',
+                      }}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Duplicar
+                    </button>
+                  )}
+
+                  {onUploadDocument && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDocUpload(!showDocUpload);
+                      }}
+                      className={classNames(
+                        'inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all backdrop-blur-sm',
+                        showDocUpload
+                          ? 'text-amber-700'
+                          : 'text-gray-600 hover:text-gray-900'
+                      )}
+                      style={
+                        showDocUpload
+                          ? {
+                              backgroundColor: 'rgba(245,158,11,0.13)',
+                              border: '1px solid rgba(245,158,11,0.25)',
+                            }
+                          : {
+                              backgroundColor: 'rgba(255,255,255,0.55)',
+                              border: '1px solid rgba(255,255,255,0.7)',
+                            }
+                      }
+                    >
+                      <Paperclip className="w-3.5 h-3.5" />
+                      Adjuntar
+                    </button>
+                  )}
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Eliminar "${event.title}"? Esta accion no se puede deshacer.`)) {
+                        onDelete(event.id);
+                      }
+                    }}
+                    aria-label={`Eliminar evento ${event.title}`}
+                    className="inline-flex items-center gap-1.5 text-red-700 text-xs font-semibold px-3 py-1.5 rounded-lg ml-auto transition-all backdrop-blur-sm"
+                    style={{
+                      backgroundColor: 'rgba(239,68,68,0.1)',
+                      border: '1px solid rgba(239,68,68,0.2)',
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Eliminar
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
+    </div>
   );
 }

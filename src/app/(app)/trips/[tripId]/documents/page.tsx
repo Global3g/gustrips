@@ -185,8 +185,25 @@ export default function DocumentsPage() {
 
       {/* Documents grouped by category */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-gray-200 border-t-blue-400 rounded-full animate-spin" />
+        <div className="space-y-6">
+          <div className="space-y-2 mb-2">
+            <div className="h-4 w-40 bg-gray-200 rounded-lg animate-pulse" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="rounded-xl bg-white/40 backdrop-blur-sm border border-gray-200/60 p-3 flex items-center gap-3 animate-pulse"
+                style={{ animationDelay: `${i * 100}ms` }}
+              >
+                <div className="w-12 h-12 rounded-lg bg-gray-200 flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-3/4 bg-gray-200 rounded" />
+                  <div className="h-3 w-1/3 bg-gray-100 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       ) : filteredDocuments.length === 0 ? (
         <div className="text-center py-8">

@@ -36,6 +36,8 @@ import {
   Map,
   PiggyBank,
   Link2,
+  Sparkles,
+  CalendarDays,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, parseISO, differenceInDays, isAfter, isBefore, isEqual, startOfDay } from 'date-fns';
@@ -57,14 +59,15 @@ import TripForm from '@/components/trips/TripForm';
 import { Button } from '@/components/ui/Button';
 import { exportTripPdf } from '@/lib/utils/exportPdf';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
+import { buildIcsString, downloadIcsFile, getTripIcsFilename } from '@/lib/utils/exportIcs';
 import QRCode from '@/components/ui/QRCode';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
-import { TRIP_STATUS, ROUTES } from '@/config/constants';
+import { TRIP_STATUS, ROUTES, EVENT_TYPES } from '@/config/constants';
 import { glassStyle, classNames, formatCurrency, formatDateES, generateId } from '@/lib/utils/helpers';
 import { nowISO } from '@/lib/utils/helpers';
 import SpotlightCard from '@/components/ui/SpotlightCard';
 import Particles from '@/components/ui/Particles';
-import type { TripEvent, ChecklistItem, QuickNote } from '@/types';
+import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
 
 /* ─── Countdown Badge ─────────────────────────────── */
 
@@ -147,6 +150,194 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
   );
 }
 
+/* ─── Empty Event Card ────────────────────────────── */
+
+function EmptyEventCard({ tripId }: { tripId: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.1 }}
+      className="relative overflow-hidden rounded-2xl p-8 border border-white/[0.08]"
+      style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+    >
+      <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full -translate-y-32 translate-x-32 blur-3xl pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-48 h-48 bg-violet-500/10 rounded-full translate-y-24 -translate-x-24 blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 flex flex-col items-center text-center">
+        <div
+          className="w-16 h-16 rounded-2xl bg-blue-500/15 flex items-center justify-center mb-4 ring-1 ring-blue-400/20"
+          style={{ boxShadow: '0 0 30px rgba(59,130,246,0.25)' }}
+        >
+          <CalendarPlus className="w-8 h-8 text-blue-400" />
+        </div>
+
+        <h3 className="text-white font-bold text-lg leading-tight">Tu viaje está vacío</h3>
+        <p className="text-white/50 text-sm mt-1.5 max-w-sm">
+          Comienza agregando tu primer evento — un vuelo, hotel, actividad o lo que necesites planear.
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-center gap-2 mt-6 w-full sm:w-auto">
+          <Link
+            href={`/trips/${tripId}/itinerary`}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            Agregar evento
+          </Link>
+          <Link
+            href={`/trips/${tripId}/itinerary`}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white/80 hover:text-white text-sm font-semibold border border-white/[0.08] transition-all w-full sm:w-auto"
+          >
+            <Sparkles className="w-4 h-4" />
+            Auto-generar
+          </Link>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ─── Trip Insights ───────────────────────────────── */
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function StatBlock({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string; color: string }) {
+  const colorMap: Record<string, { bg: string; text: string }> = {
+    emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
+    cyan: { bg: 'bg-cyan-500/10', text: 'text-cyan-400' },
+    violet: { bg: 'bg-violet-500/10', text: 'text-violet-400' },
+    rose: { bg: 'bg-rose-500/10', text: 'text-rose-400' },
+  };
+  const c = colorMap[color] ?? colorMap.emerald;
+  return (
+    <div className="rounded-xl p-3 border border-white/[0.05] bg-white/[0.02] backdrop-blur-sm">
+      <div className={`w-7 h-7 rounded-lg ${c.bg} flex items-center justify-center mb-2`}>
+        <Icon className={`w-3.5 h-3.5 ${c.text}`} />
+      </div>
+      <p className="text-white font-bold text-lg leading-none">{value}</p>
+      <p className="text-white/40 text-[10px] uppercase tracking-wide mt-1">{label}</p>
+    </div>
+  );
+}
+
+function TripInsights({ trip, events, tripId }: { trip: Trip; events: TripEvent[]; tripId: string }) {
+  const insights = useMemo(() => {
+    // Cities
+    const cities = new Set<string>();
+    for (const e of events) {
+      const c = e.city?.trim() || (e.location?.split(',')[0]?.trim() ?? '');
+      if (c && c.length > 1) cities.add(c.toLowerCase());
+    }
+
+    // Kilometers between consecutive events with coords
+    let kmTotal = 0;
+    const sorted = [...events].sort((a, b) => {
+      const d = a.date.localeCompare(b.date);
+      return d !== 0 ? d : (a.startTime || '').localeCompare(b.startTime || '');
+    });
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i];
+      const b = sorted[i + 1];
+      if (a.latitude && a.longitude && b.latitude && b.longitude) {
+        kmTotal += haversineKm(a.latitude, a.longitude, b.latitude, b.longitude);
+      }
+    }
+
+    // Type counts
+    const typeCount: Record<string, number> = {};
+    for (const e of events) typeCount[e.type] = (typeCount[e.type] || 0) + 1;
+    const topTypes = Object.entries(typeCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    return { cities: cities.size, kmTotal, topTypes };
+  }, [events]);
+
+  const photos = (trip.albumPhotos ?? []).slice(0, 6);
+
+  if (events.length === 0 && photos.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.15 }}
+      className="rounded-2xl p-5 relative overflow-hidden border border-white/[0.08]"
+      style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+    >
+      <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/8 rounded-full -translate-y-32 translate-x-32 blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 space-y-4">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span className="text-xs font-bold text-amber-400 uppercase tracking-wide">Tu viaje en numeros</span>
+        </div>
+
+        {/* Stats grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatBlock icon={MapPin} label="Ciudades" value={insights.cities.toString()} color="emerald" />
+          <StatBlock icon={Navigation} label="Kilometros" value={insights.kmTotal > 0 ? `${Math.round(insights.kmTotal).toLocaleString()}` : '—'} color="cyan" />
+          <StatBlock icon={CalendarDays} label="Eventos" value={events.length.toString()} color="violet" />
+          <StatBlock icon={Camera} label="Fotos" value={(trip.albumPhotos?.length ?? 0).toString()} color="rose" />
+        </div>
+
+        {/* Top types */}
+        {insights.topTypes.length > 0 && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-white/40 font-semibold mb-2">Mas frecuentes</p>
+            <div className="flex flex-wrap gap-1.5">
+              {insights.topTypes.map(([type, count]) => {
+                const cfg = EVENT_TYPES[type as keyof typeof EVENT_TYPES];
+                if (!cfg) return null;
+                return (
+                  <span
+                    key={type}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-full px-2.5 py-1 backdrop-blur-sm border border-white/[0.08]"
+                    style={{ backgroundColor: `${cfg.color}1c`, color: cfg.color }}
+                  >
+                    <span>{cfg.label}</span>
+                    <span className="bg-white/10 rounded-full w-4 h-4 flex items-center justify-center text-[9px]">{count}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Photos preview */}
+        {photos.length > 0 && (
+          <Link href={`/trips/${tripId}/photos`} className="block group">
+            <p className="text-[10px] uppercase tracking-wide text-white/40 font-semibold mb-2 flex items-center gap-1.5">
+              <Camera className="w-3 h-3" />
+              <span>Fotos del viaje</span>
+              <span className="ml-auto text-blue-400 group-hover:text-blue-300 transition-colors">Ver todas →</span>
+            </p>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+              {photos.map((p, i) => (
+                <div
+                  key={i}
+                  className="aspect-square rounded-lg overflow-hidden bg-white/5 border border-white/[0.08] group-hover:scale-105 group-hover:border-white/[0.2] transition-all"
+                  style={{ transitionDelay: `${i * 30}ms` }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </Link>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 /* ─── Quick Notes ─────────────────────────────────── */
 
 function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
@@ -171,20 +362,20 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.2 }}
-      className="rounded-2xl p-5 relative overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+      className="rounded-2xl p-6 mt-2 relative overflow-hidden border border-amber-300/40 shadow-lg shadow-amber-500/10"
+      style={{ background: 'linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%)' }}
     >
-      <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/5 rounded-full -translate-y-16 translate-x-16" />
+      <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/10 rounded-full -translate-y-16 translate-x-16" />
 
       <div className="relative z-10">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center"
-            style={{ boxShadow: '0 0 15px rgba(245,158,11,0.1)' }}>
-            <StickyNote className="w-4.5 h-4.5 text-amber-400" />
+          <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center"
+            style={{ boxShadow: '0 0 15px rgba(245,158,11,0.15)' }}>
+            <StickyNote className="w-4.5 h-4.5 text-amber-700" />
           </div>
-          <span className="text-sm font-bold text-white">Pendientes urgentes</span>
+          <span className="text-sm font-bold text-amber-900">Pendientes urgentes</span>
           {pending.length > 0 && (
-            <span className="ml-auto bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-500/30">
+            <span className="ml-auto bg-amber-500/30 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-500/40">
               {pending.length}
             </span>
           )}
@@ -198,12 +389,12 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
             onChange={(e) => setNewNote(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
             placeholder="Agregar pendiente..."
-            className="flex-1 bg-white/[0.06] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-sm text-white placeholder:text-white/30 outline-none focus:border-amber-400/40 focus:ring-1 focus:ring-amber-400/10 transition-all"
+            className="flex-1 bg-white/60 border border-amber-300/60 rounded-xl px-3.5 py-2.5 text-sm text-amber-900 placeholder:text-amber-700/50 outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/20 focus:bg-white/80 transition-all"
           />
           <button
             onClick={handleAdd}
             disabled={!newNote.trim()}
-            className="w-10 h-10 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 flex items-center justify-center transition-colors disabled:opacity-30 border border-amber-500/20"
+            className="w-10 h-10 rounded-xl bg-amber-500/30 hover:bg-amber-500/40 text-amber-800 flex items-center justify-center transition-colors disabled:opacity-30 border border-amber-500/40"
           >
             <Plus className="w-5 h-5" />
           </button>
@@ -213,15 +404,15 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
         {pending.length > 0 && (
           <div className="space-y-1.5">
             {pending.map((note) => (
-              <div key={note.id} className="flex items-center gap-2.5 bg-white/[0.04] rounded-xl px-3 py-2.5 border border-white/[0.06] group">
+              <div key={note.id} className="flex items-center gap-2.5 bg-white/50 rounded-xl px-3 py-2.5 border border-amber-300/40 group">
                 <button
                   onClick={() => onToggle(note.id)}
-                  className="w-5 h-5 rounded-md border-2 border-amber-400/40 hover:border-amber-400 flex-shrink-0 transition-colors flex items-center justify-center"
+                  className="w-5 h-5 rounded-md border-2 border-amber-600/50 hover:border-amber-700 flex-shrink-0 transition-colors flex items-center justify-center"
                 />
-                <span className="flex-1 text-sm text-white/80">{note.text}</span>
+                <span className="flex-1 text-sm text-amber-900">{note.text}</span>
                 <button
                   onClick={() => onDelete(note.id)}
-                  className="w-6 h-6 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                  className="w-6 h-6 rounded-lg text-amber-700/40 hover:text-red-600 hover:bg-red-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -237,14 +428,14 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
               <div key={note.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl group">
                 <button
                   onClick={() => onToggle(note.id)}
-                  className="w-5 h-5 rounded-md bg-amber-500/30 flex-shrink-0 flex items-center justify-center"
+                  className="w-5 h-5 rounded-md bg-amber-500/40 flex-shrink-0 flex items-center justify-center"
                 >
-                  <Check className="w-3 h-3 text-amber-400" />
+                  <Check className="w-3 h-3 text-amber-800" />
                 </button>
-                <span className="flex-1 text-sm text-white/25 line-through">{note.text}</span>
+                <span className="flex-1 text-sm text-amber-900/40 line-through">{note.text}</span>
                 <button
                   onClick={() => onDelete(note.id)}
-                  className="w-6 h-6 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                  className="w-6 h-6 rounded-lg text-amber-700/40 hover:text-red-600 hover:bg-red-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -254,7 +445,7 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
         )}
 
         {notes.length === 0 && (
-          <p className="text-white/20 text-xs text-center py-2">Sin pendientes — escribe algo arriba</p>
+          <p className="text-amber-700/50 text-xs text-center py-2">Sin pendientes — escribe algo arriba</p>
         )}
       </div>
     </motion.div>
@@ -342,10 +533,30 @@ export default function TripDetailPage() {
   if (loading) return <TripDetailSkeleton />;
 
   if (!trip) {
+    const handleNotFoundBack = () => {
+      if (typeof window !== 'undefined' && document.referrer) {
+        try {
+          const refOrigin = new URL(document.referrer).origin;
+          if (refOrigin === window.location.origin) {
+            router.back();
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+      router.push(ROUTES.app.dashboard);
+    };
     return (
       <div className="text-center py-20">
         <p className="text-gray-600 text-lg">Viaje no encontrado</p>
-        <Link href={ROUTES.app.dashboard} className="text-blue-600 text-sm mt-4 inline-block">Volver al dashboard</Link>
+        <button
+          type="button"
+          onClick={handleNotFoundBack}
+          className="text-blue-600 text-sm mt-4 inline-block hover:underline"
+        >
+          Volver al dashboard
+        </button>
       </div>
     );
   }
@@ -438,6 +649,26 @@ export default function TripDetailPage() {
     try { setBackingUp(true); const data = await exportTripBackup(tripId); downloadBackup(data, getTripBackupFilename(trip.title)); toast('Backup descargado', 'success'); }
     catch { toast('Error al generar backup', 'error'); }
     finally { setBackingUp(false); }
+  };
+
+  const handleExportIcs = () => {
+    if (!trip) return;
+    try {
+      const ics = buildIcsString({
+        trip: {
+          title: trip.title,
+          destination: trip.destination,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+        },
+        events,
+      });
+      downloadIcsFile(getTripIcsFilename(trip.title), ics);
+      toast('Calendario .ics descargado', 'success');
+    } catch (err) {
+      console.error('Error generando .ics:', err);
+      toast('Error al generar calendario', 'error');
+    }
   };
 
   const handleShare = async () => {
@@ -533,6 +764,7 @@ export default function TripDetailPage() {
                       { icon: Pencil, label: 'Editar viaje', onClick: () => { setEditing(true); setShowMoreMenu(false); } },
                       { icon: Share2, label: 'Compartir', onClick: () => { handleShare(); setShowMoreMenu(false); } },
                       { icon: Download, label: 'Exportar PDF', onClick: () => { handleExportPdf(); setShowMoreMenu(false); } },
+                      { icon: CalendarPlus, label: 'Calendario (.ics)', onClick: () => { handleExportIcs(); setShowMoreMenu(false); } },
                       { icon: HardDriveDownload, label: 'Backup JSON', onClick: () => { handleBackup(); setShowMoreMenu(false); } },
                       { icon: Copy, label: 'Duplicar viaje', onClick: () => { setShowDuplicateModal(true); setShowMoreMenu(false); } },
                     ].map((item) => {
@@ -553,11 +785,18 @@ export default function TripDetailPage() {
             <StatusSuggestionBanner trip={trip} onUpdate={handleStatusUpdate} />
 
             {/* ── Next Event ── */}
-            <NextEventCard events={events} tripId={tripId} />
+            {events.length === 0 ? (
+              <EmptyEventCard tripId={tripId} />
+            ) : (
+              <NextEventCard events={events} tripId={tripId} />
+            )}
+
+            {/* ── Trip Insights ── */}
+            <TripInsights trip={trip} events={events} tripId={tripId} />
 
             {/* ── Sections Grid — Aurora + Spotlight + Border Beam + Blur Fade ── */}
             <div className="rounded-3xl p-4 mt-3 relative overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, #0c1929 0%, #0f1f33 100%)' }}>
+              style={{ background: 'linear-gradient(135deg, #28406a 0%, #2e4775 100%)' }}>
 
               {/* Particles constellation */}
               <Particles count={35} />
@@ -745,6 +984,28 @@ export default function TripDetailPage() {
                         </div>
                         <p className="text-white font-bold text-sm">Mapa</p>
                         <p className="text-white/25 text-xs mt-1">Ver ubicaciones</p>
+                      </div>
+                    </SpotlightCard>
+                  </Link>
+                </motion.div>
+
+                {/* Links utiles */}
+                <motion.div variants={{ hidden: { opacity: 0, y: 30, filter: 'blur(12px)' }, visible: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.6, ease: 'easeOut' } } }}
+                  className="col-span-2">
+                  <Link href={`/trips/${tripId}/links`}>
+                    <SpotlightCard glowColor="rgba(236,72,153,0.2)" className="rounded-2xl">
+                      <div className="bg-[#0d1b2e]/60 backdrop-blur-xl rounded-2xl p-5 border border-white/[0.06]">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-pink-500/10 flex items-center justify-center flex-shrink-0"
+                            style={{ boxShadow: '0 0 20px rgba(236,72,153,0.12)' }}>
+                            <Link2 className="w-6 h-6 text-pink-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-bold text-sm">Links utiles</p>
+                            <p className="text-white/40 text-xs mt-0.5">Enlaces guardados del viaje</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0" />
+                        </div>
                       </div>
                     </SpotlightCard>
                   </Link>

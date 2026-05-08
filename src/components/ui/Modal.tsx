@@ -10,9 +10,13 @@ interface ModalProps {
   open: boolean;
   onClose: () => void;
   title?: string;
+  /** If provided, replaces the default text title. Use for custom headers (icons, badges, dates). */
+  titleSlot?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** sm: max-w-md, md (default): max-w-lg, lg: max-w-2xl, xl: max-w-3xl */
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 const backdropVariants = {
@@ -40,12 +44,21 @@ export function Modal({
   open,
   onClose,
   title,
+  titleSlot,
   children,
   footer,
   className,
+  size,
 }: ModalProps) {
   const [mounted, setMounted] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  const sizeClass = {
+    sm: 'max-w-md',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl',
+    xl: 'max-w-3xl',
+  }[size ?? 'md'];
 
   useEffect(() => {
     setMounted(true);
@@ -95,7 +108,7 @@ export function Modal({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 sm:p-6"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-0 sm:p-6"
           variants={backdropVariants}
           initial="hidden"
           animate="visible"
@@ -105,7 +118,8 @@ export function Modal({
           <motion.div
             ref={contentRef}
             className={classNames(
-              'bg-white border border-gray-200 rounded-2xl w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl shadow-black/10',
+              'bg-white border border-gray-200 w-full h-full sm:h-auto max-h-full sm:max-h-[90vh] rounded-none sm:rounded-2xl flex flex-col overflow-hidden shadow-2xl shadow-black/10',
+              sizeClass,
               className
             )}
             variants={contentVariants}
@@ -115,9 +129,13 @@ export function Modal({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            {title && (
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-                <h3 className="text-gray-900 font-semibold text-lg">{title}</h3>
+            {(titleSlot || title) && (
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0 bg-white/95 backdrop-blur-sm">
+                {titleSlot ? (
+                  titleSlot
+                ) : (
+                  <h3 className="text-gray-900 font-semibold text-lg">{title}</h3>
+                )}
                 <button
                   onClick={onClose}
                   className="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-lg hover:bg-gray-100"
@@ -132,7 +150,7 @@ export function Modal({
 
             {/* Footer */}
             {footer && (
-              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-3 flex-shrink-0">
+              <div className="px-5 py-3 border-t border-gray-100 bg-white/95 backdrop-blur-sm flex items-center justify-end gap-3 flex-shrink-0">
                 {footer}
               </div>
             )}

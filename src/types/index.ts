@@ -33,6 +33,26 @@ export interface Trip {
   albumPhotos?: AlbumPhoto[];
   mealPreferences?: MealPreferences;
   quickNotes?: QuickNote[];
+  customLinks?: CustomLink[];
+}
+
+// ─── Custom Link ───────────────────────────────────
+export type CustomLinkCategory =
+  | 'vuelos'
+  | 'hoteles'
+  | 'autos'
+  | 'restaurantes'
+  | 'tours'
+  | 'mapas'
+  | 'seguros'
+  | 'otros';
+
+export interface CustomLink {
+  id: string;
+  name: string;
+  url: string;
+  category: CustomLinkCategory;
+  createdAt: string;
 }
 
 // ─── Quick Note ───────────────────────────────────
