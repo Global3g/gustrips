@@ -47,11 +47,16 @@ export default function PhotoLightbox({
   const photo = photos[index];
   const [rotation, setRotation] = useState(0);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
+  const prevIndex = useRef(index);
 
-  // Reset rotation + zoom when navigating to a different photo
+  // Reset rotation + zoom only when navigating to a DIFFERENT photo,
+  // not on first mount — fighting centerOnInit on mount made the photo
+  // briefly appear and then disappear.
   useEffect(() => {
+    if (prevIndex.current === index) return;
+    prevIndex.current = index;
     setRotation(0);
-    transformRef.current?.resetTransform(0);
+    transformRef.current?.resetTransform(180);
   }, [index]);
 
   // Keyboard navigation
@@ -97,21 +102,9 @@ export default function PhotoLightbox({
             pinch={{ step: 5 }}
             limitToBounds={false}
             centerOnInit
-            centerZoomedOut
           >
             <TransformComponent
-              wrapperStyle={{
-                width: '100vw',
-                height: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              contentStyle={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              wrapperStyle={{ width: '100vw', height: '100vh' }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -124,10 +117,9 @@ export default function PhotoLightbox({
                   transition: 'transform 0.25s ease',
                   maxWidth: '92vw',
                   maxHeight: '85vh',
-                  width: 'auto',
-                  height: 'auto',
                   objectFit: 'contain',
                   userSelect: 'none',
+                  display: 'block',
                 }}
               />
             </TransformComponent>
