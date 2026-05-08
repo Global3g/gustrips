@@ -19,7 +19,7 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
+  const { trip, updateTrip } = useTrip(tripId);
   const { events, createEvent } = useEvents(tripId);
   const { uploadDocument } = useDocuments(tripId);
   const { toast } = useToast();
@@ -99,6 +99,7 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
           currentPath={pathname}
           onScanDocument={() => setShowSidebarScan(true)}
           travelerCount={trip?.travelerIds?.length}
+          updateTrip={updateTrip}
         />
       </div>
 

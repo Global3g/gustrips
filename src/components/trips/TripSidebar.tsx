@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { format, parseISO, eachDayOfInterval, isToday, isBefore, getISOWeek } from 'date-fns';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { format, parseISO, eachDayOfInterval, isToday, isBefore, isAfter, getISOWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
   ChevronDown,
@@ -23,20 +23,19 @@ import {
   UtensilsCrossed,
   Ship,
   ArrowLeft,
-  FileSearch,
   HardDriveDownload,
   Loader2,
   Sparkles,
-  Globe,
   Clock,
-  TrendingUp,
-  Check,
-  X as XIcon,
 } from 'lucide-react';
 import { classNames, formatCurrency } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { ROUTES } from '@/config/constants';
-import type { Trip, TripEvent } from '@/types';
+import { useExpenses } from '@/hooks/useExpenses';
+import StatusChangeMenu from '@/components/trips/sidebar/StatusChangeMenu';
+import QuickStatsRow from '@/components/trips/sidebar/QuickStatsRow';
+import JumpToTodayButton from '@/components/trips/sidebar/JumpToTodayButton';
+import type { Trip, TripEvent, TripStatus } from '@/types';
 
 /* ------------------------------------------------------------------ */
 /*  Nav color map — each nav item gets its own unique accent color     */
@@ -55,14 +54,14 @@ const NAV_COLORS = {
 } as const;
 
 /* ------------------------------------------------------------------ */
-/*  Status config                                                      */
+/*  Status orb color (reactive ambient)                                */
 /* ------------------------------------------------------------------ */
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; icon: typeof Clock }> = {
-  planning:  { label: 'Planificando', bg: 'bg-amber-500/15', text: 'text-amber-300', dot: 'bg-amber-400', icon: Clock },
-  active:    { label: 'Activo',       bg: 'bg-emerald-500/15', text: 'text-emerald-300', dot: 'bg-emerald-400', icon: Plane },
-  completed: { label: 'Completado',   bg: 'bg-blue-500/15', text: 'text-blue-300', dot: 'bg-blue-400', icon: Check },
-  cancelled: { label: 'Cancelado',    bg: 'bg-red-500/15', text: 'text-red-300', dot: 'bg-red-400', icon: XIcon },
+const STATUS_ORB: Record<string, string> = {
+  planning: 'rgba(245,158,11,0.18)',
+  active: 'rgba(52,211,153,0.20)',
+  completed: 'rgba(96,165,250,0.18)',
+  cancelled: 'rgba(248,113,113,0.16)',
 };
 
 /* ------------------------------------------------------------------ */
@@ -265,7 +264,7 @@ function WeekLabel({ weekNumber, index }: { weekNumber: number; index: number })
 /*  Reservation Pills                                                  */
 /* ------------------------------------------------------------------ */
 
-function ReservationPills({ events }: { events: TripEvent[] }) {
+function ReservationPills({ events, basePath }: { events: TripEvent[]; basePath: string }) {
   const counts = useMemo(() => {
     const c: Record<string, number> = { flight: 0, hotel: 0, car_rental: 0, restaurant: 0, cruise: 0 };
     for (const e of events) {
@@ -275,11 +274,11 @@ function ReservationPills({ events }: { events: TripEvent[] }) {
   }, [events]);
 
   const items = [
-    { type: 'flight', icon: Plane, label: 'Vuelos', count: counts.flight, bg: 'bg-pink-500/15', text: 'text-pink-400', shadow: 'shadow-pink-500/10' },
-    { type: 'hotel', icon: Hotel, label: 'Hoteles', count: counts.hotel, bg: 'bg-violet-500/15', text: 'text-violet-400', shadow: 'shadow-violet-500/10' },
-    { type: 'cruise', icon: Ship, label: 'Crucero', count: counts.cruise, bg: 'bg-sky-500/15', text: 'text-sky-400', shadow: 'shadow-sky-500/10' },
-    { type: 'car_rental', icon: Car, label: 'Autos', count: counts.car_rental, bg: 'bg-amber-500/15', text: 'text-amber-400', shadow: 'shadow-amber-500/10' },
-    { type: 'restaurant', icon: UtensilsCrossed, label: 'Comida', count: counts.restaurant, bg: 'bg-orange-500/15', text: 'text-orange-400', shadow: 'shadow-orange-500/10' },
+    { type: 'flight', icon: Plane, label: 'Vuelos', count: counts.flight, bg: 'bg-pink-500/15', text: 'text-pink-300', shadow: 'shadow-pink-500/10' },
+    { type: 'hotel', icon: Hotel, label: 'Hoteles', count: counts.hotel, bg: 'bg-violet-500/15', text: 'text-violet-300', shadow: 'shadow-violet-500/10' },
+    { type: 'cruise', icon: Ship, label: 'Crucero', count: counts.cruise, bg: 'bg-sky-500/15', text: 'text-sky-300', shadow: 'shadow-sky-500/10' },
+    { type: 'car_rental', icon: Car, label: 'Autos', count: counts.car_rental, bg: 'bg-amber-500/15', text: 'text-amber-300', shadow: 'shadow-amber-500/10' },
+    { type: 'restaurant', icon: UtensilsCrossed, label: 'Comida', count: counts.restaurant, bg: 'bg-orange-500/15', text: 'text-orange-300', shadow: 'shadow-orange-500/10' },
   ].filter(i => i.count > 0);
 
   if (items.length === 0) return null;
@@ -289,63 +288,24 @@ function ReservationPills({ events }: { events: TripEvent[] }) {
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <div
+          <Link
             key={item.type}
+            href={`${basePath}/documents?type=${item.type}`}
             className={classNames(
-              'inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2.5 py-1 backdrop-blur-sm border border-white/[0.06] shadow-lg',
+              'inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2.5 py-1 backdrop-blur-sm border border-white/[0.06] shadow-lg hover:scale-105 hover:brightness-110 transition-all',
               item.bg,
               item.text,
               item.shadow,
             )}
-            title={`${item.count} ${item.label}`}
+            title={`${item.count} ${item.label} — abrir filtro`}
           >
             <Icon className="w-3 h-3" />
             <span>{item.count}</span>
-          </div>
+          </Link>
         );
       })}
     </div>
   );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Quick stat mini card                                               */
-/* ------------------------------------------------------------------ */
-
-function StatMiniCard({ icon, value, label, color }: {
-  icon: React.ReactNode;
-  value: string | number;
-  label: string;
-  color: string;
-}) {
-  return (
-    <div className="flex-1 min-w-0 rounded-xl bg-white/[0.04] border border-white/[0.06] backdrop-blur-sm px-2.5 py-2 text-center transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.08]">
-      <div className={classNames('flex items-center justify-center mb-1', color)}>
-        {icon}
-      </div>
-      <div className="text-[13px] font-bold text-white leading-none">{value}</div>
-      <div className="text-[9px] text-white/80 uppercase tracking-wider mt-0.5 leading-none truncate">{label}</div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Destination gradient generator                                     */
-/* ------------------------------------------------------------------ */
-
-function getDestinationGradient(destination: string): string {
-  const hash = destination.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const gradients = [
-    'from-indigo-600 via-purple-600 to-pink-500',
-    'from-emerald-600 via-teal-600 to-cyan-500',
-    'from-orange-600 via-red-600 to-pink-500',
-    'from-blue-600 via-indigo-600 to-violet-500',
-    'from-rose-600 via-pink-600 to-fuchsia-500',
-    'from-amber-600 via-orange-600 to-red-500',
-    'from-cyan-600 via-blue-600 to-indigo-500',
-    'from-teal-600 via-emerald-600 to-green-500',
-  ];
-  return gradients[hash % gradients.length];
 }
 
 /* ------------------------------------------------------------------ */
@@ -359,15 +319,18 @@ interface TripSidebarProps {
   currentPath: string;
   onScanDocument?: () => void;
   travelerCount?: number;
+  updateTrip?: (data: Partial<Omit<Trip, 'id' | 'createdBy' | 'createdAt'>>) => Promise<void>;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function TripSidebar({ tripId, trip, events, currentPath, onScanDocument, travelerCount }: TripSidebarProps) {
+export default function TripSidebar({ tripId, trip, events, currentPath, onScanDocument, travelerCount, updateTrip }: TripSidebarProps) {
   const basePath = ROUTES.app.trip(tripId);
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { expenses } = useExpenses(tripId);
   const [backingUp, setBackingUp] = useState(false);
   const activeDayRef = useRef<HTMLAnchorElement>(null);
   const itineraryScrollRef = useRef<HTMLDivElement>(null);
@@ -504,12 +467,46 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
 
   /* ---- Status ---- */
 
-  const status = STATUS_CONFIG[trip?.status || 'planning'] || STATUS_CONFIG.planning;
+  const tripStatus: TripStatus = (trip?.status as TripStatus) || 'planning';
+  const orbColor = STATUS_ORB[tripStatus] || STATUS_ORB.planning;
+
+  const handleStatusChange = async (newStatus: TripStatus) => {
+    if (!updateTrip) return;
+    await updateTrip({ status: newStatus });
+  };
 
   /* ---- Quick stats ---- */
 
   const eventCount = events.length;
   const travelers = travelerCount || trip?.travelerIds?.length || 0;
+  const totalExpenses = useMemo(
+    () => expenses.filter((e) => e.paymentMethod !== 'points').reduce((sum, e) => sum + (e.amount || 0), 0),
+    [expenses],
+  );
+  const photoCount = trip?.albumPhotos?.length ?? 0;
+
+  /* ---- Today / jump-to-today ---- */
+
+  const todayInTripIdx = useMemo(() => {
+    if (!trip) return -1;
+    try {
+      const start = parseISO(trip.startDate);
+      const end = parseISO(trip.endDate);
+      const today = new Date();
+      if (isBefore(today, start) || isAfter(today, end)) return -1;
+      return itineraryDays.findIndex((d) => d.isToday);
+    } catch {
+      return -1;
+    }
+  }, [trip, itineraryDays]);
+
+  const todayDateStr = todayInTripIdx >= 0 ? itineraryDays[todayInTripIdx].dateStr : null;
+  const showJumpToToday = todayDateStr !== null && (!isActive('/itinerary') || (activeDayParam !== todayDateStr && activeDayParam !== null));
+
+  const handleJumpToToday = () => {
+    if (!todayDateStr) return;
+    router.push(basePath + '/itinerary?day=' + todayDateStr);
+  };
 
   /* ---- Render day list (with or without week groups) ---- */
 
@@ -554,25 +551,26 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-[#1e3a5f] via-[#1a3352] to-[#162d48] relative overflow-hidden">
 
-      {/* ====== BACKGROUND DECORATIVE ORBS ====== */}
-      <div className="absolute top-12 -left-12 w-40 h-40 bg-blue-600/[0.07] rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/3 -right-16 w-48 h-48 bg-violet-600/[0.05] rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-20 -left-8 w-36 h-36 bg-emerald-600/[0.04] rounded-full blur-3xl pointer-events-none" />
+      {/* ====== BACKGROUND DECORATIVE ORBS (status-reactive) ====== */}
+      <div
+        className="absolute top-8 -left-12 w-48 h-48 rounded-full blur-3xl pointer-events-none transition-colors duration-500"
+        style={{ background: orbColor }}
+      />
+      <div className="absolute top-1/3 -right-16 w-48 h-48 bg-violet-600/[0.06] rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-20 -left-8 w-36 h-36 bg-blue-600/[0.05] rounded-full blur-3xl pointer-events-none" />
 
       {/* Subtle noise texture */}
       <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'1\'/%3E%3C/svg%3E")' }} />
 
-      {/* ====== TOP — Logo + Back ====== */}
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between relative z-10">
+      {/* ====== TOP — Back ====== */}
+      <div className="px-4 pt-4 pb-2 relative z-10">
         <Link
           href={ROUTES.app.dashboard}
-          className="inline-flex items-center gap-1.5 text-[11px] text-white/80 hover:text-white/70 transition-all duration-200 rounded-lg px-2 py-1.5 -ml-1 hover:bg-white/[0.05] group"
+          className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-white/80 hover:text-white transition-all duration-200 rounded-lg px-2 py-1.5 -ml-1 hover:bg-white/[0.06] group"
         >
-          <ArrowLeft className="w-3 h-3 transition-transform duration-200 group-hover:-translate-x-0.5" />
+          <ArrowLeft className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" />
           <span>Mis Viajes</span>
         </Link>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="GusTrips" className="h-7 opacity-50 hover:opacity-70 transition-opacity duration-200" />
       </div>
 
       {/* ====== Trip Identity ====== */}
@@ -589,7 +587,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
           )}
         </div>
 
-        {/* Meta row — dates, duration pill, status badge */}
+        {/* Meta row — dates, duration pill, status menu */}
         <div className="px-4 pt-3 pb-2 space-y-3">
           {/* Date + Duration + Status */}
           <div className="flex items-center flex-wrap gap-2 text-[11px]">
@@ -602,40 +600,31 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             {tripDays > 0 && (
               <span className="inline-flex items-center text-[10px] font-bold text-white bg-white/[0.06] backdrop-blur-sm rounded-full px-2.5 py-0.5 border border-white/[0.08]">
                 <Clock className="w-2.5 h-2.5 mr-1 text-white/80" />
-                {tripDays} dias
+                {tripDays} días
               </span>
             )}
-            <span className={classNames(
-              'inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2.5 py-0.5 border border-white/[0.06]',
-              status.bg,
-              status.text,
-            )}>
-              <status.icon className="w-3 h-3" />
-              {status.label}
-            </span>
+            {updateTrip ? (
+              <span className={classNames(tripStatus === 'active' && 'animate-pulse')}>
+                <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
+              </span>
+            ) : null}
           </div>
 
-          {/* Reservation pills */}
-          <ReservationPills events={events} />
+          {/* Reservation pills (tappable filter) */}
+          <ReservationPills events={events} basePath={basePath} />
         </div>
       </div>
 
-      {/* ====== QUICK STATS ROW ====== */}
+      {/* ====== QUICK STATS ROW (4 cards) ====== */}
       <div className="px-3 pb-3 relative z-10">
-        <div className="flex gap-2">
-          <StatMiniCard
-            icon={<CalendarDays className="w-3.5 h-3.5" />}
-            value={eventCount}
-            label="Eventos"
-            color="text-blue-400"
-          />
-          <StatMiniCard
-            icon={<Users className="w-3.5 h-3.5" />}
-            value={travelers}
-            label="Viajeros"
-            color="text-amber-400"
-          />
-        </div>
+        <QuickStatsRow
+          stats={[
+            { icon: CalendarDays, value: eventCount, label: 'Eventos', color: 'blue', href: basePath + '/itinerary' },
+            { icon: Users, value: travelers, label: 'Viajeros', color: 'amber', href: basePath + '/members' },
+            { icon: Receipt, value: totalExpenses > 0 ? formatCurrency(totalExpenses, budgetCurrency) : '—', label: 'Gastos', color: 'orange', href: basePath + '/expenses' },
+            { icon: Camera, value: photoCount, label: 'Fotos', color: 'rose', href: basePath + '/photos' },
+          ]}
+        />
       </div>
 
       {/* Gradient divider */}
@@ -652,26 +641,13 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             isActive={isActive('')}
             color="general"
           />
-          <div className="flex items-center">
-            <div className="flex-1">
-              <NavItem
-                href={basePath + '/documents'}
-                label="Reservas y Docs"
-                icon={<FileText className="w-4 h-4" />}
-                isActive={isActive('/documents')}
-                color="documents"
-              />
-            </div>
-            {onScanDocument && (
-              <button
-                onClick={onScanDocument}
-                className="p-1.5 mr-3 rounded-lg text-white/70 hover:text-violet-400 hover:bg-violet-500/10 transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5"
-                title="Escanear documento con IA"
-              >
-                <FileSearch className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+          <NavItem
+            href={basePath + '/documents'}
+            label="Reservas y Docs"
+            icon={<FileText className="w-4 h-4" />}
+            isActive={isActive('/documents')}
+            color="documents"
+          />
           <NavItem
             href={basePath + '/budget'}
             label="Presupuesto"
@@ -698,6 +674,9 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
         {/* Itinerario */}
         <CollapsibleSection title="Itinerario" count={itineraryDays.length}>
           <div className="relative">
+            <div className="px-3 pt-1 pb-1.5">
+              <JumpToTodayButton visible={showJumpToToday} onJump={handleJumpToToday} />
+            </div>
             <div ref={itineraryScrollRef} className="max-h-[300px] overflow-y-auto sidebar-nav-scroll space-y-0.5">
               {renderDayList()}
             </div>
@@ -707,8 +686,8 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
           </div>
         </CollapsibleSection>
 
-        {/* Mas */}
-        <CollapsibleSection title="Mas">
+        {/* Personas */}
+        <CollapsibleSection title="Personas">
           <NavItem
             href={basePath + '/members'}
             label="Viajeros"
@@ -722,12 +701,32 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             ) : undefined}
           />
           <NavItem
+            href={basePath + '/checklist'}
+            label="Checklist"
+            icon={<CheckSquare className="w-4 h-4" />}
+            isActive={isActive('/checklist')}
+            color="checklist"
+          />
+        </CollapsibleSection>
+
+        {/* Recuerdos */}
+        <CollapsibleSection title="Recuerdos">
+          <NavItem
             href={basePath + '/photos'}
             label="Fotos"
             icon={<Camera className="w-4 h-4" />}
             isActive={isActive('/photos')}
             color="photos"
+            badge={photoCount > 0 ? (
+              <span className="text-[10px] font-bold bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/10">
+                {photoCount}
+              </span>
+            ) : undefined}
           />
+        </CollapsibleSection>
+
+        {/* Lugar */}
+        <CollapsibleSection title="Lugar">
           <NavItem
             href={basePath + '/map'}
             label="Mapa"
@@ -736,15 +735,8 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             color="map"
           />
           <NavItem
-            href={basePath + '/checklist'}
-            label="Checklist"
-            icon={<CheckSquare className="w-4 h-4" />}
-            isActive={isActive('/checklist')}
-            color="checklist"
-          />
-          <NavItem
             href={basePath + '/links'}
-            label="Links utiles"
+            label="Links útiles"
             icon={<ExternalLink className="w-4 h-4" />}
             isActive={isActive('/links')}
             color="links"
