@@ -118,10 +118,17 @@ export default function PendingExpensesBanner({ tripId }: PendingExpensesBannerP
         style={{ background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)' }}
       >
         {/* Header */}
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setExpanded((s) => !s)}
-          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-amber-200/30 transition-colors"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setExpanded((s) => !s);
+            }
+          }}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-amber-200/30 transition-colors cursor-pointer"
         >
           <div
             className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -157,7 +164,7 @@ export default function PendingExpensesBanner({ tripId }: PendingExpensesBannerP
           >
             <ChevronDown className="w-4 h-4" />
           </motion.div>
-        </button>
+        </div>
 
         {/* Expanded list */}
         <AnimatePresence initial={false}>
