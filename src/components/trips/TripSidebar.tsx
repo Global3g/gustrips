@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { format, parseISO, eachDayOfInterval, isToday, isBefore, isAfter, getISOWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -26,6 +27,7 @@ import {
 import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { ROUTES } from '@/config/constants';
+import Particles from '@/components/ui/Particles';
 import StatusChangeMenu from '@/components/trips/sidebar/StatusChangeMenu';
 import JumpToTodayButton from '@/components/trips/sidebar/JumpToTodayButton';
 import type { Trip, TripEvent, TripStatus } from '@/types';
@@ -124,33 +126,59 @@ function NavItem({ href, label, icon, isActive, badge, sublabel, muted, color }:
       className={classNames(
         'flex items-center gap-3 mx-3 px-3 py-2.5 text-[13px] rounded-xl transition-all duration-200 group relative',
         isActive
-          ? `${c.activeBg} ${c.activeText} font-semibold shadow-lg ${c.glow} backdrop-blur-sm border border-white/[0.06]`
+          ? `${c.activeText} font-semibold backdrop-blur-sm`
           : muted
             ? 'text-white/80 hover:text-white/95 hover:bg-white/[0.03]'
-            : 'text-white hover:text-white hover:bg-white/[0.05]',
+            : 'text-white hover:text-white',
       )}
     >
-      {/* Active indicator bar */}
+      {/* Sliding active background — animates between items via layoutId */}
       {isActive && (
-        <div className={classNames(
-          'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b',
-          c.bar,
-        )} />
+        <motion.div
+          layoutId="sidebar-nav-active"
+          className={classNames(
+            'absolute inset-0 rounded-xl shadow-lg backdrop-blur-sm border border-white/[0.06]',
+            c.activeBg,
+            c.glow,
+          )}
+          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+        />
+      )}
+      {/* Sliding active left bar */}
+      {isActive && (
+        <motion.div
+          layoutId="sidebar-nav-active-bar"
+          className={classNames(
+            'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b',
+            c.bar,
+          )}
+          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+        />
+      )}
+      {/* Hover glow that matches the section color (no movement) */}
+      {!isActive && !muted && (
+        <span
+          className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+          style={{
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
+            boxShadow: 'inset 0 0 12px rgba(255,255,255,0.04)',
+          }}
+        />
       )}
       <span className={classNames(
-        'flex-shrink-0 transition-all duration-200',
-        isActive ? c.icon : muted ? 'text-white/70' : `${c.icon} opacity-40 group-hover:opacity-70`
+        'relative z-10 flex-shrink-0 transition-all duration-200 group-hover:scale-110',
+        isActive ? c.icon : muted ? 'text-white/70' : `${c.icon} opacity-40 group-hover:opacity-90`
       )}>
         {icon}
       </span>
-      <div className="flex-1 min-w-0">
+      <div className="relative z-10 flex-1 min-w-0">
         <span className="truncate block leading-tight">{label}</span>
         {sublabel && (
           <span className="text-[10px] text-white/80 block leading-tight mt-0.5">{sublabel}</span>
         )}
       </div>
       {badge && (
-        <span className="flex-shrink-0">{badge}</span>
+        <span className="relative z-10 flex-shrink-0">{badge}</span>
       )}
     </Link>
   );
@@ -202,14 +230,24 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
       {/* Day info */}
       <div className="flex-1 min-w-0">
         <span className={classNames(
-          'text-[12px] block leading-tight transition-colors duration-200',
+          'text-[12px] block leading-tight transition-colors duration-200 inline-flex items-center gap-1',
           isActive ? 'text-white font-semibold' : isPast ? 'text-white/70' : 'text-white'
         )}>
           {weekday} {dayLabel}
+          {isTodayDay && (
+            <motion.span
+              animate={{ rotate: [0, 12, -8, 0], scale: [1, 1.15, 1] }}
+              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+              className="inline-block ml-0.5"
+              aria-hidden
+            >
+              ✨
+            </motion.span>
+          )}
         </span>
         {isTodayDay && (
-          <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-400 font-bold uppercase tracking-wider mt-0.5">
-            <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+          <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-300 font-bold uppercase tracking-wider mt-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shadow-[0_0_6px_rgba(96,165,250,0.85)]" />
             Hoy
           </span>
         )}
@@ -279,6 +317,16 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   const activeDayRef = useRef<HTMLAnchorElement>(null);
   const itineraryScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollFade, setShowScrollFade] = useState(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+
+  // Stripe-style mouse-follow spotlight
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = sidebarRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+  const handleMouseLeave = () => setCursor(null);
 
   const handleSidebarBackup = async () => {
     if (!trip) return;
@@ -483,15 +531,52 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-[#1e3a5f] via-[#1a3352] to-[#162d48] relative overflow-hidden">
-
-      {/* ====== BACKGROUND DECORATIVE ORBS (status-reactive) ====== */}
-      <div
-        className="absolute top-8 -left-12 w-48 h-48 rounded-full blur-3xl pointer-events-none transition-colors duration-500"
+    <div
+      ref={sidebarRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="flex flex-col h-full relative overflow-hidden"
+      style={{ background: 'linear-gradient(180deg, #0a1628 0%, #14243f 35%, #1a3352 70%, #162d48 100%)' }}
+    >
+      {/* ====== AURORA BLOBS — slow drift animation ====== */}
+      <motion.div
+        className="absolute -top-16 -left-12 w-56 h-56 rounded-full blur-[60px] pointer-events-none transition-colors duration-700"
         style={{ background: orbColor }}
+        animate={{ x: [0, 18, -10, 0], y: [0, 14, -6, 0] }}
+        transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <div className="absolute top-1/3 -right-16 w-48 h-48 bg-violet-600/[0.06] rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-20 -left-8 w-36 h-36 bg-blue-600/[0.05] rounded-full blur-3xl pointer-events-none" />
+      <motion.div
+        className="absolute top-1/3 -right-16 w-56 h-56 rounded-full blur-[60px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.18), transparent 70%)' }}
+        animate={{ x: [0, -16, 8, 0], y: [0, -12, 8, 0] }}
+        transition={{ duration: 19, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      <motion.div
+        className="absolute bottom-20 -left-12 w-44 h-44 rounded-full blur-[50px] pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.14), transparent 70%)' }}
+        animate={{ x: [0, 14, -8, 0], y: [0, -10, 6, 0] }}
+        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
+      {/* ====== PARTICLES — sutiles ====== */}
+      <div className="absolute inset-0 opacity-40 pointer-events-none">
+        <Particles count={18} />
+      </div>
+
+      {/* ====== CURSOR SPOTLIGHT (Stripe-style) ====== */}
+      {cursor && (
+        <div
+          className="absolute pointer-events-none transition-opacity duration-200"
+          style={{
+            left: cursor.x - 200,
+            top: cursor.y - 200,
+            width: 400,
+            height: 400,
+            background: 'radial-gradient(circle, rgba(99,102,241,0.10), rgba(99,102,241,0.04) 35%, transparent 70%)',
+            filter: 'blur(12px)',
+          }}
+        />
+      )}
 
       {/* Subtle noise texture */}
       <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'1\'/%3E%3C/svg%3E")' }} />
@@ -510,12 +595,24 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
       {/* ====== Trip Identity ====== */}
       <div className="relative z-10">
         <div className="px-5 pt-2 pb-3">
-          <h2 className="text-white font-extrabold text-lg leading-tight tracking-tight">
+          <h2
+            className="font-extrabold text-lg leading-tight tracking-tight bg-clip-text text-transparent"
+            style={{
+              backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #cfe1ff 60%, #93c5fd 100%)',
+              filter: 'drop-shadow(0 1px 8px rgba(147,197,253,0.18))',
+            }}
+          >
             {trip?.title || 'Cargando...'}
           </h2>
           {trip?.destination && (
-            <p className="text-white text-[11px] mt-1 flex items-center gap-1 truncate">
-              <MapPin className="w-3 h-3 flex-shrink-0 text-rose-400/60" />
+            <p className="text-white/85 text-[11px] mt-1 flex items-center gap-1 truncate">
+              <motion.span
+                animate={{ y: [0, -1.5, 0] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                className="flex-shrink-0"
+              >
+                <MapPin className="w-3 h-3 text-rose-300" />
+              </motion.span>
               {trip.destination}
             </p>
           )}
@@ -538,17 +635,40 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
               </span>
             )}
             {updateTrip ? (
-              <span className={classNames(tripStatus === 'active' && 'animate-pulse')}>
+              tripStatus === 'active' ? (
+                <motion.span
+                  animate={{
+                    filter: [
+                      'drop-shadow(0 0 0px rgba(52,211,153,0))',
+                      'drop-shadow(0 0 6px rgba(52,211,153,0.55))',
+                      'drop-shadow(0 0 0px rgba(52,211,153,0))',
+                    ],
+                  }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
+                </motion.span>
+              ) : (
                 <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
-              </span>
+              )
             ) : null}
           </div>
 
         </div>
       </div>
 
-      {/* Gradient divider */}
-      <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent relative z-10" />
+      {/* Animated shimmer divider */}
+      <div className="mx-4 h-px relative z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
+        <motion.div
+          className="absolute inset-y-0 w-1/3"
+          style={{
+            background: 'linear-gradient(90deg, transparent, rgba(147,197,253,0.45), transparent)',
+          }}
+          animate={{ x: ['-100%', '300%'] }}
+          transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
+        />
+      </div>
 
       {/* ====== NAVIGATION — scrollable ====== */}
       <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 relative z-10 sidebar-nav-scroll">
