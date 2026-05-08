@@ -22,47 +22,48 @@ interface ActionConfig {
   key: 'scan' | 'event' | 'photo';
   label: string;
   Icon: typeof Sparkles;
-  glow: string;
-  iconBg: string;
-  iconColor: string;
+  gradient: string;
+  shadow: string;
+  hoverShadow: string;
 }
 
 const ACTIONS: ActionConfig[] = [
   {
     key: 'scan',
-    label: 'Escanear ticket',
+    label: 'Escanear',
     Icon: Sparkles,
-    glow: 'rgba(245,158,11,0.35)',
-    iconBg: 'rgba(245,158,11,0.18)',
-    iconColor: '#fcd34d',
+    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 60%, #b45309 100%)',
+    shadow: '0 8px 24px -6px rgba(245,158,11,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
+    hoverShadow: '0 14px 32px -6px rgba(245,158,11,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
   },
   {
     key: 'event',
-    label: 'Evento nuevo',
+    label: 'Evento',
     Icon: CalendarPlus,
-    glow: 'rgba(59,130,246,0.35)',
-    iconBg: 'rgba(59,130,246,0.18)',
-    iconColor: '#93c5fd',
+    gradient: 'linear-gradient(135deg, #3b82f6 0%, #4f46e5 60%, #4338ca 100%)',
+    shadow: '0 8px 24px -6px rgba(59,130,246,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
+    hoverShadow: '0 14px 32px -6px rgba(59,130,246,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
   },
   {
     key: 'photo',
-    label: 'Subir foto',
+    label: 'Foto',
     Icon: Camera,
-    glow: 'rgba(236,72,153,0.35)',
-    iconBg: 'rgba(236,72,153,0.18)',
-    iconColor: '#f9a8d4',
+    gradient: 'linear-gradient(135deg, #ec4899 0%, #db2777 60%, #9d174d 100%)',
+    shadow: '0 8px 24px -6px rgba(236,72,153,0.55), inset 0 1px 0 rgba(255,255,255,0.22)',
+    hoverShadow: '0 14px 32px -6px rgba(236,72,153,0.7), inset 0 1px 0 rgba(255,255,255,0.3)',
   },
 ];
 
 export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) {
   const router = useRouter();
-  const { events, createEvent } = useEvents(tripId);
+  const { createEvent } = useEvents(tripId);
   const { uploadDocument } = useDocuments(tripId);
   const { toast } = useToast();
 
   const [showScan, setShowScan] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
   const [submittingEvent, setSubmittingEvent] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -133,40 +134,55 @@ export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) 
 
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-        className="grid grid-cols-3 gap-2"
-      >
-        {ACTIONS.map((action, idx) => {
-          const Icon = action.Icon;
-          return (
-            <motion.button
-              key={action.key}
-              type="button"
-              onClick={() => handleClick(action.key)}
-              whileTap={{ scale: 0.97 }}
-              whileHover={{ y: -1 }}
-              transition={{ duration: 0.18, delay: idx * 0.04 }}
-              className="group relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-3 flex flex-col items-center gap-1.5 hover:border-white/20 hover:bg-white/[0.06] transition-all"
-            >
-              <span
-                className="w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-gray-400 mb-2 px-1">
+          Accesos rápidos
+        </p>
+        <div className="grid grid-cols-3 gap-2.5">
+          {ACTIONS.map((action, idx) => {
+            const Icon = action.Icon;
+            const isHovered = hovered === action.key;
+            return (
+              <motion.button
+                key={action.key}
+                type="button"
+                onClick={() => handleClick(action.key)}
+                onMouseEnter={() => setHovered(action.key)}
+                onMouseLeave={() => setHovered(null)}
+                whileTap={{ scale: 0.95 }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: idx * 0.06 }}
+                className="relative rounded-2xl overflow-hidden p-3.5 flex flex-col items-center gap-1.5 transition-all duration-200 active:scale-95"
                 style={{
-                  backgroundColor: action.iconBg,
-                  boxShadow: `0 0 18px ${action.glow}`,
+                  background: action.gradient,
+                  boxShadow: isHovered ? action.hoverShadow : action.shadow,
+                  transform: isHovered ? 'translateY(-2px)' : undefined,
                 }}
               >
-                <Icon className="w-4 h-4" style={{ color: action.iconColor }} />
-              </span>
-              <span className="text-white text-[11px] sm:text-xs font-semibold leading-tight text-center">
-                {action.label}
-              </span>
-            </motion.button>
-          );
-        })}
-      </motion.div>
+                {/* Subtle radial highlight */}
+                <span
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background:
+                      'radial-gradient(circle at 30% 0%, rgba(255,255,255,0.32), transparent 60%)',
+                  }}
+                />
+
+                <span className="relative w-10 h-10 rounded-xl bg-white/22 backdrop-blur-sm flex items-center justify-center border border-white/25 shadow-inner">
+                  <Icon className="w-5 h-5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.25)]" />
+                </span>
+                <span
+                  className="relative text-white text-[12px] sm:text-[13px] font-bold leading-tight tracking-tight"
+                  style={{ textShadow: '0 1px 3px rgba(0,0,0,0.25)' }}
+                >
+                  {action.label}
+                </span>
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Scan modal */}
       <ScanDocumentModal
@@ -186,7 +202,6 @@ export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) 
           tripStartDate={trip?.startDate}
           tripEndDate={trip?.endDate}
           defaultDate={(() => {
-            // Prefer today if it falls inside the trip, else trip start
             try {
               if (!trip) return undefined;
               const today = new Date().toISOString().split('T')[0];
