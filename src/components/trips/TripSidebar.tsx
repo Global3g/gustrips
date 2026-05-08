@@ -17,11 +17,6 @@ import {
   ExternalLink,
   Camera,
   Map,
-  Plane,
-  Hotel,
-  Car,
-  UtensilsCrossed,
-  Ship,
   ArrowLeft,
   HardDriveDownload,
   Loader2,
@@ -31,9 +26,7 @@ import {
 import { classNames, formatCurrency } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { ROUTES } from '@/config/constants';
-import { useExpenses } from '@/hooks/useExpenses';
 import StatusChangeMenu from '@/components/trips/sidebar/StatusChangeMenu';
-import QuickStatsRow from '@/components/trips/sidebar/QuickStatsRow';
 import JumpToTodayButton from '@/components/trips/sidebar/JumpToTodayButton';
 import type { Trip, TripEvent, TripStatus } from '@/types';
 
@@ -261,54 +254,6 @@ function WeekLabel({ weekNumber, index }: { weekNumber: number; index: number })
 }
 
 /* ------------------------------------------------------------------ */
-/*  Reservation Pills                                                  */
-/* ------------------------------------------------------------------ */
-
-function ReservationPills({ events, basePath }: { events: TripEvent[]; basePath: string }) {
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { flight: 0, hotel: 0, car_rental: 0, restaurant: 0, cruise: 0 };
-    for (const e of events) {
-      if (c[e.type] !== undefined) c[e.type]++;
-    }
-    return c;
-  }, [events]);
-
-  const items = [
-    { type: 'flight', icon: Plane, label: 'Vuelos', count: counts.flight, bg: 'bg-pink-500/15', text: 'text-pink-300', shadow: 'shadow-pink-500/10' },
-    { type: 'hotel', icon: Hotel, label: 'Hoteles', count: counts.hotel, bg: 'bg-violet-500/15', text: 'text-violet-300', shadow: 'shadow-violet-500/10' },
-    { type: 'cruise', icon: Ship, label: 'Crucero', count: counts.cruise, bg: 'bg-sky-500/15', text: 'text-sky-300', shadow: 'shadow-sky-500/10' },
-    { type: 'car_rental', icon: Car, label: 'Autos', count: counts.car_rental, bg: 'bg-amber-500/15', text: 'text-amber-300', shadow: 'shadow-amber-500/10' },
-    { type: 'restaurant', icon: UtensilsCrossed, label: 'Comida', count: counts.restaurant, bg: 'bg-orange-500/15', text: 'text-orange-300', shadow: 'shadow-orange-500/10' },
-  ].filter(i => i.count > 0);
-
-  if (items.length === 0) return null;
-
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.type}
-            href={`${basePath}/documents?type=${item.type}`}
-            className={classNames(
-              'inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2.5 py-1 backdrop-blur-sm border border-white/[0.06] shadow-lg hover:scale-105 hover:brightness-110 transition-all',
-              item.bg,
-              item.text,
-              item.shadow,
-            )}
-            title={`${item.count} ${item.label} — abrir filtro`}
-          >
-            <Icon className="w-3 h-3" />
-            <span>{item.count}</span>
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Props                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -330,7 +275,6 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   const basePath = ROUTES.app.trip(tripId);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { expenses } = useExpenses(tripId);
   const [backingUp, setBackingUp] = useState(false);
   const activeDayRef = useRef<HTMLAnchorElement>(null);
   const itineraryScrollRef = useRef<HTMLDivElement>(null);
@@ -475,14 +419,9 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
     await updateTrip({ status: newStatus });
   };
 
-  /* ---- Quick stats ---- */
+  /* ---- Travelers count (still used in nav badge) ---- */
 
-  const eventCount = events.length;
   const travelers = travelerCount || trip?.travelerIds?.length || 0;
-  const totalExpenses = useMemo(
-    () => expenses.filter((e) => e.paymentMethod !== 'points').reduce((sum, e) => sum + (e.amount || 0), 0),
-    [expenses],
-  );
   const photoCount = trip?.albumPhotos?.length ?? 0;
 
   /* ---- Today / jump-to-today ---- */
@@ -610,21 +549,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             ) : null}
           </div>
 
-          {/* Reservation pills (tappable filter) */}
-          <ReservationPills events={events} basePath={basePath} />
         </div>
-      </div>
-
-      {/* ====== QUICK STATS ROW (4 cards) ====== */}
-      <div className="px-3 pb-3 relative z-10">
-        <QuickStatsRow
-          stats={[
-            { icon: CalendarDays, value: eventCount, label: 'Eventos', color: 'blue', href: basePath + '/itinerary' },
-            { icon: Users, value: travelers, label: 'Viajeros', color: 'amber', href: basePath + '/members' },
-            { icon: Receipt, value: totalExpenses > 0 ? formatCurrency(totalExpenses, budgetCurrency) : '—', label: 'Gastos', color: 'orange', href: basePath + '/expenses' },
-            { icon: Camera, value: photoCount, label: 'Fotos', color: 'rose', href: basePath + '/photos' },
-          ]}
-        />
       </div>
 
       {/* Gradient divider */}
