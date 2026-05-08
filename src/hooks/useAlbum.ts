@@ -114,9 +114,12 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const storage_thumb = ref(storage, `trips/${tripId}/album/${timestamp}_${safeName}`);
       const storage_full = ref(storage, `trips/${tripId}/album/${timestamp}_full_${safeName}`);
 
-      // Generate both versions in parallel — thumbnail for grids, full quality for lightbox
+      // Generate both versions in parallel — gallery thumbnail (small, fast)
+      // and full-quality original (used by the lightbox).
+      // 600px @ 75% covers retina rendering up to ~300px display while keeping
+      // each thumbnail around 50-100 KB for quick grid loading.
       const [thumbBlob, fullBlob] = await Promise.all([
-        compressImage(file, 1200, 0.8),
+        compressImage(file, 600, 0.75),
         compressImage(file, 3000, 0.92),
       ]);
       const [, ] = await Promise.all([
