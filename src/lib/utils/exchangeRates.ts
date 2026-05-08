@@ -1,4 +1,6 @@
-/* Currency conversion via frankfurter.app — free, no auth, ECB-backed.
+/* Currency conversion via frankfurter.dev — free, no auth, ECB-backed.
+   The old api.frankfurter.app domain now 301-redirects, which CORS
+   refuses to follow, so we hit the new domain directly.
    Supports common currencies (USD, EUR, GBP, JPY, MXN, BRL, CNY, …).
    Result is cached in sessionStorage for 24h.
 */
@@ -29,7 +31,7 @@ export async function getExchangeRates(base: string): Promise<RatesPayload | nul
   }
 
   try {
-    const res = await fetch(`https://api.frankfurter.app/latest?from=${encodeURIComponent(upper)}`);
+    const res = await fetch(`https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(upper)}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (!data?.rates || !data?.base) return null;
