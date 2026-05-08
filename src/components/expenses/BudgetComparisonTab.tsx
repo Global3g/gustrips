@@ -37,6 +37,7 @@ import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
 import { EVENT_TYPES, CURRENCIES } from '@/config/constants';
 import { classNames, formatCurrency, formatDateES } from '@/lib/utils/helpers';
+import { useExchangeRates } from '@/hooks/useExchangeRates';
 import type { EventType, TripExpense } from '@/types';
 import type { LucideIcon } from 'lucide-react';
 
@@ -217,6 +218,13 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
   const loading = tripLoading || expensesLoading || eventsLoading;
   const budgetCategories = trip?.budgetCategories ?? [];
   const currency = trip?.budgetCurrency ?? 'MXN';
+  const { convert: fxConvert, rates } = useExchangeRates(currency);
+
+  // Track whether any conversion was applied for the info note
+  const hasMixedCurrencies = useMemo(() => {
+    return expenses.some((e) => (e.currency || currency).toUpperCase() !== currency.toUpperCase()) ||
+      events.some((e) => (e.currency || currency).toUpperCase() !== currency.toUpperCase() && (e.cost || 0) > 0);
+  }, [expenses, events, currency]);
 
   /* ─── Trip progress ─────────────────────────────── */
   const tripProgress = useMemo(() => {
@@ -244,9 +252,10 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
     for (const expense of expenses) {
       if (expense.paymentMethod === 'points') continue;
       const cat = ((expense as { category?: string }).category ?? 'misc') as EventType;
-      actualByCategory.set(cat, (actualByCategory.get(cat) ?? 0) + expense.amount);
+      const amountInBase = fxConvert(expense.amount, expense.currency || currency);
+      actualByCategory.set(cat, (actualByCategory.get(cat) ?? 0) + amountInBase);
       const dayMap = dailyByCategory.get(cat) ?? new Map<string, number>();
-      dayMap.set(expense.date, (dayMap.get(expense.date) ?? 0) + expense.amount);
+      dayMap.set(expense.date, (dayMap.get(expense.date) ?? 0) + amountInBase);
       dailyByCategory.set(cat, dayMap);
     }
 
@@ -279,7 +288,7 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
         dailySpend,
       };
     });
-  }, [budgetCategories, expenses, trip?.startDate, trip?.endDate]);
+  }, [budgetCategories, expenses, trip?.startDate, trip?.endDate, currency, fxConvert]);
 
   /* ─── Event comparison ───────────────────────────── */
   const eventComparison = useMemo((): EventComparison[] => {
@@ -290,13 +299,16 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
       if (expense.eventId) {
         if (expense.paymentMethod === 'points') {
           const prev = pointsByEvent.get(expense.eventId) ?? { points: 0, value: 0 };
+          const ptsValue = (expense as { equivalentValue?: number }).equivalentValue ?? 0;
+          const ptsValueCur = (expense as { realValueCurrency?: string }).realValueCurrency || currency;
           pointsByEvent.set(expense.eventId, {
             points: prev.points + ((expense as { pointsUsed?: number }).pointsUsed ?? 0),
-            value: prev.value + ((expense as { equivalentValue?: number }).equivalentValue ?? 0),
+            value: prev.value + fxConvert(ptsValue, ptsValueCur),
           });
         } else {
           const prev = expenseByEvent.get(expense.eventId) ?? 0;
-          expenseByEvent.set(expense.eventId, prev + expense.amount);
+          const amountInBase = fxConvert(expense.amount, expense.currency || currency);
+          expenseByEvent.set(expense.eventId, prev + amountInBase);
         }
       }
     }
@@ -305,7 +317,7 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
       .filter((e) => e.cost > 0 || expenseByEvent.has(e.id) || pointsByEvent.has(e.id))
       .map((e) => {
         const cfg = EVENT_TYPES[e.type] ?? EVENT_TYPES.misc;
-        const planned = e.cost ?? 0;
+        const planned = fxConvert(e.cost ?? 0, e.currency || currency);
         const actual = expenseByEvent.get(e.id) ?? 0;
         const pts = pointsByEvent.get(e.id);
         const hasPts = !!pts && pts.value > 0;
@@ -325,7 +337,7 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [events, expenses]);
+  }, [events, expenses, currency, fxConvert]);
 
   /* ─── Linked expenses by event (for inline edit) ── */
   const linkedExpensesByEvent = useMemo(() => {
@@ -453,13 +465,15 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
     let pointsCount = 0;
     for (const e of expenses) {
       if (e.paymentMethod === 'points') {
-        pointsTotal += (e as { equivalentValue?: number }).equivalentValue ?? 0;
+        const v = (e as { equivalentValue?: number }).equivalentValue ?? 0;
+        const cur = (e as { realValueCurrency?: string }).realValueCurrency || currency;
+        pointsTotal += fxConvert(v, cur);
         pointsCount += (e as { pointsUsed?: number }).pointsUsed ?? 0;
       }
     }
 
     return { topOver, topUnder, pointsTotal, pointsCount };
-  }, [viewMode, categoryComparison, eventComparison, expenses]);
+  }, [viewMode, categoryComparison, eventComparison, expenses, currency, fxConvert]);
 
   /* ─── Loading ────────────────────────────────────── */
   if (loading) {
@@ -676,6 +690,28 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
             )}
           </div>
         </div>
+
+        {/* ─── Currency conversion note ──────────────── */}
+        {hasMixedCurrencies && (
+          <div
+            className={classNames(
+              'rounded-xl border px-3 py-2 text-[11px] flex items-center gap-2',
+              rates
+                ? 'border-emerald-300/20 bg-emerald-400/[0.05] text-emerald-200/85'
+                : 'border-amber-300/30 bg-amber-400/[0.06] text-amber-200/85',
+            )}
+          >
+            <span className="text-base leading-none">💱</span>
+            {rates ? (
+              <span>
+                Valores convertidos a <span className="font-bold">{currency}</span> con tipo de cambio del{' '}
+                <span className="font-bold">{rates.date || 'día'}</span>.
+              </span>
+            ) : (
+              <span>Hay gastos en otra moneda — el tipo de cambio aún no carga, los valores se muestran sin convertir.</span>
+            )}
+          </div>
+        )}
 
         {/* ─── INSIGHTS ROW ─────────────────────────── */}
         <div className="grid grid-cols-3 gap-2.5">
