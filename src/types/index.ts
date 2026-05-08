@@ -65,8 +65,9 @@ export interface QuickNote {
 
 // ─── Album Photo ───────────────────────────────────
 export interface AlbumPhoto {
-  url: string;        // Thumbnail (1200px wide, 80% JPEG) — used in galleries
+  url: string;        // Thumbnail used in galleries (600px after optimization, legacy 1200px)
   fullUrl?: string;   // Full-quality version (cap 3000px, 92% JPEG) — used in lightbox
+  optimized?: boolean; // True once the thumbnail has been re-compressed to 600px
   date: string;
   caption?: string;
   eventId?: string;

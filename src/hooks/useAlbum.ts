@@ -79,6 +79,9 @@ interface UseAlbumReturn {
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
+  migrateThumbnails: (
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }>;
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
@@ -134,6 +137,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const photo: AlbumPhoto = {
         url,
         fullUrl,
+        optimized: true, // already produced as a 600px thumbnail
         date,
         uploadedAt: nowISO(),
       };
@@ -225,5 +229,83 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     [tripId, trip],
   );
 
-  return { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto };
+  /* ─── Re-compress legacy thumbnails to 600px to speed up the gallery ─── */
+  const migrateThumbnails = useCallback(
+    async (
+      onProgress?: (done: number, total: number) => void,
+    ): Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }> => {
+      const db = getClientDb();
+      const storage = getClientStorage();
+      const tripRef = doc(db, 'trips', tripId);
+
+      const currentPhotos = trip?.albumPhotos ?? [];
+      const total = currentPhotos.length;
+      const urlMap: Record<string, string> = {};
+      const updated: AlbumPhoto[] = [];
+      let migrated = 0;
+      let failed = 0;
+      let skipped = 0;
+      let done = 0;
+
+      for (const photo of currentPhotos) {
+        if (photo.optimized) {
+          updated.push(photo);
+          skipped++;
+          done++;
+          onProgress?.(done, total);
+          continue;
+        }
+        try {
+          // Prefer the full-quality original; fall back to the thumbnail.
+          const source = photo.fullUrl || photo.url;
+          const res = await fetch(source);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const sourceBlob = await res.blob();
+          const sourceFile = new File([sourceBlob], 'photo.jpg', {
+            type: sourceBlob.type || 'image/jpeg',
+          });
+
+          const newThumb = await compressImage(sourceFile, 600, 0.75);
+
+          const timestamp = Date.now() + done;
+          const newPath = `trips/${tripId}/album/${timestamp}_optimized.jpg`;
+          const newRef = ref(storage, newPath);
+          await uploadBytes(newRef, newThumb, { contentType: 'image/jpeg' });
+          const newUrl = await getDownloadURL(newRef);
+
+          urlMap[photo.url] = newUrl;
+          updated.push({ ...photo, url: newUrl, optimized: true });
+          migrated++;
+
+          // Best-effort delete of the old thumbnail to free storage
+          try {
+            const oldUrlObj = new URL(photo.url);
+            const m = oldUrlObj.pathname.match(/\/o\/(.+?)(\?|$)/);
+            if (m) {
+              await deleteObject(ref(storage, decodeURIComponent(m[1])));
+            }
+          } catch {
+            // ignore — orphaned blob is not critical
+          }
+        } catch (err) {
+          console.error('Failed to migrate photo:', photo.url, err);
+          updated.push(photo);
+          failed++;
+        }
+
+        done++;
+        onProgress?.(done, total);
+      }
+
+      await updateDoc(tripRef, {
+        albumPhotos: updated,
+        updatedAt: nowISO(),
+      });
+
+      return { migrated, failed, skipped, urlMap };
+    },
+    [tripId, trip],
+  );
+
+  return { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails };
 }

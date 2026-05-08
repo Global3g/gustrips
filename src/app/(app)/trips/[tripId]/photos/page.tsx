@@ -84,7 +84,7 @@ export default function PhotosPage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
   const { events, updateEvent, loading: eventsLoading } = useEvents(tripId);
-  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto } = useAlbum(tripId, trip);
+  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails } = useAlbum(tripId, trip);
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);
@@ -92,6 +92,8 @@ export default function PhotosPage() {
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
   const [captionText, setCaptionText] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateProgress, setMigrateProgress] = useState<{ done: number; total: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
@@ -512,6 +514,49 @@ export default function PhotosPage() {
     [updateEvent, toast],
   );
 
+  /* ── Migrate legacy thumbnails (1200px → 600px) for the gallery ── */
+  const handleMigrate = useCallback(async () => {
+    if (migrating) return;
+    setMigrating(true);
+    setMigrateProgress({ done: 0, total: albumPhotos.filter((p) => !p.optimized).length });
+    try {
+      const result = await migrateThumbnails((done, total) => setMigrateProgress({ done, total }));
+
+      // Apply the URL remapping to event.photos[] arrays so the linked events
+      // keep referencing valid (optimized) thumbnails.
+      if (Object.keys(result.urlMap).length > 0) {
+        for (const ev of events) {
+          if (!ev.photos || ev.photos.length === 0) continue;
+          const newPhotos = ev.photos.map((u) => result.urlMap[u] || u);
+          if (newPhotos.some((p, i) => p !== ev.photos![i])) {
+            try {
+              await updateEvent(ev.id, { photos: newPhotos });
+            } catch (err) {
+              console.error('Could not update event photos URLs:', err);
+            }
+          }
+        }
+      }
+
+      const summary =
+        result.failed > 0
+          ? `Optimizadas ${result.migrated} fotos · ${result.failed} fallaron`
+          : `Optimizadas ${result.migrated} fotos`;
+      toast(summary, result.failed > 0 ? 'error' : 'success');
+    } catch (err) {
+      console.error('Migration error:', err);
+      toast('Error al optimizar fotos', 'error');
+    } finally {
+      setMigrating(false);
+      setMigrateProgress(null);
+    }
+  }, [migrating, migrateThumbnails, events, updateEvent, toast, albumPhotos]);
+
+  const photosToOptimize = useMemo(
+    () => albumPhotos.filter((p) => !p.optimized).length,
+    [albumPhotos],
+  );
+
   /* ── Lightbox nav ── */
   const openLightbox = useCallback(
     (photo: typeof flatPhotos[number]) => {
@@ -616,6 +661,47 @@ export default function PhotosPage() {
               <span className="relative z-10 sm:hidden">Subir</span>
             </button>
           </div>
+
+          {/* ─── Optimize legacy thumbnails ─── */}
+          {photosToOptimize > 0 && (
+            <div className="rounded-2xl border border-amber-300/30 bg-amber-400/[0.08] backdrop-blur-sm px-4 py-3 flex items-center gap-3">
+              <span className="text-base leading-none">⚡</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-amber-100 text-sm font-bold">
+                  {migrating
+                    ? `Optimizando ${migrateProgress?.done ?? 0} de ${migrateProgress?.total ?? photosToOptimize}…`
+                    : `Acelera la galería: ${photosToOptimize} foto${photosToOptimize !== 1 ? 's' : ''} por optimizar`}
+                </p>
+                <p className="text-amber-200/75 text-[11px] mt-0.5">
+                  Re-comprime los thumbnails antiguos a 600px (la versión completa para el lightbox no cambia).
+                </p>
+                {migrating && migrateProgress && (
+                  <div className="mt-2 h-1.5 rounded-full bg-amber-100/15 overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full bg-amber-300"
+                      initial={{ width: 0 }}
+                      animate={{
+                        width: `${(migrateProgress.done / Math.max(migrateProgress.total, 1)) * 100}%`,
+                      }}
+                      transition={{ duration: 0.25 }}
+                    />
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleMigrate}
+                disabled={migrating}
+                className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-950 bg-amber-300 hover:bg-amber-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {migrating ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <>⚡ Optimizar</>
+                )}
+              </button>
+            </div>
+          )}
 
           {/* ─── Day distribution mini chart ─── */}
           {allTripDays.length > 1 && stats.total > 0 && (
