@@ -67,6 +67,7 @@ import { glassStyle, classNames, formatCurrency, formatDateES, generateId } from
 import { nowISO } from '@/lib/utils/helpers';
 import SpotlightCard from '@/components/ui/SpotlightCard';
 import Particles from '@/components/ui/Particles';
+import PendingExpensesBanner from '@/components/expenses/PendingExpensesBanner';
 import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
 
 /* ─── Countdown Badge ─────────────────────────────── */
@@ -783,6 +784,9 @@ export default function TripDetailPage() {
 
             {/* ── Status Suggestion ── */}
             <StatusSuggestionBanner trip={trip} onUpdate={handleStatusUpdate} />
+
+            {/* ── Pending Expenses Banner ── */}
+            <PendingExpensesBanner tripId={tripId} />
 
             {/* ── Next Event ── */}
             {events.length === 0 ? (

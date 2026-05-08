@@ -73,9 +73,15 @@ export default function DocumentsPage() {
 
   /* ─── Handlers ────────────────────────────────── */
 
-  const handleUpload = async (file: File): Promise<string> => {
+  const handleUpload = async (
+    file: File,
+    options?: { name?: string; category?: DocumentCategory },
+  ): Promise<string> => {
     try {
-      const url = await uploadDocument(file, { category: selectedCategory });
+      const url = await uploadDocument(file, {
+        category: options?.category ?? selectedCategory,
+        name: options?.name,
+      });
       toast('Documento subido correctamente', 'success');
       return url;
     } catch (error) {

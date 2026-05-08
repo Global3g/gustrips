@@ -105,12 +105,35 @@ function findConflicts(events: TripEvent[], date: string): Map<string, string[]>
 
 function assignLanes(
   events: { id: string; startMin: number; endMin: number }[],
-): Map<string, { laneIndex: number; laneCount: number }> {
-  const result = new Map<string, { laneIndex: number; laneCount: number }>();
+): Map<string, { laneIndex: number; laneCount: number; isOverlay: boolean }> {
+  const result = new Map<string, { laneIndex: number; laneCount: number; isOverlay: boolean }>();
   if (events.length === 0) return result;
 
-  // Ordenar por startMin (tie-break: el de mayor duración primero)
-  const sorted = [...events].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+  // Detectar eventos completamente contenidos dentro de otros (overlay).
+  // Un evento B es "overlay" si existe otro A más grande que contiene a B en tiempo.
+  const overlayIds = new Set<string>();
+  for (const b of events) {
+    for (const a of events) {
+      if (a.id === b.id) continue;
+      const aDuration = a.endMin - a.startMin;
+      const bDuration = b.endMin - b.startMin;
+      // a debe ser estrictamente mayor que b para evitar empates
+      if (aDuration <= bDuration) continue;
+      if (a.startMin <= b.startMin && a.endMin >= b.endMin) {
+        overlayIds.add(b.id);
+        break;
+      }
+    }
+  }
+
+  // Asignar overlays — todos van solos, layer encima del contenedor
+  for (const id of overlayIds) {
+    result.set(id, { laneIndex: 0, laneCount: 1, isOverlay: true });
+  }
+
+  // Para los demás (contenedores y eventos sin overlap parcial), aplicar lanes normales
+  const containers = events.filter((e) => !overlayIds.has(e.id));
+  const sorted = [...containers].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
 
   const laneEnds: number[] = [];
   const lanes = new Map<string, number>();
@@ -153,7 +176,7 @@ function assignLanes(
 
   lanes.forEach((laneIdx, id) => {
     const c = clusterId.get(id) ?? 0;
-    result.set(id, { laneIndex: laneIdx, laneCount: clusterMaxLane.get(c) ?? 1 });
+    result.set(id, { laneIndex: laneIdx, laneCount: clusterMaxLane.get(c) ?? 1, isOverlay: false });
   });
 
   return result;
@@ -387,30 +410,8 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
   /* ─── Rango de horas ────────────────────────────── */
 
   const { startHour, endHour } = useMemo(() => {
-    const mins: number[] = [];
-    for (const ev of events) {
-      if (ev.startTime) mins.push(timeToMinutes(ev.startTime));
-      if (ev.endTime) mins.push(timeToMinutes(ev.endTime));
-    }
-    if (mins.length === 0) return { startHour: 6, endHour: 22 };
-    const minMin = Math.min(...mins);
-    const maxMin = Math.max(...mins);
-    let sH = Math.max(0, Math.floor(minMin / 60) - 1);
-    let eH = Math.min(24, Math.ceil(maxMin / 60) + 1);
-    const MIN_WINDOW = 12;
-    if (eH - sH < MIN_WINDOW) {
-      const deficit = MIN_WINDOW - (eH - sH);
-      const expandUp = Math.ceil(deficit / 2);
-      const expandDown = deficit - expandUp;
-      sH = Math.max(0, sH - expandUp);
-      eH = Math.min(24, eH + expandDown);
-      if (eH - sH < MIN_WINDOW) {
-        if (sH === 0) eH = Math.min(24, sH + MIN_WINDOW);
-        else if (eH === 24) sH = Math.max(0, eH - MIN_WINDOW);
-      }
-    }
-    return { startHour: sH, endHour: eH };
-  }, [events]);
+    return { startHour: 6, endHour: 22 };
+  }, []);
 
   const totalHours = endHour - startHour;
   const hours = Array.from({ length: totalHours }, (_, i) => startHour + i);
@@ -720,7 +721,10 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
   return (
     <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
       {/* ─── View toggle bar ─────────────────── */}
-      <div className="relative flex items-center gap-1 px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+      <div
+        className="relative flex items-center gap-1 px-3 py-2 border-b border-blue-100"
+        style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #ede9fe 50%, #fdf2f8 100%)' }}
+      >
         {(['day', 'week', 'full'] as const).map((v) => (
           <button
             key={v}
@@ -836,8 +840,11 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
         <div className={`flex ${calendarView === 'full' ? 'min-w-max' : 'min-w-0 w-full'}`}>
 
           {/* ─── Columna de horas (sticky) ──────── */}
-          <div className={`${isMobile ? 'w-10' : (calendarView === 'day' ? 'w-16' : 'w-14')} flex-shrink-0 sticky left-0 z-20 bg-white`}>
-            <div className={`${calendarView === 'day' ? 'h-16' : 'h-12'} border-b border-gray-200`} />
+          <div
+            className={`${isMobile ? 'w-10' : (calendarView === 'day' ? 'w-16' : 'w-14')} flex-shrink-0 sticky left-0 z-20`}
+            style={{ background: 'linear-gradient(180deg, #eff6ff 0%, #ede9fe 100%)' }}
+          >
+            <div className={`${calendarView === 'day' ? 'h-16' : 'h-12'} border-b border-blue-200/60`} />
             <div className="relative" style={{ height: totalHours * HOUR_HEIGHT }}>
               {hours.map((h) => (
                 <div
@@ -845,17 +852,17 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
                   className={`absolute w-full text-right ${isMobile ? 'pr-1' : 'pr-2'}`}
                   style={{ top: (h - startHour) * HOUR_HEIGHT }}
                 >
-                  <span className={`font-mono leading-none relative -top-[5px] ${
+                  <span className={`font-mono leading-none relative -top-[5px] tabular-nums font-bold ${
                     isMobile
-                      ? 'text-gray-400 text-[8px]'
-                      : (calendarView === 'day' ? 'text-gray-400 text-xs' : 'text-gray-300 text-[10px]')
+                      ? 'text-indigo-700 text-[9px]'
+                      : (calendarView === 'day' ? 'text-indigo-700 text-sm' : 'text-indigo-600 text-[11px]')
                   }`}>
                     {formatHour(h)}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="h-10 border-t border-gray-200" />
+            <div className="h-10 border-t border-blue-200/60" />
           </div>
 
           {/* ─── Columnas de días ───────────────── */}
@@ -898,18 +905,44 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
               >
                 {/* Header del día */}
                 <div
-                  className={`${calendarView === 'day' ? 'h-16' : 'h-12'} flex flex-col items-center justify-center border-b border-gray-200 sticky top-0 z-10 ${
-                    isDateToday ? 'bg-blue-50/70' : isWeekend ? 'bg-gray-50' : 'bg-white'
-                  }`}
+                  className={`${calendarView === 'day' ? 'h-16' : 'h-14'} flex flex-col items-center justify-center border-b sticky top-0 z-10 relative overflow-hidden`}
+                  style={{
+                    background: isDateToday
+                      ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
+                      : isWeekend
+                        ? 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)'
+                        : 'linear-gradient(135deg, #dbeafe 0%, #ede9fe 100%)',
+                    borderBottomColor: isDateToday ? 'rgba(99,102,241,0.4)' : 'rgba(255,255,255,0.6)',
+                  }}
                 >
-                  <span className={`text-gray-400 uppercase tracking-wide ${calendarView === 'day' ? 'text-xs' : 'text-[10px]'}`}>
+                  {/* Top glass highlight */}
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent pointer-events-none" />
+                  {isDateToday && (
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-32 h-12 bg-white/40 rounded-full blur-2xl pointer-events-none" />
+                  )}
+                  <span className={`uppercase tracking-[0.15em] font-bold leading-none ${
+                    calendarView === 'day' ? 'text-[10px]' : 'text-[9px]'
+                  } ${
+                    isDateToday ? 'text-white/90' : isWeekend ? 'text-amber-700' : 'text-indigo-600'
+                  }`}>
                     {format(parseISO(date), calendarView === 'day' ? 'EEEE' : 'EEE', { locale: es })}
                   </span>
-                  <span className={`text-gray-900 font-bold ${calendarView === 'day' ? 'text-base' : 'text-xs'}`}>
-                    {formatDateShortES(date)}
+                  <span className={`font-black tracking-tight tabular-nums leading-none mt-1 ${
+                    calendarView === 'day' ? 'text-2xl' : 'text-lg'
+                  } ${
+                    isDateToday ? 'text-white drop-shadow-md' : isWeekend ? 'text-amber-900' : 'text-indigo-900'
+                  }`}>
+                    {format(parseISO(date), 'd')}
+                  </span>
+                  <span className={`uppercase tracking-wider font-semibold leading-none mt-0.5 ${
+                    calendarView === 'day' ? 'text-[9px]' : 'text-[8px]'
+                  } ${
+                    isDateToday ? 'text-white/80' : isWeekend ? 'text-amber-700' : 'text-indigo-600'
+                  }`}>
+                    {format(parseISO(date), 'MMM', { locale: es })}
                   </span>
                   {isDateToday && (
-                    <span className="mt-0.5 text-[9px] font-bold tracking-[0.15em] uppercase text-blue-600 bg-blue-100 rounded-full px-1.5 py-0.5 inline-block">HOY</span>
+                    <span className="absolute top-1 right-1 text-[8px] font-black tracking-[0.18em] uppercase text-indigo-700 bg-white rounded-full px-1.5 py-0.5 shadow-md">HOY</span>
                   )}
                 </div>
 
@@ -1078,7 +1111,10 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
                     void nowTick;
                     const isPastBlock = isEventInPast(event, date, new Date());
 
-                    const laneStyle: React.CSSProperties = laneInfo && laneInfo.laneCount > 1
+                    const isOverlay = laneInfo?.isOverlay === true;
+                    const laneStyle: React.CSSProperties = isOverlay
+                      ? { left: 8, right: 8 }
+                      : laneInfo && laneInfo.laneCount > 1
                       ? {
                           left: `calc(${(laneInfo.laneIndex / laneInfo.laneCount) * 100}% + 4px)`,
                           width: `calc(${100 / laneInfo.laneCount}% - 8px)`,
@@ -1091,8 +1127,10 @@ export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDupli
                       <div
                         key={`${event.id}-${date}`}
                         data-event-block
-                        className={`absolute rounded-lg overflow-hidden z-[1] transition-opacity backdrop-blur-sm ${
-                          laneInfo && laneInfo.laneCount > 1 ? '' : 'left-1 right-1'
+                        className={`absolute rounded-lg overflow-hidden transition-opacity backdrop-blur-sm ${
+                          isOverlay ? 'z-[5]' : 'z-[1]'
+                        } ${
+                          isOverlay || (laneInfo && laneInfo.laneCount > 1) ? '' : 'left-1 right-1'
                         } ${
                           isDragging ? 'opacity-30 pointer-events-none' : 'cursor-grab active:cursor-grabbing hover:brightness-110'
                         } ${isContinuation ? 'border-dashed' : ''} ${

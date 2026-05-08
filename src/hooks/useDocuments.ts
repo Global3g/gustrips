@@ -19,6 +19,8 @@ import type { TripAttachment, DocumentCategory } from '@/types';
 interface UploadOptions {
   eventId?: string;
   category?: DocumentCategory;
+  /** Override the document name (defaults to file.name if omitted) */
+  name?: string;
 }
 
 export function useDocuments(tripId: string) {
@@ -67,7 +69,7 @@ export function useDocuments(tripId: string) {
       const attachmentsRef = collection(db, `trips/${tripId}/attachments`);
 
       const docData: Record<string, unknown> = {
-        name: file.name,
+        name: options?.name?.trim() || file.name,
         url,
         type: file.type,
         size: file.size,

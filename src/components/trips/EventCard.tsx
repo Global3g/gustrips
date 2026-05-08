@@ -24,6 +24,8 @@ import {
   Camera,
   Wine,
   Coffee,
+  Receipt,
+  AlertCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { differenceInMinutes } from 'date-fns';
@@ -32,7 +34,8 @@ import { classNames, formatCurrency, getTimezoneAbbr } from '@/lib/utils/helpers
 import DocumentUpload from '@/components/trips/DocumentUpload';
 import PhotoGallery from '@/components/trips/PhotoGallery';
 import EventPattern from '@/components/trips/EventPattern';
-import type { TripEvent, EventType, TripAttachment, DocumentCategory } from '@/types';
+import QuickExpenseModal from '@/components/expenses/QuickExpenseModal';
+import type { TripEvent, EventType, TripAttachment, DocumentCategory, TripExpense } from '@/types';
 
 /* ---- Icon map ---- */
 
@@ -158,12 +161,16 @@ interface EventCardProps {
   onDelete: (eventId: string) => void;
   onDuplicate?: (event: TripEvent) => void;
   eventDocuments?: TripAttachment[];
+  /** Expenses linked to this event — used to compute "Real cost" vs "Estimated cost" */
+  eventExpenses?: TripExpense[];
   onUploadDocument?: (file: File) => Promise<string>;
   onDeleteDocument?: (docId: string, url: string) => Promise<void>;
   onAddPhoto?: (eventId: string, file: File) => Promise<void>;
   onDeletePhoto?: (eventId: string, url: string) => Promise<void>;
   /** Trip is completed or past its end date — disable the past-event mute so the itinerary stays vibrant for review/sharing. */
   tripCompleted?: boolean;
+  /** Trip ID — required for the "Agregar gasto" button to work */
+  tripId?: string;
 }
 
 export default function EventCard({
@@ -172,14 +179,17 @@ export default function EventCard({
   onDelete,
   onDuplicate,
   eventDocuments = [],
+  eventExpenses = [],
   onUploadDocument,
   onDeleteDocument,
   onAddPhoto,
   onDeletePhoto,
   tripCompleted = false,
+  tripId,
 }: EventCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [tick, setTick] = useState(0);
   const [LeafletComponents, setLeafletComponents] = useState<any>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -299,6 +309,17 @@ export default function EventCard({
 
   const docCategory: DocumentCategory = EVENT_TYPE_TO_DOC_CATEGORY[event.type] || 'other';
   const docCount = eventDocuments.length;
+
+  /* Real cost vs estimated cost — only sum expenses with same currency as event */
+  const eventCurrency = event.currency || 'MXN';
+  const realCost = useMemo(() => {
+    return eventExpenses
+      .filter((exp) => (exp.currency || 'MXN') === eventCurrency)
+      .reduce((sum, exp) => sum + (exp.amount || 0), 0);
+  }, [eventExpenses, eventCurrency]);
+  const hasRealCost = eventExpenses.length > 0;
+  const costDelta = realCost - event.cost;
+  const costDeltaPct = event.cost > 0 ? (costDelta / event.cost) * 100 : 0;
 
   /* Flight duration calculation (preserved) */
   const flightDuration = (() => {
@@ -544,18 +565,86 @@ export default function EventCard({
             </div>
 
             {/* Bottom meta row */}
-            <div className="flex items-center gap-2.5 mt-3 flex-wrap">
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
               {event.cost > 0 && (
-                <span
-                  className="text-[11px] font-bold px-2.5 py-1 rounded-lg"
-                  style={{
-                    backgroundColor: 'rgba(16,185,129,0.13)',
-                    color: '#047857',
-                    border: '1px solid rgba(16,185,129,0.22)',
-                  }}
-                >
-                  {formatCurrency(event.cost, event.currency)}
-                </span>
+                <div className="inline-flex items-stretch rounded-lg overflow-hidden border border-gray-200/70 bg-white/40 backdrop-blur-sm">
+                  {/* Estimated cost (always shown if cost > 0) */}
+                  <div
+                    className="flex flex-col items-start justify-center px-2.5 py-1"
+                    title="Costo presupuestado"
+                  >
+                    <span className="text-[8px] font-bold tracking-[0.12em] uppercase text-blue-600 leading-none">Est.</span>
+                    <span
+                      className="text-[11px] font-bold tabular-nums leading-none mt-0.5"
+                      style={{ color: '#1d4ed8' }}
+                    >
+                      {formatCurrency(event.cost, event.currency)}
+                    </span>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="w-px bg-gray-200/70" />
+
+                  {/* Real cost OR "falta capturar" warning */}
+                  {hasRealCost ? (
+                    <div
+                      className="flex flex-col items-start justify-center px-2.5 py-1"
+                      style={{
+                        backgroundColor:
+                          costDelta > 0.01
+                            ? 'rgba(244,63,94,0.10)'
+                            : costDelta < -0.01
+                            ? 'rgba(16,185,129,0.10)'
+                            : 'rgba(16,185,129,0.10)',
+                      }}
+                      title={
+                        costDelta > 0.01
+                          ? `${costDeltaPct > 0 ? '+' : ''}${costDeltaPct.toFixed(0)}% sobre el presupuesto`
+                          : costDelta < -0.01
+                          ? `${Math.abs(costDeltaPct).toFixed(0)}% bajo el presupuesto`
+                          : 'En presupuesto'
+                      }
+                    >
+                      <span
+                        className="text-[8px] font-bold tracking-[0.12em] uppercase leading-none"
+                        style={{
+                          color:
+                            costDelta > 0.01 ? '#be123c' : '#047857',
+                        }}
+                      >
+                        Real
+                      </span>
+                      <span
+                        className="text-[11px] font-bold tabular-nums leading-none mt-0.5"
+                        style={{
+                          color:
+                            costDelta > 0.01 ? '#be123c' : '#047857',
+                        }}
+                      >
+                        {formatCurrency(realCost, eventCurrency)}
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tripId) setShowExpenseModal(true);
+                      }}
+                      className="flex flex-col items-start justify-center px-2.5 py-1 hover:bg-amber-100 transition-colors"
+                      style={{ backgroundColor: 'rgba(245,158,11,0.13)' }}
+                      title="Falta capturar el gasto real"
+                    >
+                      <span className="text-[8px] font-bold tracking-[0.12em] uppercase leading-none text-amber-700">
+                        Real
+                      </span>
+                      <span className="text-[11px] font-bold leading-none mt-0.5 text-amber-700 inline-flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Falta
+                      </span>
+                    </button>
+                  )}
+                </div>
               )}
               {docCount > 0 && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-500 bg-white/60 border border-gray-200/60 rounded-full px-2 py-0.5 backdrop-blur-sm">
@@ -847,6 +936,24 @@ export default function EventCard({
                     </button>
                   )}
 
+                  {tripId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowExpenseModal(true);
+                      }}
+                      aria-label={`Agregar gasto para ${event.title}`}
+                      className="inline-flex items-center gap-1.5 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all backdrop-blur-sm"
+                      style={{
+                        backgroundColor: 'rgba(16,185,129,0.1)',
+                        border: '1px solid rgba(16,185,129,0.25)',
+                      }}
+                    >
+                      <Receipt className="w-3.5 h-3.5" />
+                      Agregar gasto
+                    </button>
+                  )}
+
                   {onUploadDocument && (
                     <button
                       onClick={(e) => {
@@ -900,6 +1007,15 @@ export default function EventCard({
         )}
       </AnimatePresence>
     </motion.div>
+
+    {tripId && (
+      <QuickExpenseModal
+        open={showExpenseModal}
+        onClose={() => setShowExpenseModal(false)}
+        tripId={tripId}
+        event={event}
+      />
+    )}
     </div>
   );
 }

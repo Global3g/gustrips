@@ -14,6 +14,7 @@ import { getClientStorage } from '@/lib/firebase/client';
 import { useEvents } from '@/hooks/useEvents';
 import { useTrip } from '@/hooks/useTrip';
 import { useDocuments } from '@/hooks/useDocuments';
+import { useExpenses } from '@/hooks/useExpenses';
 import { useToast } from '@/context/ToastContext';
 import EventCard from '@/components/trips/EventCard';
 import EventForm from '@/components/trips/EventForm';
@@ -146,6 +147,16 @@ export default function ItineraryPage() {
 
   const { trip, updateTrip } = useTrip(tripId);
   const { events, loading, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
+  const { expenses } = useExpenses(tripId);
+  const expensesByEvent = useMemo(() => {
+    const map: Record<string, typeof expenses> = {};
+    for (const exp of expenses) {
+      if (!exp.eventId) continue;
+      (map[exp.eventId] ||= []).push(exp);
+    }
+    return map;
+  }, [expenses]);
+  const getExpensesByEvent = useCallback((eventId: string) => expensesByEvent[eventId] || [], [expensesByEvent]);
   const {
     documents,
     uploadDocument,
@@ -886,9 +897,14 @@ export default function ItineraryPage() {
             </button>
           </div>
         </div>
-        {/* Agenda with padding on all sides */}
-        <div className="flex-1 bg-white border border-gray-200 rounded-2xl overflow-auto shadow-sm">
-          <AgendaView
+        {/* Agenda with ambient decoration */}
+        <div className="flex-1 relative overflow-auto p-2">
+          {/* Ambient orbs behind the calendar card */}
+          <div className="absolute top-12 -left-8 w-72 h-72 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.18), transparent 70%)' }} />
+          <div className="absolute top-1/2 -right-12 w-80 h-80 rounded-full blur-3xl pointer-events-none -translate-y-1/2" style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.15), transparent 70%)' }} />
+          <div className="absolute bottom-8 left-1/4 w-64 h-64 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.12), transparent 70%)' }} />
+          <div className="relative">
+            <AgendaView
             events={events}
             onEdit={handleEdit}
             onCreateAt={(date, time) => {
@@ -903,6 +919,7 @@ export default function ItineraryPage() {
             calendarView={calendarView}
             onCalendarViewChange={setCalendarView}
           />
+          </div>
         </div>
 
         {/* Create form (inside agenda view) */}
@@ -1146,7 +1163,24 @@ export default function ItineraryPage() {
 
       {/* ─── VIEW: ALL (complete trip) ─── */}
       {viewMode === 'all' ? (
-        <div className="space-y-6">
+        <div className="relative">
+          {/* Ambient decorative orbs */}
+          <div className="absolute top-12 -left-16 w-80 h-80 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.22), transparent 70%)' }} />
+          <div className="absolute top-1/3 -right-20 w-96 h-96 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.20), transparent 70%)' }} />
+          <div className="absolute top-2/3 left-1/4 w-72 h-72 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.16), transparent 70%)' }} />
+          <div className="absolute bottom-12 right-1/4 w-64 h-64 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.18), transparent 70%)' }} />
+          <div className="absolute top-1/2 right-1/3 w-56 h-56 rounded-full blur-3xl pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(251,191,36,0.14), transparent 70%)' }} />
+
+          {/* Subtle dot pattern */}
+          <div
+            className="absolute inset-0 pointer-events-none opacity-[0.05]"
+            style={{
+              backgroundImage: 'radial-gradient(circle, #6366f1 1px, transparent 1px)',
+              backgroundSize: '24px 24px',
+            }}
+          />
+
+          <div className="relative space-y-6">
           {tripDays.map((day, dayIdx) => {
             const dayStr = format(day, 'yyyy-MM-dd');
             const dayEvts = events
@@ -1154,10 +1188,11 @@ export default function ItineraryPage() {
               .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
             const dayStr2 = format(day, 'yyyy-MM-dd');
             const capitalizedLabel = formatDateHeaderES(dayStr2);
+            const threadGradient = buildThreadGradient(dayEvts);
 
             return (
-              <div key={dayStr}>
-                <div className="flex items-center gap-3 mb-3">
+              <div key={dayStr} className="relative">
+                <div className="flex items-center gap-3 mb-3 relative z-10">
                   <span className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
                     {dayIdx + 1}
                   </span>
@@ -1168,27 +1203,73 @@ export default function ItineraryPage() {
                 {dayEvts.length === 0 ? (
                   <p className="text-gray-300 text-sm pl-11 py-2">Sin eventos</p>
                 ) : (
-                  <div className="space-y-2 pl-11">
-                    {dayEvts.map((event) => (
-                      <EventCard
-                        key={event.id}
-                        event={event}
-                        onEdit={() => handleEdit(event)}
-                        onDelete={() => handleDelete(event.id)}
-                        onDuplicate={() => handleDuplicate(event)}
-                        eventDocuments={getDocumentsByEvent(event.id)}
-                        onUploadDocument={makeUploadHandler(event.id, event.type)}
-                        onDeleteDocument={handleDeleteDocument}
-                        onAddPhoto={handleAddPhoto}
-                        onDeletePhoto={handleDeletePhoto}
-                        tripCompleted={tripCompleted}
-                      />
-                    ))}
+                  <div className="relative">
+                    {/* Vertical thread — gradient through event colors */}
+                    <div
+                      className="absolute left-[15px] top-2 bottom-2 w-[3px] rounded-full pointer-events-none"
+                      style={{
+                        background: threadGradient,
+                        opacity: 0.55,
+                        boxShadow: '0 0 14px rgba(255,255,255,0.4)',
+                      }}
+                    />
+                    {/* Glow trail */}
+                    <div
+                      className="absolute left-[13px] top-2 bottom-2 w-[7px] rounded-full pointer-events-none blur-md"
+                      style={{ background: threadGradient, opacity: 0.25 }}
+                    />
+                    <div className="space-y-2 pl-11 relative">
+                      {dayEvts.map((event) => {
+                        const dotColor = EVENT_TYPES[event.type].color;
+                        const status = getEventStatus(event);
+                        return (
+                          <div key={event.id} className="relative">
+                            {/* Timeline dot — colored by event type, status-aware */}
+                            <div className="absolute left-[-29px] top-4 z-10 flex items-center justify-center w-3.5 h-3.5">
+                              {status === 'live' && (
+                                <span
+                                  className="absolute inset-0 rounded-full animate-ping"
+                                  style={{ background: dotColor, opacity: 0.55 }}
+                                />
+                              )}
+                              <div
+                                className={`relative rounded-full ${status === 'live' ? 'w-4 h-4' : 'w-3.5 h-3.5'}`}
+                                style={{
+                                  background: status === 'future' ? 'white' : dotColor,
+                                  border: `3px solid ${dotColor}`,
+                                  boxShadow:
+                                    status === 'live'
+                                      ? `0 0 0 3px white, 0 0 16px ${dotColor}`
+                                      : status === 'past'
+                                      ? `0 0 0 2px white, 0 1px 4px rgba(0,0,0,0.08)`
+                                      : `0 0 0 2px white, 0 0 8px ${dotColor}66`,
+                                }}
+                              />
+                            </div>
+                            <EventCard
+                              event={event}
+                              onEdit={() => handleEdit(event)}
+                              onDelete={() => handleDelete(event.id)}
+                              onDuplicate={() => handleDuplicate(event)}
+                              eventDocuments={getDocumentsByEvent(event.id)}
+                              eventExpenses={getExpensesByEvent(event.id)}
+                              onUploadDocument={makeUploadHandler(event.id, event.type)}
+                              onDeleteDocument={handleDeleteDocument}
+                              onAddPhoto={handleAddPhoto}
+                              onDeletePhoto={handleDeletePhoto}
+                              tripCompleted={tripCompleted}
+                              tripId={tripId}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
+          </div>
         </div>
 
       ) : dayEvents.length === 0 ? (
@@ -1356,11 +1437,13 @@ export default function ItineraryPage() {
                           onDelete={handleDelete}
                           onDuplicate={handleDuplicate}
                           eventDocuments={getDocumentsByEvent(event.id)}
+                          eventExpenses={getExpensesByEvent(event.id)}
                           onUploadDocument={makeUploadHandler(event.id, event.type)}
                           onDeleteDocument={handleDeleteDocument}
                           onAddPhoto={handleAddPhoto}
                           onDeletePhoto={handleDeletePhoto}
                           tripCompleted={tripCompleted}
+                          tripId={tripId}
                         />
                       </div>
                     </div>

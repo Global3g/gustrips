@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { MAX_FILE_SIZE, ACCEPTED_FILE_TYPES, DOCUMENT_CATEGORIES } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
+import DocumentUploadModal from '@/components/trips/DocumentUploadModal';
 import type { TripAttachment, DocumentCategory } from '@/types';
 
 /* ─── Helpers ───────────────────────────────────── */
@@ -39,7 +40,8 @@ function isImageType(type: string): boolean {
 
 interface DocumentUploadProps {
   documents: TripAttachment[];
-  onUpload: (file: File) => Promise<string>;
+  /** Receives the file plus optional metadata overrides (name, category) when set via modal. */
+  onUpload: (file: File, options?: { name?: string; category?: DocumentCategory }) => Promise<string>;
   onDelete: (docId: string, url: string) => Promise<void>;
   loading?: boolean;
   /** Pre-set eventId for all uploads from this instance */
@@ -70,7 +72,9 @@ export default function DocumentUpload({
   const [error, setError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>(presetCategory || 'other');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const useModal = !compact && !hideCategorySelector;
 
   const validateFile = (file: File): string | null => {
     if (!ACCEPTED_FILE_TYPES.includes(file.type)) {
@@ -82,14 +86,8 @@ export default function DocumentUpload({
     return null;
   };
 
-  const handleUpload = useCallback(
-    async (file: File) => {
-      const validationError = validateFile(file);
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-
+  const performUpload = useCallback(
+    async (file: File, options?: { name?: string; category?: DocumentCategory }) => {
       setError('');
       setUploading(true);
       setUploadProgress(0);
@@ -105,11 +103,12 @@ export default function DocumentUpload({
       }, 200);
 
       try {
-        await onUpload(file);
+        await onUpload(file, options);
         setUploadProgress(100);
       } catch (err) {
         console.error('Error al subir archivo:', err);
         setError('Error al subir el archivo. Intenta de nuevo.');
+        throw err;
       } finally {
         clearInterval(interval);
         setTimeout(() => {
@@ -119,6 +118,43 @@ export default function DocumentUpload({
       }
     },
     [onUpload]
+  );
+
+  const handleUpload = useCallback(
+    async (file: File) => {
+      const validationError = validateFile(file);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+
+      // In modal mode, open the modal to ask for name + category before uploading.
+      if (useModal) {
+        setPendingFile(file);
+        return;
+      }
+
+      // Compact / pre-configured mode: upload directly.
+      try {
+        await performUpload(file);
+      } catch {
+        /* error already set */
+      }
+    },
+    [useModal, performUpload]
+  );
+
+  const handleModalConfirm = useCallback(
+    async ({ name, category }: { name: string; category: DocumentCategory }) => {
+      if (!pendingFile) return;
+      try {
+        await performUpload(pendingFile, { name, category });
+        setPendingFile(null);
+      } catch {
+        /* keep modal open so the user can retry */
+      }
+    },
+    [pendingFile, performUpload]
   );
 
   const handleDragOver = (e: DragEvent) => {
@@ -451,6 +487,15 @@ export default function DocumentUpload({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Upload metadata modal — asks for name + category before uploading */}
+      <DocumentUploadModal
+        open={!!pendingFile}
+        file={pendingFile}
+        defaultCategory={selectedCategory}
+        onConfirm={handleModalConfirm}
+        onCancel={() => setPendingFile(null)}
+      />
     </div>
   );
 }
