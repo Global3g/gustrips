@@ -17,64 +17,49 @@ import {
   Pencil,
   Check,
   Download,
+  MapPin,
+  Sparkles,
 } from 'lucide-react';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
 import { useToast } from '@/context/ToastContext';
-import { formatDateES } from '@/lib/utils/helpers';
+import Particles from '@/components/ui/Particles';
+import TripInsights from '@/components/trips/TripInsights';
+import { formatDateES, classNames } from '@/lib/utils/helpers';
 import { EVENT_TYPES } from '@/config/constants';
 import type { AlbumPhoto } from '@/types';
 
-/* ─── Photo Album Page ──────────────────────────── */
-
-/* Helper to get the detail field key for event name based on type */
+/* ─── Helpers for event name fields ─────────────── */
 function getEventNameFieldKey(eventType: string): string | null {
   switch (eventType) {
-    case 'restaurant':
-      return 'restaurantName';
-    case 'hotel':
-      return 'hotelName';
-    case 'activity':
-      return 'activityName';
-    case 'car_rental':
-      return 'rentalCompany';
-    case 'cruise':
-      return 'portName';
-    case 'flight':
-      return 'airline';
-    case 'transport':
-      return 'transportMode';
-    default:
-      return null;
+    case 'restaurant': return 'restaurantName';
+    case 'hotel': return 'hotelName';
+    case 'activity': return 'activityName';
+    case 'car_rental': return 'rentalCompany';
+    case 'cruise': return 'portName';
+    case 'flight': return 'airline';
+    case 'transport': return 'transportMode';
+    default: return null;
   }
 }
 
-/* Helper to extract event name from details */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 function getEventName(event: any): string | undefined {
   if (!event || !event.details) return undefined;
-
   switch (event.type) {
-    case 'restaurant':
-      return event.details.restaurantName;
-    case 'hotel':
-      return event.details.hotelName;
-    case 'activity':
-      return event.details.activityName;
-    case 'car_rental':
-      return event.details.rentalCompany;
-    case 'cruise':
-      return event.details.portName;
+    case 'restaurant': return event.details.restaurantName;
+    case 'hotel': return event.details.hotelName;
+    case 'activity': return event.details.activityName;
+    case 'car_rental': return event.details.rentalCompany;
+    case 'cruise': return event.details.portName;
     case 'flight':
       if (event.details.airline) return event.details.airline;
-      if (event.details.origin && event.details.destination) {
+      if (event.details.origin && event.details.destination)
         return `${event.details.origin} → ${event.details.destination}`;
-      }
       return undefined;
-    case 'transport':
-      return event.details.transportMode;
-    default:
-      return undefined;
+    case 'transport': return event.details.transportMode;
+    default: return undefined;
   }
 }
 
@@ -103,9 +88,10 @@ export default function PhotosPage() {
   const [editPhotoCaption, setEditPhotoCaption] = useState('');
   const [editPhotoDate, setEditPhotoDate] = useState('');
   const [editPhotoEventId, setEditPhotoEventId] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  /* ── Pre-fill fields when event is selected ── */
+  /* ── Pre-fill event fields ── */
   useEffect(() => {
     if (selectedEventId) {
       const event = events.find((e) => e.id === selectedEventId);
@@ -123,20 +109,15 @@ export default function PhotosPage() {
     }
   }, [selectedEventId, events]);
 
-  /* ── All photos: album + event photos (deduplicated), sorted by date ── */
-
+  /* ── All photos: album + event photos deduplicated ── */
   const allPhotos = useMemo(() => {
     const photos: (AlbumPhoto & { source: 'album' | 'event'; eventTitle?: string })[] = [];
     const albumUrls = new Set<string>();
-
-    // Album photos (include eventTitle if linked)
     for (const p of albumPhotos) {
       albumUrls.add(p.url);
       const linkedEvent = p.eventId ? events.find((e) => e.id === p.eventId) : undefined;
       photos.push({ ...p, source: 'album', eventTitle: linkedEvent?.title });
     }
-
-    // Event photos — only add if NOT already in album (avoid duplicates from sync)
     for (const event of events) {
       if (event.photos && event.photos.length > 0) {
         for (const url of event.photos) {
@@ -152,8 +133,6 @@ export default function PhotosPage() {
         }
       }
     }
-
-    // Sort by date, then uploadedAt
     return photos.sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date);
       if (dateCmp !== 0) return dateCmp;
@@ -161,8 +140,7 @@ export default function PhotosPage() {
     });
   }, [albumPhotos, events]);
 
-  /* ── Group photos by day and event ── */
-
+  /* ── Group photos by day → event ── */
   const photoGroups = useMemo(() => {
     const groups: Array<{
       key: string;
@@ -172,21 +150,19 @@ export default function PhotosPage() {
       eventCity?: string;
       eventCountry?: string;
       eventId?: string;
+      eventColor?: string;
       photos: typeof allPhotos;
     }> = [];
 
-    // Group by date first
     const byDate: Record<string, typeof allPhotos> = {};
     for (const photo of allPhotos) {
       if (!byDate[photo.date]) byDate[photo.date] = [];
       byDate[photo.date].push(photo);
     }
 
-    // For each date, subgroup by event
     for (const [date, photos] of Object.entries(byDate)) {
       const byEvent: Record<string, typeof allPhotos> = {};
       const noEvent: typeof allPhotos = [];
-
       for (const photo of photos) {
         if (photo.eventId) {
           const key = photo.eventId;
@@ -196,10 +172,9 @@ export default function PhotosPage() {
           noEvent.push(photo);
         }
       }
-
-      // Add event groups
       for (const [eventId, eventPhotos] of Object.entries(byEvent)) {
         const event = events.find((e) => e.id === eventId);
+        const cfg = event ? EVENT_TYPES[event.type] : undefined;
         groups.push({
           key: `${date}-${eventId}`,
           date,
@@ -208,26 +183,18 @@ export default function PhotosPage() {
           eventCity: event?.city,
           eventCountry: event?.country,
           eventId,
+          eventColor: cfg?.color,
           photos: eventPhotos,
         });
       }
-
-      // Add non-event photos
       if (noEvent.length > 0) {
-        groups.push({
-          key: `${date}-no-event`,
-          date,
-          photos: noEvent,
-        });
+        groups.push({ key: `${date}-no-event`, date, photos: noEvent });
       }
     }
-
-    // Sort by date
     return groups.sort((a, b) => a.date.localeCompare(b.date));
   }, [allPhotos, events]);
 
-  /* ── Trip days for day numbering ── */
-
+  /* ── Trip days for numbering ── */
   const tripDays = useMemo(() => {
     if (!trip) return {};
     try {
@@ -244,60 +211,84 @@ export default function PhotosPage() {
     }
   }, [trip]);
 
-  /* ── Flat list for lightbox navigation ── */
+  const allTripDays = useMemo(() => {
+    if (!trip) return [];
+    try {
+      const start = parseISO(trip.startDate);
+      const end = parseISO(trip.endDate);
+      return eachDayOfInterval({ start, end }).map((d) => format(d, 'yyyy-MM-dd'));
+    } catch {
+      return [];
+    }
+  }, [trip]);
 
+  /* ── Stats ── */
+  const stats = useMemo(() => {
+    const dates = new Set(allPhotos.map((p) => p.date));
+    const cities = new Set(
+      allPhotos
+        .map((p) => {
+          if (p.eventId) {
+            const ev = events.find((e) => e.id === p.eventId);
+            return ev?.city || '';
+          }
+          return '';
+        })
+        .filter(Boolean),
+    );
+    return { total: allPhotos.length, days: dates.size, cities: cities.size };
+  }, [allPhotos, events]);
+
+  /* ── Per-day photo counts for distribution chart ── */
+  const dayCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of allPhotos) {
+      counts.set(p.date, (counts.get(p.date) || 0) + 1);
+    }
+    return allTripDays.map((d) => ({ date: d, count: counts.get(d) || 0 }));
+  }, [allPhotos, allTripDays]);
+
+  const maxDayCount = useMemo(() => Math.max(1, ...dayCounts.map((d) => d.count)), [dayCounts]);
+
+  /* ── Flat photo list for lightbox ── */
   const flatPhotos = useMemo(() => allPhotos, [allPhotos]);
 
-  /* ── Events for today (for linking dropdown) ── */
-
-  const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
-
-  const eventsForSelectedDate = useMemo(() => {
-    return events.filter((e) => e.date === selectedDate);
-  }, [events, selectedDate]);
-
-  /* ── Upload handler ── */
-
-  const handleFiles = useCallback(
-    (files: FileList | File[]) => {
-      const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
-      if (fileArray.length === 0) return;
-
-      // Always show linking modal to pick date and optionally link to event
-      setPendingFiles(fileArray);
-      setSelectedEventId('');
-      setModalCity('');
-      setModalCountry('');
-      setModalEventName('');
-      setModalEventType('');
-      setShowLinkModal(true);
-    },
-    [],
-  );
+  /* ── Upload handlers ── */
+  const handleFiles = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (fileArray.length === 0) return;
+    setPendingFiles(fileArray);
+    setSelectedEventId('');
+    setModalCity('');
+    setModalCountry('');
+    setModalEventName('');
+    setModalEventType('');
+    setShowLinkModal(true);
+  }, []);
 
   const uploadFiles = useCallback(
-    async (fileArray: File[], eventId: string, city?: string, country?: string, eventName?: string, eventType?: string) => {
+    async (
+      fileArray: File[],
+      eventId: string,
+      city?: string,
+      country?: string,
+      eventName?: string,
+      eventType?: string,
+    ) => {
       setUploading(true);
       const today = selectedDate;
       let successCount = 0;
-
       try {
         for (const file of fileArray) {
           try {
             const photo = await addPhoto(file, today, undefined, eventId || undefined);
-
-            // If linked to an event, also add photo URL to event.photos[]
             if (eventId) {
               try {
                 const event = events.find((e) => e.id === eventId);
                 const currentPhotos = event?.photos ?? [];
                 const updates: any = { photos: [...currentPhotos, photo.url] };
-
-                // Update city/country if provided and different from event
                 if (city && city !== event?.city) updates.city = city;
                 if (country && country !== event?.country) updates.country = country;
-
-                // Update event name in details if provided
                 if (eventName && eventType) {
                   const detailKey = getEventNameFieldKey(eventType);
                   if (detailKey) {
@@ -307,25 +298,20 @@ export default function PhotosPage() {
                     }
                   }
                 }
-
                 await updateEvent(eventId, updates);
               } catch (linkErr) {
                 console.error('Error vinculando foto al evento:', linkErr);
               }
             }
-
             successCount++;
           } catch (err) {
             console.error('Error uploading photo:', err);
             toast('Error al subir foto', 'error');
           }
         }
-
         if (successCount > 0) {
           toast(
-            successCount === 1
-              ? 'Foto agregada al album'
-              : `${successCount} fotos agregadas al album`,
+            successCount === 1 ? 'Foto agregada al álbum' : `${successCount} fotos agregadas al álbum`,
             'success',
           );
         }
@@ -346,60 +332,44 @@ export default function PhotosPage() {
     [handleFiles],
   );
 
-  /* ── Drag and drop ── */
-
+  /* ── Drag & drop ── */
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      if (e.dataTransfer.files) {
-        handleFiles(e.dataTransfer.files);
-      }
+      if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
     },
     [handleFiles],
   );
-
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(true);
   }, []);
-
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
   }, []);
 
-  /* ── Delete handler ── */
-
+  /* ── Delete ── */
   const handleDelete = useCallback(
     async (photo: typeof flatPhotos[number]) => {
       setDeleting(photo.url);
       try {
-        // Remove photo URL from ALL events that reference it
         const linkedEvents = events.filter((e) => e.photos?.includes(photo.url));
         for (const event of linkedEvents) {
           try {
             const updatedPhotos = (event.photos ?? []).filter((p) => p !== photo.url);
             await updateEvent(event.id, { photos: updatedPhotos });
           } catch {
-            // Non-critical — continue
+            // Non-critical
           }
         }
-
-        // Remove from album if it's there
-        if (photo.source === 'album') {
-          await deletePhoto(photo);
-        }
-
+        if (photo.source === 'album') await deletePhoto(photo);
         toast('Foto eliminada', 'success');
-        // Close lightbox if viewing deleted photo
         if (lightboxIndex !== null && flatPhotos[lightboxIndex]?.url === photo.url) {
           const newLen = flatPhotos.length - 1;
-          if (newLen <= 0) {
-            setLightboxIndex(null);
-          } else if (lightboxIndex >= newLen) {
-            setLightboxIndex(newLen - 1);
-          }
+          if (newLen <= 0) setLightboxIndex(null);
+          else if (lightboxIndex >= newLen) setLightboxIndex(newLen - 1);
         }
       } catch (err) {
         console.error('Error deleting photo:', err);
@@ -411,14 +381,7 @@ export default function PhotosPage() {
     [deletePhoto, toast, lightboxIndex, flatPhotos, events, updateEvent],
   );
 
-  /* ── Caption edit ── */
-
-  const startEditCaption = useCallback((photo: typeof flatPhotos[number]) => {
-    if (photo.source !== 'album') return;
-    setEditingCaption(photo.url);
-    setCaptionText(photo.caption || '');
-  }, []);
-
+  /* ── Caption ── */
   const saveCaption = useCallback(
     async (photo: typeof flatPhotos[number]) => {
       if (photo.source !== 'album') return;
@@ -434,28 +397,28 @@ export default function PhotosPage() {
     [updateCaption, captionText, toast],
   );
 
-  /* ── Photo download ── */
+  /* ── Download ── */
+  const downloadPhoto = useCallback(
+    (photo: typeof flatPhotos[number]) => {
+      try {
+        const link = document.createElement('a');
+        link.href = photo.url;
+        link.download = `gustrips_${photo.date || 'photo'}_${Date.now()}.jpg`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast('Descargando foto…', 'success');
+      } catch (err) {
+        console.error('Error downloading photo:', err);
+        toast('Error al descargar foto', 'error');
+      }
+    },
+    [toast],
+  );
 
-  const downloadPhoto = useCallback((photo: typeof flatPhotos[number]) => {
-    try {
-      // Use a simple anchor tag with download attribute
-      const link = document.createElement('a');
-      link.href = photo.url;
-      link.download = `gustrips_${photo.date || 'photo'}_${Date.now()}.jpg`;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast('Descargando foto...', 'success');
-    } catch (err) {
-      console.error('Error downloading photo:', err);
-      toast('Error al descargar foto', 'error');
-    }
-  }, [toast]);
-
-  /* ── Photo edit modal ── */
-
+  /* ── Edit photo modal ── */
   const openEditPhotoModal = useCallback((photo: typeof flatPhotos[number]) => {
     if (photo.source !== 'album') return;
     setEditingPhoto(photo);
@@ -464,31 +427,27 @@ export default function PhotosPage() {
     setEditPhotoEventId(photo.eventId || '');
   }, []);
 
-  const savePhotoEdits = useCallback(
-    async () => {
-      if (!editingPhoto) return;
-      try {
-        const updates: Partial<AlbumPhoto> = {
-          caption: editPhotoCaption,
-          date: editPhotoDate,
-          eventId: editPhotoEventId || undefined,
-        };
-        await updatePhoto(editingPhoto, updates);
-        toast('Foto actualizada', 'success');
-        setEditingPhoto(null);
-        setEditPhotoCaption('');
-        setEditPhotoDate('');
-        setEditPhotoEventId('');
-      } catch (err) {
-        console.error('Error updating photo:', err);
-        toast('Error al actualizar foto', 'error');
-      }
-    },
-    [editingPhoto, editPhotoCaption, editPhotoDate, editPhotoEventId, updatePhoto, toast],
-  );
+  const savePhotoEdits = useCallback(async () => {
+    if (!editingPhoto) return;
+    try {
+      const updates: Partial<AlbumPhoto> = {
+        caption: editPhotoCaption,
+        date: editPhotoDate,
+        eventId: editPhotoEventId || undefined,
+      };
+      await updatePhoto(editingPhoto, updates);
+      toast('Foto actualizada', 'success');
+      setEditingPhoto(null);
+      setEditPhotoCaption('');
+      setEditPhotoDate('');
+      setEditPhotoEventId('');
+    } catch (err) {
+      console.error('Error updating photo:', err);
+      toast('Error al actualizar foto', 'error');
+    }
+  }, [editingPhoto, editPhotoCaption, editPhotoDate, editPhotoEventId, updatePhoto, toast]);
 
-  /* ── Lightbox navigation ── */
-
+  /* ── Lightbox nav ── */
   const openLightbox = useCallback(
     (photo: typeof flatPhotos[number]) => {
       const idx = flatPhotos.findIndex((p) => p.url === photo.url);
@@ -496,99 +455,402 @@ export default function PhotosPage() {
     },
     [flatPhotos],
   );
-
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
-
   const goNext = useCallback(() => {
     setLightboxIndex((prev) => (prev !== null && prev < flatPhotos.length - 1 ? prev + 1 : prev));
   }, [flatPhotos.length]);
-
   const goPrev = useCallback(() => {
     setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
   }, []);
 
-  const totalPhotos = flatPhotos.length;
+  /* ── Keyboard nav for lightbox ── */
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowRight') goNext();
+      if (e.key === 'ArrowLeft') goPrev();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxIndex, closeLightbox, goNext, goPrev]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-            <Camera className="w-5 h-5 text-amber-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Album de Fotos</h1>
-            <p className="text-sm text-gray-500">
-              {totalPhotos === 0
-                ? 'Agrega fotos de tu viaje'
-                : `${totalPhotos} foto${totalPhotos !== 1 ? 's' : ''}`}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors shadow-lg shadow-amber-500/20 disabled:opacity-50"
-        >
-          {uploading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <ImagePlus className="w-4 h-4" />
-          )}
-          <span className="hidden sm:inline">Agregar fotos</span>
-        </button>
-      </div>
-
-      {/* ── Upload drop zone ── */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={() => fileInputRef.current?.click()}
-        className={`
-          relative rounded-2xl border-2 border-dashed p-8 text-center cursor-pointer transition-all duration-200
-          ${dragOver
-            ? 'border-amber-400 bg-amber-50 scale-[1.01]'
-            : 'border-gray-200 bg-white/60 hover:border-amber-300 hover:bg-amber-50/50'
-          }
-        `}
+    <div className="max-w-6xl mx-auto">
+      {/* ─── Dark glass stage ─── */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30"
+        style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
       >
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-14 h-14 rounded-2xl bg-amber-100/80 flex items-center justify-center">
-            <Upload className="w-6 h-6 text-amber-500" />
+        {/* Visual layer */}
+        <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+          <Particles count={32} />
+          <div
+            className="absolute -top-12 left-1/4 w-96 h-96 rounded-full blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.20), transparent 70%)' }}
+          />
+          <div
+            className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%)' }}
+          />
+          <div
+            className="absolute bottom-12 left-1/4 w-72 h-72 rounded-full blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.16), transparent 70%)' }}
+          />
+          <div
+            className="absolute top-2/3 right-1/3 w-64 h-64 rounded-full blur-3xl"
+            style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.14), transparent 70%)' }}
+          />
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 p-5 sm:p-7 space-y-5">
+          {/* ─── Hero ─── */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 border border-amber-300/30"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.06))',
+                  boxShadow: '0 0 20px rgba(245,158,11,0.2)',
+                }}
+              >
+                <Camera className="w-6 h-6 text-amber-200" />
+              </div>
+              <div>
+                <h1 className="text-white text-xl sm:text-2xl font-black tracking-tight" style={{ textShadow: '0 0 24px rgba(255,255,255,0.12)' }}>
+                  Álbum de fotos
+                </h1>
+                <div className="flex items-center gap-x-2 gap-y-0.5 mt-0.5 text-white/55 text-[12px] flex-wrap">
+                  <span>
+                    <span className="text-white font-bold tabular-nums">{stats.total}</span> foto{stats.total !== 1 ? 's' : ''}
+                  </span>
+                  {stats.days > 0 && (
+                    <>
+                      <span className="text-white/25">·</span>
+                      <span>
+                        <span className="text-white font-bold tabular-nums">{stats.days}</span> día{stats.days !== 1 ? 's' : ''}
+                      </span>
+                    </>
+                  )}
+                  {stats.cities > 0 && (
+                    <>
+                      <span className="text-white/25">·</span>
+                      <span>
+                        <span className="text-white font-bold tabular-nums">{stats.cities}</span> {stats.cities !== 1 ? 'lugares' : 'lugar'}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="relative inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed group flex-shrink-0"
+              style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+            >
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+              <span className="hidden sm:inline">Agregar fotos</span>
+              <div
+                className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)' }}
+              />
+              <span className="relative z-10 sm:hidden">Subir</span>
+            </button>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-700">
-              {uploading ? 'Subiendo...' : 'Arrastra fotos aqui o haz clic para seleccionar'}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Las imagenes se comprimen automaticamente (max 1200px, JPEG 80%)
-            </p>
+
+          {/* ─── Day distribution mini chart ─── */}
+          {allTripDays.length > 1 && stats.total > 0 && (
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4">
+              <div className="flex items-baseline justify-between mb-2.5">
+                <div className="text-white/85 text-sm font-bold">Fotos por día</div>
+                <div className="text-white/40 text-[11px]">tap día para enfocar</div>
+              </div>
+              <div className="flex items-end gap-1 h-16">
+                {dayCounts.map((d, i) => {
+                  const heightPct = (d.count / maxDayCount) * 100;
+                  const dayNum = tripDays[d.date] || i + 1;
+                  return (
+                    <div
+                      key={d.date}
+                      className="flex-1 flex flex-col items-center gap-1 group"
+                      title={`Día ${dayNum} · ${d.count} foto${d.count !== 1 ? 's' : ''}`}
+                    >
+                      <div className="flex-1 w-full flex items-end">
+                        <motion.div
+                          className="w-full rounded-t-md"
+                          style={{
+                            background:
+                              d.count > 0
+                                ? 'linear-gradient(180deg, #fbbf24, #f59e0b)'
+                                : 'rgba(255,255,255,0.06)',
+                            minHeight: d.count > 0 ? '3px' : '2px',
+                            boxShadow: d.count > 0 ? '0 0 6px rgba(245,158,11,0.3)' : 'none',
+                          }}
+                          initial={{ height: 0 }}
+                          animate={{ height: `${heightPct || 4}%` }}
+                          transition={{ duration: 0.6, delay: i * 0.02 }}
+                        />
+                      </div>
+                      <div className="text-[9px] font-bold tabular-nums leading-none text-white/35 group-hover:text-white/65">
+                        {dayNum}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Drop zone (compact) ─── */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+            className={classNames(
+              'relative rounded-2xl border-2 border-dashed p-5 text-center cursor-pointer transition-all backdrop-blur-sm',
+              dragOver
+                ? 'border-amber-300/70 bg-amber-300/10 scale-[1.01] shadow-[0_0_32px_rgba(245,158,11,0.25)]'
+                : 'border-white/15 bg-white/[0.03] hover:border-amber-300/40 hover:bg-white/[0.05]',
+            )}
+          >
+            <div className="flex items-center justify-center gap-3">
+              <div
+                className={classNames(
+                  'w-10 h-10 rounded-xl flex items-center justify-center transition-all',
+                  dragOver ? 'bg-amber-300/25 text-amber-100' : 'bg-white/[0.06] text-white/55',
+                )}
+              >
+                {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+              </div>
+              <div className="text-left">
+                <p className={classNames('text-sm font-bold', dragOver ? 'text-amber-100' : 'text-white/85')}>
+                  {uploading ? 'Subiendo…' : dragOver ? '¡Suéltalas!' : 'Arrastra fotos o tap para seleccionar'}
+                </p>
+                <p className="text-white/40 text-[11px] mt-0.5">
+                  Se comprimen automáticamente (max 1200px, JPEG 80%)
+                </p>
+              </div>
+            </div>
           </div>
-          {uploading && (
-            <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFileInput}
+          />
+
+          {/* ─── Photo grid ─── */}
+          {eventsLoading && stats.total === 0 ? (
+            <div className="space-y-6">
+              {[0, 1].map((groupIdx) => (
+                <div key={groupIdx}>
+                  <div className="mb-3 flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-white/[0.06] animate-pulse" />
+                    <div className="h-4 w-44 bg-white/[0.06] rounded-lg animate-pulse" />
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <div
+                        key={i}
+                        className="aspect-square bg-white/[0.04] rounded-2xl animate-pulse"
+                        style={{ animationDelay: `${groupIdx * 120 + i * 60}ms` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : stats.total === 0 ? (
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-12 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto mb-4">
+                <Camera className="w-7 h-7 text-white/30" />
+              </div>
+              <p className="text-white/85 font-semibold mb-1">Aún no hay fotos</p>
+              <p className="text-white/40 text-xs">Sube fotos para documentar tu viaje</p>
+            </div>
+          ) : (
+            <div className="space-y-7">
+              {photoGroups.map((group) => {
+                const dayNum = tripDays[group.date];
+                let dayLabel: string;
+                try {
+                  const d = parseISO(group.date);
+                  const weekday = format(d, 'EEEE', { locale: es });
+                  const capitalWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+                  const dateFormatted = format(d, "d 'de' MMMM", { locale: es });
+                  dayLabel = `${capitalWeekday} ${dateFormatted}`;
+                } catch {
+                  dayLabel = group.date;
+                }
+
+                const accent = group.eventColor || '#f59e0b';
+
+                return (
+                  <div key={group.key}>
+                    {/* Group header */}
+                    <div className="mb-3 flex items-start gap-3">
+                      <div
+                        className="w-9 h-9 rounded-xl flex flex-col items-center justify-center flex-shrink-0 leading-none border"
+                        style={{
+                          background: `linear-gradient(135deg, ${accent}24, ${accent}10)`,
+                          borderColor: `${accent}55`,
+                          boxShadow: `0 0 14px ${accent}33`,
+                        }}
+                      >
+                        <span className="text-[8px] uppercase tracking-wider font-bold" style={{ color: accent }}>
+                          Día
+                        </span>
+                        <span className="text-sm font-black" style={{ color: accent }}>
+                          {dayNum || '—'}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <h2 className="text-white text-base font-bold capitalize">{dayLabel}</h2>
+                          <span className="text-white/40 text-[11px] font-medium tabular-nums">
+                            {group.photos.length} foto{group.photos.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        {(group.eventType || group.eventName || group.eventCity || group.eventCountry) && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {group.eventType && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                                style={{
+                                  background: `${accent}22`,
+                                  color: accent,
+                                  border: `1px solid ${accent}44`,
+                                }}
+                              >
+                                {(EVENT_TYPES as any)[group.eventType]?.label || group.eventType}
+                              </span>
+                            )}
+                            {group.eventName && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/[0.06] text-white/85 border border-white/10">
+                                {group.eventName}
+                              </span>
+                            )}
+                            {(group.eventCity || group.eventCountry) && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-400/10 text-emerald-200 border border-emerald-300/30">
+                                <MapPin className="w-3 h-3" />
+                                {[group.eventCity, group.eventCountry].filter(Boolean).join(', ')}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Photo grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {group.photos.map((photo) => (
+                        <motion.div
+                          key={photo.url}
+                          layout
+                          whileHover={{ y: -2 }}
+                          transition={{ duration: 0.2 }}
+                          className="space-y-1.5"
+                        >
+                          <div
+                            className="relative group rounded-2xl overflow-hidden bg-black/40 aspect-square cursor-pointer border border-white/10 hover:border-amber-300/50 transition-all hover:shadow-[0_8px_30px_rgba(245,158,11,0.18)]"
+                            onClick={() => openLightbox(photo)}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={photo.url}
+                              alt={photo.caption || 'Foto del viaje'}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                              loading="lazy"
+                            />
+                            {/* Gradient overlay on hover */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+
+                            {/* Action buttons */}
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                              {photo.source === 'album' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditPhotoModal(photo);
+                                  }}
+                                  className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 shadow-lg"
+                                  title="Editar foto"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadPhoto(photo);
+                                }}
+                                className="w-7 h-7 rounded-full bg-sky-500/40 backdrop-blur-md hover:bg-sky-500/60 flex items-center justify-center text-white transition-all border border-sky-300/40 shadow-lg"
+                                title="Descargar foto"
+                              >
+                                <Download className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(photo);
+                                }}
+                                disabled={deleting === photo.url}
+                                className="w-7 h-7 rounded-full bg-red-500/40 backdrop-blur-md hover:bg-red-500/60 flex items-center justify-center text-white transition-all border border-red-300/40 shadow-lg disabled:opacity-50"
+                                title="Eliminar foto"
+                              >
+                                {deleting === photo.url ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                              </button>
+                            </div>
+
+                            {/* Source pill (event vs album) */}
+                            {photo.source === 'event' && (
+                              <div className="absolute bottom-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white/85 text-[9px] font-bold uppercase tracking-wider border border-white/10">
+                                <Sparkles className="w-2.5 h-2.5 text-amber-300" />
+                                evento
+                              </div>
+                            )}
+                          </div>
+                          {photo.caption && (
+                            <p className="text-white/65 text-[11px] font-medium px-1 line-clamp-2 leading-snug">
+                              {photo.caption}
+                            </p>
+                          )}
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
-      </div>
+      </motion.div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={handleFileInput}
-      />
+      {/* ── Trip insights (relocated from overview) ── */}
+      {trip && (
+        <div className="mt-5">
+          <TripInsights trip={trip} events={events} />
+        </div>
+      )}
 
-      {/* ── Link to event modal ── */}
+      {/* ── Link to event modal (dark glass) ── */}
       <AnimatePresence>
         {showLinkModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={() => {
               setShowLinkModal(false);
               setPendingFiles([]);
@@ -603,328 +865,187 @@ export default function PhotosPage() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4"
+              className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl shadow-black/50"
+              style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Subir fotos</h3>
-              <p className="text-sm text-gray-500 mb-4">
-                {pendingFiles.length === 1 ? '1 foto' : `${pendingFiles.length} fotos`} seleccionadas.
-              </p>
-              {/* Date picker */}
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                min={trip?.startDate}
-                max={trip?.endDate}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent mb-4"
-              />
-              {/* Event linking */}
-              <label className="block text-sm font-medium text-gray-700 mb-1">Vincular a evento (opcional)</label>
-              <select
-                value={selectedEventId}
-                onChange={(e) => setSelectedEventId(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent mb-4"
-              >
-                <option value="">Sin vincular</option>
-                {(() => {
-                  const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
-                  const grouped = new Map<string, typeof events>();
-                  for (const ev of sorted) {
-                    const list = grouped.get(ev.date) || [];
-                    list.push(ev);
-                    grouped.set(ev.date, list);
-                  }
-                  return [...grouped.entries()].map(([dateStr, evts]) => (
-                    <optgroup key={dateStr} label={formatDateES(dateStr)}>
-                      {evts.map((ev) => (
-                        <option key={ev.id} value={ev.id}>
-                          {ev.startTime ? `${ev.startTime} - ` : ''}{ev.title}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ));
-                })()}
-              </select>
-              {/* Event details fields (shown if event selected) */}
-              {selectedEventId && (
-                <div className="mb-4 space-y-3">
-                  {/* Event type and name */}
-                  <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
-                    <p className="text-xs font-medium text-purple-700 mb-2">Información del evento</p>
-                    <div className="space-y-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
-                        <div className="flex items-center gap-2">
+              <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+                <div
+                  className="absolute -top-12 -right-12 w-72 h-72 rounded-full blur-3xl"
+                  style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.18), transparent 70%)' }}
+                />
+              </div>
+              <div className="relative p-6">
+                <div className="flex items-baseline justify-between mb-4">
+                  <h3 className="text-white text-lg font-black">Subir fotos</h3>
+                  <span className="text-white/55 text-xs">
+                    {pendingFiles.length} {pendingFiles.length === 1 ? 'foto' : 'fotos'}
+                  </span>
+                </div>
+
+                {/* Date */}
+                <label className="block text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5">
+                  Fecha
+                </label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  min={trip?.startDate}
+                  max={trip?.endDate}
+                  className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-amber-300/60 backdrop-blur-sm transition-colors mb-4 [color-scheme:dark]"
+                />
+
+                {/* Event link */}
+                <label className="block text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5">
+                  Vincular a evento (opcional)
+                </label>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-amber-300/60 backdrop-blur-sm transition-colors mb-4 [color-scheme:dark]"
+                >
+                  <option value="">Sin vincular</option>
+                  {(() => {
+                    const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
+                    const grouped = new Map<string, typeof events>();
+                    for (const ev of sorted) {
+                      const list = grouped.get(ev.date) || [];
+                      list.push(ev);
+                      grouped.set(ev.date, list);
+                    }
+                    return [...grouped.entries()].map(([dateStr, evts]) => (
+                      <optgroup key={dateStr} label={formatDateES(dateStr)}>
+                        {evts.map((ev) => (
+                          <option key={ev.id} value={ev.id}>
+                            {ev.startTime ? `${ev.startTime} - ` : ''}
+                            {ev.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ));
+                  })()}
+                </select>
+
+                {/* Event details */}
+                {selectedEventId && (
+                  <div className="mb-4 space-y-3">
+                    <div className="rounded-2xl border border-purple-300/30 bg-purple-400/[0.05] backdrop-blur-sm p-3">
+                      <p className="text-purple-200/80 text-[10px] uppercase tracking-[0.18em] font-bold mb-2">
+                        Información del evento
+                      </p>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-white/45 text-[10px] font-bold mb-1">Tipo</label>
                           <input
                             type="text"
-                            value={modalEventType ? EVENT_TYPES[modalEventType as keyof typeof EVENT_TYPES]?.label || modalEventType : ''}
+                            value={
+                              modalEventType
+                                ? EVENT_TYPES[modalEventType as keyof typeof EVENT_TYPES]?.label || modalEventType
+                                : ''
+                            }
                             disabled
-                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 bg-gray-50"
+                            className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-white/55 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-white/45 text-[10px] font-bold mb-1">
+                            Nombre {modalEventType && `(${EVENT_TYPES[modalEventType as keyof typeof EVENT_TYPES]?.label})`}
+                          </label>
+                          <input
+                            type="text"
+                            value={modalEventName}
+                            onChange={(e) => setModalEventName(e.target.value)}
+                            placeholder={
+                              modalEventType === 'restaurant'
+                                ? 'Ej. Azia'
+                                : modalEventType === 'hotel'
+                                ? 'Ej. Hotel Playa'
+                                : modalEventType === 'activity'
+                                ? 'Ej. Snorkel'
+                                : 'Nombre del lugar'
+                            }
+                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-lg px-3 py-2 text-white text-sm placeholder:text-white/25 outline-none focus:border-purple-300/60"
                           />
                         </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Nombre {modalEventType && `(${EVENT_TYPES[modalEventType as keyof typeof EVENT_TYPES]?.label})`}
-                        </label>
-                        <input
-                          type="text"
-                          value={modalEventName}
-                          onChange={(e) => setModalEventName(e.target.value)}
-                          placeholder={
-                            modalEventType === 'restaurant' ? 'Ej. Azia' :
-                            modalEventType === 'hotel' ? 'Ej. Hotel Playa' :
-                            modalEventType === 'activity' ? 'Ej. Snorkel' :
-                            'Nombre del lugar'
-                          }
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
-                        />
-                      </div>
+                      {!modalEventName && (
+                        <p className="text-purple-200/70 text-[10px] mt-2">
+                          💡 Agrega el nombre para identificar este lugar
+                        </p>
+                      )}
                     </div>
-                    {!modalEventName && (
-                      <p className="text-xs text-purple-600 mt-2">
-                        💡 Agrega el nombre para identificar mejor este lugar
-                      </p>
-                    )}
-                  </div>
 
-                  {/* City and country */}
-                  <div className="p-3 bg-green-50 rounded-xl border border-green-200">
-                    <p className="text-xs font-medium text-green-700 mb-2">Ubicación</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Ciudad</label>
-                        <input
-                          type="text"
-                          value={modalCity}
-                          onChange={(e) => setModalCity(e.target.value)}
-                          placeholder="Ej. Mazatlán"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
-                        />
+                    <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/[0.05] backdrop-blur-sm p-3">
+                      <p className="text-emerald-200/80 text-[10px] uppercase tracking-[0.18em] font-bold mb-2">Ubicación</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-white/45 text-[10px] font-bold mb-1">Ciudad</label>
+                          <input
+                            type="text"
+                            value={modalCity}
+                            onChange={(e) => setModalCity(e.target.value)}
+                            placeholder="Ej. Mazatlán"
+                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-lg px-3 py-2 text-white text-sm placeholder:text-white/25 outline-none focus:border-emerald-300/60"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-white/45 text-[10px] font-bold mb-1">País</label>
+                          <input
+                            type="text"
+                            value={modalCountry}
+                            onChange={(e) => setModalCountry(e.target.value)}
+                            placeholder="Ej. México"
+                            className="w-full bg-white/[0.05] border border-white/[0.1] rounded-lg px-3 py-2 text-white text-sm placeholder:text-white/25 outline-none focus:border-emerald-300/60"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">País</label>
-                        <input
-                          type="text"
-                          value={modalCountry}
-                          onChange={(e) => setModalCountry(e.target.value)}
-                          placeholder="Ej. México"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
-                        />
-                      </div>
+                      {(!modalCity || !modalCountry) && (
+                        <p className="text-emerald-200/70 text-[10px] mt-2">
+                          💡 Agrega ciudad y país para recordar mejor este momento
+                        </p>
+                      )}
                     </div>
-                    {(!modalCity || !modalCountry) && (
-                      <p className="text-xs text-green-600 mt-2">
-                        💡 Agrega ciudad y país para recordar mejor este momento
-                      </p>
-                    )}
                   </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      setShowLinkModal(false);
+                      setPendingFiles([]);
+                      setSelectedEventId('');
+                      setModalCity('');
+                      setModalCountry('');
+                      setModalEventName('');
+                      setModalEventType('');
+                    }}
+                    className="px-4 py-2 rounded-xl text-sm font-bold text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowLinkModal(false);
+                      uploadFiles(pendingFiles, selectedEventId, modalCity, modalCountry, modalEventName, modalEventType);
+                      setPendingFiles([]);
+                      setSelectedEventId('');
+                      setModalCity('');
+                      setModalCountry('');
+                      setModalEventName('');
+                      setModalEventType('');
+                    }}
+                    className="px-4 py-2 rounded-xl text-sm font-bold text-white transition-all"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                  >
+                    Subir {pendingFiles.length === 1 ? 'foto' : 'fotos'}
+                  </button>
                 </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => {
-                    setShowLinkModal(false);
-                    setPendingFiles([]);
-                    setSelectedEventId('');
-                    setModalCity('');
-                    setModalCountry('');
-                    setModalEventName('');
-                    setModalEventType('');
-                  }}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={() => {
-                    setShowLinkModal(false);
-                    uploadFiles(pendingFiles, selectedEventId, modalCity, modalCountry, modalEventName, modalEventType);
-                    setPendingFiles([]);
-                    setSelectedEventId('');
-                    setModalCity('');
-                    setModalCountry('');
-                    setModalEventName('');
-                    setModalEventType('');
-                  }}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors"
-                >
-                  Subir {pendingFiles.length === 1 ? 'foto' : 'fotos'}
-                </button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* ── Photo grid by day and event ── */}
-      {eventsLoading && totalPhotos === 0 ? (
-        <div className="space-y-8">
-          {[0, 1].map((groupIdx) => (
-            <div key={groupIdx}>
-              <div className="mb-4 flex items-center gap-3">
-                <div
-                  className="w-8 h-8 rounded-lg bg-gray-200 animate-pulse"
-                  style={{ animationDelay: `${groupIdx * 120}ms` }}
-                />
-                <div
-                  className="h-5 w-48 bg-gray-200 rounded-lg animate-pulse"
-                  style={{ animationDelay: `${groupIdx * 120}ms` }}
-                />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <div
-                    key={i}
-                    className="aspect-square bg-gray-200 rounded-xl animate-pulse"
-                    style={{ animationDelay: `${groupIdx * 120 + i * 60}ms` }}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : totalPhotos === 0 ? (
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-gray-100 p-12 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
-            <Camera className="w-10 h-10 text-gray-200" />
-          </div>
-          <p className="text-gray-400 text-sm">
-            Aun no hay fotos en el album. Sube fotos para documentar tu viaje.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {photoGroups.map((group) => {
-            const dayNum = tripDays[group.date];
-            let dayLabel: string;
-            try {
-              const d = parseISO(group.date);
-              const weekday = format(d, 'EEEE', { locale: es });
-              const capitalWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
-              const dateFormatted = format(d, "d 'de' MMMM", { locale: es });
-              dayLabel = dayNum
-                ? `Dia ${dayNum} — ${capitalWeekday} ${dateFormatted}`
-                : `${capitalWeekday} ${dateFormatted}`;
-            } catch {
-              dayLabel = group.date;
-            }
-
-            return (
-              <div key={group.key}>
-                {/* Group header with event info */}
-                <div className="mb-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-sm">
-                      {dayNum || '#'}
-                    </div>
-                    <h2 className="text-lg font-bold text-gray-800">{dayLabel}</h2>
-                    <span className="text-xs text-gray-400 font-medium">
-                      {group.photos.length} foto{group.photos.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-
-                  {/* Event and location info */}
-                  {(group.eventType || group.eventName) && (
-                    <div className="ml-11 flex flex-wrap items-center gap-2">
-                      {/* Event type badge */}
-                      {group.eventType && (
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
-                          <span>{(EVENT_TYPES as any)[group.eventType]?.label || group.eventType}</span>
-                        </div>
-                      )}
-                      {/* Event name badge (from details) */}
-                      {group.eventName && (
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-semibold">
-                          <span>{group.eventName}</span>
-                        </div>
-                      )}
-                      {/* City and country badge */}
-                      {(group.eventCity || group.eventCountry) && (
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium">
-                          <span>
-                            {[group.eventCity, group.eventCountry].filter(Boolean).join(', ')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Photo grid */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {group.photos.map((photo) => (
-                    <div key={photo.url} className="space-y-2">
-                      <div
-                        className="relative group rounded-xl overflow-hidden bg-gray-100 aspect-square cursor-pointer"
-                        onClick={() => openLightbox(photo)}
-                      >
-                        <img
-                          src={photo.url}
-                          alt={photo.caption || 'Foto del viaje'}
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                        {/* Overlay on hover */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-
-                        {/* Action buttons - always visible on mobile, hover on desktop */}
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                          {photo.source === 'album' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditPhotoModal(photo);
-                              }}
-                              className="w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-gray-600 transition-colors shadow-sm"
-                              title="Editar foto"
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                          )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadPhoto(photo);
-                            }}
-                            className="w-7 h-7 rounded-full bg-blue-500/80 hover:bg-blue-500 flex items-center justify-center text-white transition-colors shadow-sm"
-                            title="Descargar foto"
-                          >
-                            <Download className="w-3 h-3" />
-                          </button>
-                          <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(photo);
-                              }}
-                              disabled={deleting === photo.url}
-                              className="w-7 h-7 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center text-white transition-colors shadow-sm"
-                              title="Eliminar foto"
-                            >
-                              {deleting === photo.url ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3 h-3" />
-                              )}
-                            </button>
-                          </div>
-                      </div>
-                      {/* Caption below photo */}
-                      {photo.caption && (
-                        <p className="text-gray-700 text-xs font-medium px-1 line-clamp-2">
-                          {photo.caption}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* ── Caption edit modal ── */}
       <AnimatePresence>
@@ -933,23 +1054,24 @@ export default function PhotosPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={() => setEditingCaption(null)}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl mx-4"
+              className="w-full max-w-md rounded-3xl border border-white/10 shadow-2xl shadow-black/50 p-6"
+              style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 100%)' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-bold text-gray-900 mb-3">Editar leyenda</h3>
+              <h3 className="text-white text-lg font-black mb-3">Editar leyenda</h3>
               <input
                 type="text"
                 value={captionText}
                 onChange={(e) => setCaptionText(e.target.value)}
-                placeholder="Escribe una leyenda..."
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                placeholder="Escribe una leyenda…"
+                className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-white/25 outline-none focus:border-amber-300/60"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -961,7 +1083,7 @@ export default function PhotosPage() {
               <div className="flex justify-end gap-2 mt-4">
                 <button
                   onClick={() => setEditingCaption(null)}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors"
                 >
                   Cancelar
                 </button>
@@ -970,7 +1092,8 @@ export default function PhotosPage() {
                     const photo = flatPhotos.find((p) => p.url === editingCaption);
                     if (photo) saveCaption(photo);
                   }}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors"
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
                 >
                   <Check className="w-4 h-4 inline mr-1" />
                   Guardar
@@ -988,103 +1111,92 @@ export default function PhotosPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={() => setEditingPhoto(null)}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 shadow-2xl shadow-black/50"
+              style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 100%)' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Editar detalles de la foto</h3>
+              <div className="p-6">
+                <h3 className="text-white text-lg font-black mb-4">Editar foto</h3>
 
-              {/* Photo preview */}
-              <div className="mb-4 rounded-xl overflow-hidden">
-                <img
-                  src={editingPhoto.url}
-                  alt="Preview"
-                  className="w-full h-48 object-cover"
-                />
-              </div>
-
-              <div className="space-y-4">
-                {/* Caption */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                    Leyenda
-                  </label>
-                  <input
-                    type="text"
-                    value={editPhotoCaption}
-                    onChange={(e) => setEditPhotoCaption(e.target.value)}
-                    placeholder="Escribe una leyenda..."
-                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-                  />
+                <div className="mb-4 rounded-2xl overflow-hidden border border-white/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={editingPhoto.url} alt="Preview" className="w-full h-48 object-cover" />
                 </div>
 
-                {/* Date */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                    Fecha
-                  </label>
-                  <input
-                    type="date"
-                    value={editPhotoDate}
-                    onChange={(e) => setEditPhotoDate(e.target.value)}
-                    min={trip?.startDate}
-                    max={trip?.endDate}
-                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-                  />
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5">Leyenda</label>
+                    <input
+                      type="text"
+                      value={editPhotoCaption}
+                      onChange={(e) => setEditPhotoCaption(e.target.value)}
+                      placeholder="Escribe una leyenda…"
+                      className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-3 py-2.5 text-white text-sm placeholder:text-white/25 outline-none focus:border-amber-300/60"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5">Fecha</label>
+                    <input
+                      type="date"
+                      value={editPhotoDate}
+                      onChange={(e) => setEditPhotoDate(e.target.value)}
+                      min={trip?.startDate}
+                      max={trip?.endDate}
+                      className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-amber-300/60 [color-scheme:dark]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5">Evento asociado</label>
+                    <select
+                      value={editPhotoEventId}
+                      onChange={(e) => setEditPhotoEventId(e.target.value)}
+                      className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-3 py-2.5 text-white text-sm outline-none focus:border-amber-300/60 [color-scheme:dark]"
+                    >
+                      <option value="">Sin evento</option>
+                      {events
+                        .filter((e) => e.date === editPhotoDate)
+                        .map((event) => (
+                          <option key={event.id} value={event.id}>
+                            {event.title} ({EVENT_TYPES[event.type]?.label || event.type})
+                          </option>
+                        ))}
+                    </select>
+                    {editPhotoDate && events.filter((e) => e.date === editPhotoDate).length === 0 && (
+                      <p className="text-white/35 text-[11px] mt-1">No hay eventos en esta fecha</p>
+                    )}
+                  </div>
                 </div>
 
-                {/* Event link */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                    Evento asociado
-                  </label>
-                  <select
-                    value={editPhotoEventId}
-                    onChange={(e) => setEditPhotoEventId(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-white/[0.08]">
+                  <button
+                    onClick={() => {
+                      setEditingPhoto(null);
+                      setEditPhotoCaption('');
+                      setEditPhotoDate('');
+                      setEditPhotoEventId('');
+                    }}
+                    className="px-4 py-2 rounded-xl text-sm font-bold text-white/70 hover:text-white hover:bg-white/[0.06] transition-colors"
                   >
-                    <option value="">Sin evento</option>
-                    {events
-                      .filter((e) => e.date === editPhotoDate)
-                      .map((event) => (
-                        <option key={event.id} value={event.id}>
-                          {event.title} ({EVENT_TYPES[event.type]?.label || event.type})
-                        </option>
-                      ))}
-                  </select>
-                  {editPhotoDate && events.filter((e) => e.date === editPhotoDate).length === 0 && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      No hay eventos en esta fecha
-                    </p>
-                  )}
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={savePhotoEdits}
+                    className="px-4 py-2 rounded-xl text-sm font-bold text-white inline-flex items-center gap-1.5"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                  >
+                    <Check className="w-4 h-4" />
+                    Guardar cambios
+                  </button>
                 </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => {
-                    setEditingPhoto(null);
-                    setEditPhotoCaption('');
-                    setEditPhotoDate('');
-                    setEditPhotoEventId('');
-                  }}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-gray-500 hover:bg-gray-100 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={savePhotoEdits}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white transition-colors flex items-center gap-1"
-                >
-                  <Check className="w-4 h-4" />
-                  Guardar cambios
-                </button>
               </div>
             </motion.div>
           </motion.div>
@@ -1098,65 +1210,72 @@ export default function PhotosPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-md"
             onClick={closeLightbox}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <motion.img
               key={flatPhotos[lightboxIndex].url}
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.94 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
+              exit={{ opacity: 0, scale: 0.94 }}
               transition={{ duration: 0.2 }}
               src={flatPhotos[lightboxIndex].url}
               alt={flatPhotos[lightboxIndex].caption || 'Foto'}
-              className="max-w-[90vw] max-h-[85vh] rounded-xl object-contain shadow-2xl"
+              className="max-w-[92vw] max-h-[82vh] rounded-2xl object-contain shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             />
 
-            {/* Caption display */}
             {flatPhotos[lightboxIndex].caption && (
-              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-black/50 backdrop-blur-sm text-white text-sm font-medium max-w-md text-center">
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-black/70 backdrop-blur-md text-white text-sm font-medium max-w-md text-center border border-white/10">
                 {flatPhotos[lightboxIndex].caption}
               </div>
             )}
 
-            {/* Close */}
+            {/* Top controls */}
+            <div className="absolute top-4 right-4 flex gap-1.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  downloadPhoto(flatPhotos[lightboxIndex!]);
+                }}
+                className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
+                title="Descargar"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeLightbox();
+                }}
+                className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                closeLightbox();
+                handleDelete(flatPhotos[lightboxIndex!]);
               }}
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+              disabled={deleting !== null}
+              className="absolute top-4 left-4 w-10 h-10 rounded-full bg-red-500/30 backdrop-blur-md hover:bg-red-500/50 flex items-center justify-center text-white transition-all border border-red-300/30"
             >
-              <X className="w-5 h-5" />
+              {deleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
             </button>
 
-            {/* Delete */}
-            <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(flatPhotos[lightboxIndex!]);
-                }}
-                disabled={deleting !== null}
-                className="absolute top-4 left-4 w-10 h-10 rounded-full bg-red-500/60 hover:bg-red-500/80 flex items-center justify-center text-white transition-colors"
-              >
-                {deleting ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Trash2 className="w-5 h-5" />
-                )}
-              </button>
-
-            {/* Nav arrows */}
             {lightboxIndex > 0 && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   goPrev();
                 }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
               >
-                <ChevronLeft className="w-5 h-5" />
+                <ChevronLeft className="w-6 h-6" />
               </button>
             )}
             {lightboxIndex < flatPhotos.length - 1 && (
@@ -1165,14 +1284,13 @@ export default function PhotosPage() {
                   e.stopPropagation();
                   goNext();
                 }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
               >
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight className="w-6 h-6" />
               </button>
             )}
 
-            {/* Counter */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-white/20 text-white text-xs font-medium">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-md text-white text-xs font-bold tabular-nums border border-white/15">
               {lightboxIndex + 1} / {flatPhotos.length}
             </div>
           </motion.div>
