@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@types/leaflet": "^1.9.21",
     "date-fns": "^4.1.0",
     "firebase": "^12.9.0",
@@ -23,6 +26,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
+    "react-zoom-pan-pinch": "^4.0.3",
     "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },

@@ -111,16 +111,26 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const db = getClientDb();
       const timestamp = Date.now();
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const storagePath = `trips/${tripId}/album/${timestamp}_${safeName}`;
-      const storageRef = ref(storage, storagePath);
+      const storage_thumb = ref(storage, `trips/${tripId}/album/${timestamp}_${safeName}`);
+      const storage_full = ref(storage, `trips/${tripId}/album/${timestamp}_full_${safeName}`);
 
-      // Compress before upload
-      const compressed = await compressImage(file);
-      await uploadBytes(storageRef, compressed, { contentType: 'image/jpeg' });
-      const url = await getDownloadURL(storageRef);
+      // Generate both versions in parallel — thumbnail for grids, full quality for lightbox
+      const [thumbBlob, fullBlob] = await Promise.all([
+        compressImage(file, 1200, 0.8),
+        compressImage(file, 3000, 0.92),
+      ]);
+      const [, ] = await Promise.all([
+        uploadBytes(storage_thumb, thumbBlob, { contentType: 'image/jpeg' }),
+        uploadBytes(storage_full, fullBlob, { contentType: 'image/jpeg' }),
+      ]);
+      const [url, fullUrl] = await Promise.all([
+        getDownloadURL(storage_thumb),
+        getDownloadURL(storage_full),
+      ]);
 
       const photo: AlbumPhoto = {
         url,
+        fullUrl,
         date,
         uploadedAt: nowISO(),
       };
@@ -151,20 +161,25 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         updatedAt: nowISO(),
       });
 
-      // Try to delete from storage (best-effort)
-      try {
-        const storage = getClientStorage();
-        // Extract path from URL
-        const urlObj = new URL(photo.url);
-        const pathMatch = urlObj.pathname.match(/\/o\/(.+?)(\?|$)/);
-        if (pathMatch) {
-          const storagePath = decodeURIComponent(pathMatch[1]);
-          const storageRef = ref(storage, storagePath);
-          await deleteObject(storageRef);
+      // Try to delete both thumbnail and full-quality versions from storage (best-effort)
+      const tryDelete = async (firebaseUrl: string) => {
+        try {
+          const storage = getClientStorage();
+          const urlObj = new URL(firebaseUrl);
+          const pathMatch = urlObj.pathname.match(/\/o\/(.+?)(\?|$)/);
+          if (pathMatch) {
+            const storagePath = decodeURIComponent(pathMatch[1]);
+            const storageRef = ref(storage, storagePath);
+            await deleteObject(storageRef);
+          }
+        } catch (err) {
+          console.error('Error deleting photo from storage:', err);
         }
-      } catch (err) {
-        console.error('Error deleting photo from storage:', err);
-      }
+      };
+      await Promise.all([
+        tryDelete(photo.url),
+        photo.fullUrl ? tryDelete(photo.fullUrl) : Promise.resolve(),
+      ]);
     },
     [tripId, trip],
   );

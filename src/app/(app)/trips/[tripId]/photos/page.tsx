@@ -9,8 +9,6 @@ import {
   Camera,
   Upload,
   X,
-  ChevronLeft,
-  ChevronRight,
   Trash2,
   Loader2,
   ImagePlus,
@@ -20,12 +18,30 @@ import {
   MapPin,
   Sparkles,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  rectSortingStrategy,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
 import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
 import TripInsights from '@/components/trips/TripInsights';
+import PhotoLightbox from '@/components/trips/photos/PhotoLightbox';
+import SortablePhoto from '@/components/trips/photos/SortablePhoto';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
 import { EVENT_TYPES } from '@/config/constants';
 import type { AlbumPhoto } from '@/types';
@@ -175,6 +191,15 @@ export default function PhotosPage() {
       for (const [eventId, eventPhotos] of Object.entries(byEvent)) {
         const event = events.find((e) => e.id === eventId);
         const cfg = event ? EVENT_TYPES[event.type] : undefined;
+        // Sort photos by their position in event.photos[] (drag-and-drop ordering source of truth)
+        const orderMap = new Map<string, number>();
+        (event?.photos ?? []).forEach((url, idx) => orderMap.set(url, idx));
+        const sortedEventPhotos = [...eventPhotos].sort((a, b) => {
+          const ai = orderMap.has(a.url) ? (orderMap.get(a.url) as number) : Number.MAX_SAFE_INTEGER;
+          const bi = orderMap.has(b.url) ? (orderMap.get(b.url) as number) : Number.MAX_SAFE_INTEGER;
+          if (ai !== bi) return ai - bi;
+          return a.uploadedAt.localeCompare(b.uploadedAt);
+        });
         groups.push({
           key: `${date}-${eventId}`,
           date,
@@ -184,7 +209,7 @@ export default function PhotosPage() {
           eventCountry: event?.country,
           eventId,
           eventColor: cfg?.color,
-          photos: eventPhotos,
+          photos: sortedEventPhotos,
         });
       }
       if (noEvent.length > 0) {
@@ -414,7 +439,8 @@ export default function PhotosPage() {
     (photo: typeof flatPhotos[number]) => {
       try {
         const link = document.createElement('a');
-        link.href = photo.url;
+        // Prefer the full-quality URL when available so downloads keep original resolution
+        link.href = photo.fullUrl || photo.url;
         link.download = `gustrips_${photo.date || 'photo'}_${Date.now()}.jpg`;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
@@ -459,6 +485,30 @@ export default function PhotosPage() {
     }
   }, [editingPhoto, editPhotoCaption, editPhotoDate, editPhotoEventId, updatePhoto, toast]);
 
+  /* ── Drag-and-drop reorder within an event group ── */
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleReorder = useCallback(
+    async (eventId: string, currentUrls: string[], activeUrl: string, overUrl: string) => {
+      if (activeUrl === overUrl) return;
+      const oldIndex = currentUrls.indexOf(activeUrl);
+      const newIndex = currentUrls.indexOf(overUrl);
+      if (oldIndex < 0 || newIndex < 0) return;
+      const newUrls = arrayMove(currentUrls, oldIndex, newIndex);
+      try {
+        await updateEvent(eventId, { photos: newUrls });
+      } catch (err) {
+        console.error('Error reordering photos:', err);
+        toast('Error al reordenar', 'error');
+      }
+    },
+    [updateEvent, toast],
+  );
+
   /* ── Lightbox nav ── */
   const openLightbox = useCallback(
     (photo: typeof flatPhotos[number]) => {
@@ -474,18 +524,6 @@ export default function PhotosPage() {
   const goPrev = useCallback(() => {
     setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
   }, []);
-
-  /* ── Keyboard nav for lightbox ── */
-  useEffect(() => {
-    if (lightboxIndex === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowRight') goNext();
-      if (e.key === 'ArrowLeft') goPrev();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightboxIndex, closeLightbox, goNext, goPrev]);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -763,83 +801,110 @@ export default function PhotosPage() {
                       </div>
                     </div>
 
-                    {/* Photo grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {group.photos.map((photo) => (
-                        <motion.div
-                          key={photo.url}
-                          layout
-                          whileHover={{ y: -2 }}
-                          transition={{ duration: 0.2 }}
-                          className="space-y-1.5"
-                        >
-                          <div
-                            className="relative group rounded-2xl overflow-hidden bg-black/40 aspect-square cursor-pointer border border-white/10 hover:border-amber-300/50 transition-all hover:shadow-[0_8px_30px_rgba(245,158,11,0.18)]"
-                            onClick={() => openLightbox(photo)}
+                    {/* Photo grid (sortable when photos belong to an event) */}
+                    {(() => {
+                      const reorderable = !!group.eventId && group.photos.length > 1;
+                      const photoIds = group.photos.map((p) => p.url);
+                      const photoCards = group.photos.map((photo) => (
+                        <SortablePhoto key={photo.url} id={photo.url} enabled={reorderable}>
+                          <motion.div
+                            whileHover={{ y: -2 }}
+                            transition={{ duration: 0.2 }}
+                            className="space-y-1.5"
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={photo.url}
-                              alt={photo.caption || 'Foto del viaje'}
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                              loading="lazy"
-                            />
-                            {/* Gradient overlay on hover */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                            <div
+                              className="relative group rounded-2xl overflow-hidden bg-black/40 aspect-square cursor-pointer border border-white/10 hover:border-amber-300/50 transition-all hover:shadow-[0_8px_30px_rgba(245,158,11,0.18)]"
+                              onClick={() => openLightbox(photo)}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={photo.url}
+                                alt={photo.caption || 'Foto del viaje'}
+                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                loading="lazy"
+                              />
+                              {/* Gradient overlay on hover */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
 
-                            {/* Action buttons */}
-                            <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                              {photo.source === 'album' && (
+                              {/* Action buttons */}
+                              <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                {photo.source === 'album' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openEditPhotoModal(photo);
+                                    }}
+                                    className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 shadow-lg"
+                                    title="Editar foto"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                )}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openEditPhotoModal(photo);
+                                    downloadPhoto(photo);
                                   }}
-                                  className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 shadow-lg"
-                                  title="Editar foto"
+                                  className="w-7 h-7 rounded-full bg-sky-500/40 backdrop-blur-md hover:bg-sky-500/60 flex items-center justify-center text-white transition-all border border-sky-300/40 shadow-lg"
+                                  title="Descargar foto"
                                 >
-                                  <Pencil className="w-3 h-3" />
+                                  <Download className="w-3 h-3" />
                                 </button>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  downloadPhoto(photo);
-                                }}
-                                className="w-7 h-7 rounded-full bg-sky-500/40 backdrop-blur-md hover:bg-sky-500/60 flex items-center justify-center text-white transition-all border border-sky-300/40 shadow-lg"
-                                title="Descargar foto"
-                              >
-                                <Download className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(photo);
-                                }}
-                                disabled={deleting === photo.url}
-                                className="w-7 h-7 rounded-full bg-red-500/40 backdrop-blur-md hover:bg-red-500/60 flex items-center justify-center text-white transition-all border border-red-300/40 shadow-lg disabled:opacity-50"
-                                title="Eliminar foto"
-                              >
-                                {deleting === photo.url ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                              </button>
-                            </div>
-
-                            {/* Source pill (event vs album) */}
-                            {photo.source === 'event' && (
-                              <div className="absolute bottom-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white/85 text-[9px] font-bold uppercase tracking-wider border border-white/10">
-                                <Sparkles className="w-2.5 h-2.5 text-amber-300" />
-                                evento
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDelete(photo);
+                                  }}
+                                  disabled={deleting === photo.url}
+                                  className="w-7 h-7 rounded-full bg-red-500/40 backdrop-blur-md hover:bg-red-500/60 flex items-center justify-center text-white transition-all border border-red-300/40 shadow-lg disabled:opacity-50"
+                                  title="Eliminar foto"
+                                >
+                                  {deleting === photo.url ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                </button>
                               </div>
+
+                              {/* Source pill (event vs album) */}
+                              {photo.source === 'event' && (
+                                <div className="absolute bottom-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white/85 text-[9px] font-bold uppercase tracking-wider border border-white/10">
+                                  <Sparkles className="w-2.5 h-2.5 text-amber-300" />
+                                  evento
+                                </div>
+                              )}
+                            </div>
+                            {photo.caption && (
+                              <p className="text-white/65 text-[11px] font-medium px-1 line-clamp-2 leading-snug">
+                                {photo.caption}
+                              </p>
                             )}
-                          </div>
-                          {photo.caption && (
-                            <p className="text-white/65 text-[11px] font-medium px-1 line-clamp-2 leading-snug">
-                              {photo.caption}
-                            </p>
-                          )}
-                        </motion.div>
-                      ))}
-                    </div>
+                          </motion.div>
+                        </SortablePhoto>
+                      ));
+
+                      const grid = (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{photoCards}</div>
+                      );
+
+                      if (!reorderable || !group.eventId) return grid;
+                      return (
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(e: DragEndEvent) => {
+                            if (!e.over || e.active.id === e.over.id) return;
+                            handleReorder(
+                              group.eventId as string,
+                              photoIds,
+                              String(e.active.id),
+                              String(e.over.id),
+                            );
+                          }}
+                        >
+                          <SortableContext items={photoIds} strategy={rectSortingStrategy}>
+                            {grid}
+                          </SortableContext>
+                        </DndContext>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -1225,99 +1290,17 @@ export default function PhotosPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Lightbox ── */}
-      <AnimatePresence>
-        {lightboxIndex !== null && flatPhotos[lightboxIndex] && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/95 backdrop-blur-md"
-            onClick={closeLightbox}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <motion.img
-              key={flatPhotos[lightboxIndex].url}
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.94 }}
-              transition={{ duration: 0.2 }}
-              src={flatPhotos[lightboxIndex].url}
-              alt={flatPhotos[lightboxIndex].caption || 'Foto'}
-              className="max-w-[92vw] max-h-[82vh] rounded-2xl object-contain shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-
-            {flatPhotos[lightboxIndex].caption && (
-              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-black/70 backdrop-blur-md text-white text-sm font-medium max-w-md text-center border border-white/10">
-                {flatPhotos[lightboxIndex].caption}
-              </div>
-            )}
-
-            {/* Top controls */}
-            <div className="absolute top-4 right-4 flex gap-1.5">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  downloadPhoto(flatPhotos[lightboxIndex!]);
-                }}
-                className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
-                title="Descargar"
-              >
-                <Download className="w-5 h-5" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeLightbox();
-                }}
-                className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
-                title="Cerrar"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(flatPhotos[lightboxIndex!]);
-              }}
-              disabled={deleting !== null}
-              className="absolute top-4 left-4 w-10 h-10 rounded-full bg-red-500/30 backdrop-blur-md hover:bg-red-500/50 flex items-center justify-center text-white transition-all border border-red-300/30"
-            >
-              {deleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-            </button>
-
-            {lightboxIndex > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  goPrev();
-                }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-            {lightboxIndex < flatPhotos.length - 1 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  goNext();
-                }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-md text-white text-xs font-bold tabular-nums border border-white/15">
-              {lightboxIndex + 1} / {flatPhotos.length}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Lightbox (zoom + pan + rotate via react-zoom-pan-pinch) ── */}
+      <PhotoLightbox
+        open={lightboxIndex !== null && !!flatPhotos[lightboxIndex ?? 0]}
+        photos={flatPhotos}
+        index={lightboxIndex ?? 0}
+        onClose={closeLightbox}
+        onChangeIndex={(i) => setLightboxIndex(i)}
+        onDelete={(p) => handleDelete(p)}
+        onDownload={(p) => downloadPhoto(p)}
+        deleting={deleting}
+      />
     </div>
   );
 }
