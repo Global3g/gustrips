@@ -39,6 +39,8 @@ import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardBody } from '@/components/ui/Card';
 import Modal from '@/components/ui/Modal';
+import Particles from '@/components/ui/Particles';
+import { useExchangeRates } from '@/hooks/useExchangeRates';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Button from '@/components/ui/Button';
@@ -644,6 +646,10 @@ export default function BudgetPage() {
     }
   };
 
+  /* ─── Exchange rates for cross-currency aggregation ─── */
+  const baseCurrency = trip?.budgetCurrency ?? 'MXN';
+  const { convert: fxConvert } = useExchangeRates(baseCurrency);
+
   /* ─── Computed data ────────────────────────────── */
 
   const budgetData = useMemo(() => {
@@ -666,13 +672,16 @@ export default function BudgetPage() {
       spentByCurrency[cur] = (spentByCurrency[cur] || 0) + e.amount;
     }
 
-    // Only sum events in the SAME currency as budget for comparison
-    const eventSpentSameCurrency = eventsWithCost
-      .filter((e) => (e.currency || currency) === currency)
-      .reduce((sum, e) => sum + e.cost, 0);
-    const expenseSpentSameCurrency = expenses
-      .filter((e) => (e.currency || currency) === currency)
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Convert every event/expense to the trip's base currency before summing —
+    // a 9 EUR dinner against a 1500 MXN budget is now compared correctly.
+    const eventSpentSameCurrency = eventsWithCost.reduce(
+      (sum, e) => sum + fxConvert(e.cost, e.currency || currency),
+      0,
+    );
+    const expenseSpentSameCurrency = expenses.reduce(
+      (sum, e) => sum + fxConvert(e.amount, e.currency || currency),
+      0,
+    );
     const totalSpentSameCurrency = eventSpentSameCurrency + expenseSpentSameCurrency;
 
     const totalSpentAll = Object.values(spentByCurrency).reduce((a, b) => a + b, 0);
@@ -698,7 +707,7 @@ export default function BudgetPage() {
       breakdown,
       eventsWithCost,
     };
-  }, [trip, events, members, expenses]);
+  }, [trip, events, members, expenses, fxConvert]);
 
   const balances = useMemo(() => getBalances(), [getBalances]);
 
@@ -730,19 +739,60 @@ export default function BudgetPage() {
   /* ─── Render ───────────────────────────────────── */
 
   return (
-    <div className="space-y-0">
+    <>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="budget-stage relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30 overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
+    >
+      {/* Visual layer */}
+      <div className="absolute inset-0 pointer-events-none">
+        <Particles count={28} />
+        <div
+          className="absolute -top-12 left-1/4 w-80 h-80 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(34,197,94,0.18), transparent 70%)' }}
+        />
+        <div
+          className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.16), transparent 70%)' }}
+        />
+        <div
+          className="absolute bottom-12 left-1/4 w-64 h-64 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.14), transparent 70%)' }}
+        />
+      </div>
+
+      <div className="relative z-10 p-5 sm:p-7 space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-gray-900">Presupuesto</h1>
-          <p className="text-gray-400 text-sm">Control de gastos del viaje</p>
+      <div className="flex items-start gap-3">
+        <div
+          className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 border border-emerald-300/30"
+          style={{
+            background: 'linear-gradient(135deg, rgba(34,197,94,0.18), rgba(34,197,94,0.06))',
+            boxShadow: '0 0 20px rgba(34,197,94,0.2)',
+          }}
+        >
+          <Wallet className="w-6 h-6 text-emerald-200" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1
+            className="text-xl sm:text-2xl font-black tracking-tight bg-clip-text text-transparent"
+            style={{ backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #d1fae5 60%, #6ee7b7 100%)' }}
+          >
+            Presupuesto
+          </h1>
+          <p className="text-white/55 text-[12px] mt-0.5">Control de gastos del viaje</p>
         </div>
         <button
+          type="button"
           onClick={() => setShowBudgetModal(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 hover:text-gray-900 text-sm transition-colors"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-white border border-white/15 bg-white/[0.06] hover:bg-white/[0.12] backdrop-blur-sm transition-colors flex-shrink-0"
         >
-          <Pencil className="w-4 h-4" />
-          Definir Presupuesto
+          <Pencil className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Definir presupuesto</span>
+          <span className="sm:hidden">Editar</span>
         </button>
       </div>
 
@@ -1339,6 +1389,38 @@ export default function BudgetPage() {
         </motion.div>
       )}
 
+      </div>
+      <style jsx>{`
+        .budget-stage :global(.text-gray-900) { color: rgba(255,255,255,0.95); }
+        .budget-stage :global(.text-gray-700) { color: rgba(255,255,255,0.85); }
+        .budget-stage :global(.text-gray-600) { color: rgba(255,255,255,0.72); }
+        .budget-stage :global(.text-gray-500) { color: rgba(255,255,255,0.58); }
+        .budget-stage :global(.text-gray-400) { color: rgba(255,255,255,0.45); }
+        .budget-stage :global(.text-gray-300) { color: rgba(255,255,255,0.30); }
+        .budget-stage :global(.text-gray-200) { color: rgba(255,255,255,0.18); }
+        .budget-stage :global(.bg-white) { background-color: rgba(255,255,255,0.04); }
+        .budget-stage :global(.bg-gray-50) { background-color: rgba(255,255,255,0.04); }
+        .budget-stage :global(.bg-gray-100) { background-color: rgba(255,255,255,0.06); }
+        .budget-stage :global(.border-gray-200) { border-color: rgba(255,255,255,0.10); }
+        .budget-stage :global(.border-gray-100) { border-color: rgba(255,255,255,0.06); }
+        .budget-stage :global(.divide-gray-200 > * + *) { border-color: rgba(255,255,255,0.08); }
+        .budget-stage :global(.divide-gray-50 > * + *) { border-color: rgba(255,255,255,0.05); }
+        .budget-stage :global(.glass) {
+          background-color: rgba(255,255,255,0.04) !important;
+          border-color: rgba(255,255,255,0.08) !important;
+          backdrop-filter: blur(8px);
+        }
+        .budget-stage :global(.shadow-md) { box-shadow: 0 0 20px rgba(0,0,0,0.18); }
+        .budget-stage :global(.text-blue-600) { color: rgb(147 197 253); }
+        .budget-stage :global(.text-purple-600) { color: rgb(216 180 254); }
+        .budget-stage :global(.text-emerald-700) { color: rgb(110 231 183); }
+        .budget-stage :global(.text-emerald-600) { color: rgb(52 211 153); }
+        .budget-stage :global(.text-emerald-500) { color: rgb(52 211 153); }
+        .budget-stage :global(.bg-emerald-50) { background-color: rgba(16,185,129,0.12); }
+        .budget-stage :global(.bg-blue-50) { background-color: rgba(59,130,246,0.12); }
+      `}</style>
+    </motion.div>
+
       {/* Modals */}
       {showBudgetModal && (
         <BudgetEditModal
@@ -1362,6 +1444,6 @@ export default function BudgetPage() {
           onSave={handleAddExpense}
         />
       )}
-    </div>
+    </>
   );
 }

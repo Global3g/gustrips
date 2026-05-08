@@ -1,18 +1,49 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { FileText } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  FileText,
+  Plane,
+  Hotel,
+  CarFront,
+  UtensilsCrossed,
+  MapPin,
+  Car,
+  Ship,
+  Shield,
+  BookOpen,
+  Stamp,
+  MoreHorizontal,
+  Eye,
+  Trash2,
+  X,
+  Search,
+} from 'lucide-react';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useEvents } from '@/hooks/useEvents';
 import { useToast } from '@/context/ToastContext';
 import DocumentUpload from '@/components/trips/DocumentUpload';
+import Particles from '@/components/ui/Particles';
 import { DOCUMENT_CATEGORIES } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
 import type { DocumentCategory, TripAttachment } from '@/types';
+import type { LucideIcon } from 'lucide-react';
 
-/* ─── Filter tab config ─────────────────────────── */
+const CATEGORY_ICONS: Record<DocumentCategory, LucideIcon> = {
+  flight: Plane,
+  hotel: Hotel,
+  car_rental: CarFront,
+  restaurant: UtensilsCrossed,
+  activity: MapPin,
+  transport: Car,
+  cruise: Ship,
+  insurance: Shield,
+  passport: BookOpen,
+  visa: Stamp,
+  other: MoreHorizontal,
+};
 
 const FILTER_TABS: { key: DocumentCategory | 'all'; label: string }[] = [
   { key: 'all', label: 'Todos' },
@@ -21,6 +52,8 @@ const FILTER_TABS: { key: DocumentCategory | 'all'; label: string }[] = [
   { key: 'car_rental', label: 'Autos' },
   { key: 'restaurant', label: 'Restaurantes' },
   { key: 'activity', label: 'Tours' },
+  { key: 'transport', label: 'Transporte' },
+  { key: 'cruise', label: 'Crucero' },
   { key: 'insurance', label: 'Seguros' },
   { key: 'passport', label: 'Pasaportes' },
   { key: 'visa', label: 'Visas' },
@@ -29,6 +62,7 @@ const FILTER_TABS: { key: DocumentCategory | 'all'; label: string }[] = [
 
 export default function DocumentsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const tripId = params.tripId as string;
 
   const {
@@ -41,25 +75,34 @@ export default function DocumentsPage() {
   const { events } = useEvents(tripId);
   const { toast } = useToast();
 
-  const [activeFilter, setActiveFilter] = useState<DocumentCategory | 'all'>('all');
-  const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>('other');
+  // Sidebar reservation pills pass ?type=flight etc — initialize filter from URL
+  const initialType = (searchParams.get('type') || 'all') as DocumentCategory | 'all';
+  const [activeFilter, setActiveFilter] = useState<DocumentCategory | 'all'>(initialType);
+  const [selectedCategory] = useState<DocumentCategory>('other');
+  const [search, setSearch] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
-  /* ─── Events map for name lookup ─────────────── */
+  useEffect(() => {
+    const t = searchParams.get('type');
+    if (t && Object.keys(DOCUMENT_CATEGORIES).includes(t)) {
+      setActiveFilter(t as DocumentCategory);
+    }
+  }, [searchParams]);
 
   const eventsMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const ev of events) {
-      map.set(ev.id, ev.title);
-    }
+    for (const ev of events) map.set(ev.id, ev.title);
     return map;
   }, [events]);
 
-  /* ─── Filtered + grouped documents ───────────── */
-
   const filteredDocuments = useMemo(() => {
-    if (activeFilter === 'all') return documents;
-    return documents.filter((d) => (d.category || 'other') === activeFilter);
-  }, [documents, activeFilter]);
+    let out = activeFilter === 'all' ? documents : documents.filter((d) => (d.category || 'other') === activeFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      out = out.filter((d) => d.name.toLowerCase().includes(q));
+    }
+    return out;
+  }, [documents, activeFilter, search]);
 
   const groupedDocuments = useMemo(() => {
     const groups: Record<string, TripAttachment[]> = {};
@@ -71,7 +114,12 @@ export default function DocumentsPage() {
     return groups;
   }, [filteredDocuments]);
 
-  /* ─── Handlers ────────────────────────────────── */
+  const totalSize = useMemo(() => documents.reduce((sum, d) => sum + (d.size || 0), 0), [documents]);
+  const categoriesUsed = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of documents) set.add(d.category || 'other');
+    return set.size;
+  }, [documents]);
 
   const handleUpload = async (
     file: File,
@@ -94,6 +142,7 @@ export default function DocumentsPage() {
   const handleDelete = async (docId: string, url: string) => {
     try {
       await deleteDocument(docId, url);
+      setConfirmingDelete(null);
       toast('Documento eliminado', 'success');
     } catch (error) {
       console.error('Error al eliminar documento:', error);
@@ -101,71 +150,144 @@ export default function DocumentsPage() {
     }
   };
 
-  /* ─── Render ──────────────────────────────────── */
-
   return (
-    <div className="space-y-6">
-      {/* Encabezado */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Documentos</h1>
-        <p className="text-gray-400 text-sm">
-          Sube boletos, reservaciones y documentos importantes
-        </p>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30"
+      style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
+    >
+      {/* Visual layer */}
+      <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+        <Particles count={28} />
+        <div
+          className="absolute -top-12 left-1/4 w-80 h-80 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.20), transparent 70%)' }}
+        />
+        <div
+          className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.18), transparent 70%)' }}
+        />
+        <div
+          className="absolute bottom-12 left-1/4 w-64 h-64 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.14), transparent 70%)' }}
+        />
       </div>
 
-      {/* Info rapida */}
-      {documents.length > 0 && (
-        <div className="glass rounded-xl px-4 py-3 mb-6 flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
-            <FileText className="w-4 h-4 text-blue-600" />
+      {/* Content */}
+      <div className="relative z-10 p-5 sm:p-7 space-y-5">
+        {/* ─── Hero ─── */}
+        <div className="flex items-start gap-3">
+          <div
+            className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 border border-violet-300/30"
+            style={{
+              background: 'linear-gradient(135deg, rgba(139,92,246,0.18), rgba(139,92,246,0.06))',
+              boxShadow: '0 0 20px rgba(139,92,246,0.2)',
+            }}
+          >
+            <FileText className="w-6 h-6 text-violet-200" />
           </div>
-          <span className="text-gray-600 text-sm">
-            {documents.length} {documents.length === 1 ? 'documento' : 'documentos'} subidos
-          </span>
+          <div>
+            <h1
+              className="text-xl sm:text-2xl font-black tracking-tight bg-clip-text text-transparent"
+              style={{ backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #d6c5ff 60%, #c4b5fd 100%)' }}
+            >
+              Reservas y documentos
+            </h1>
+            <p className="text-white/55 text-[12px] mt-0.5">
+              Boletos, reservaciones y documentos importantes del viaje
+            </p>
+          </div>
         </div>
-      )}
 
-      {/* Filter tabs */}
-      {documents.length > 0 && (
-        <div className="mb-6 -mx-4 px-4 overflow-x-auto scrollbar-none scroll-fade-right">
-          <div className="flex items-center gap-1.5 min-w-max pb-2">
+        {/* ─── Stats ─── */}
+        {documents.length > 0 && (
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-3">
+              <div className="text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1">Total</div>
+              <div className="text-white text-xl font-black tabular-nums">{documents.length}</div>
+              <div className="text-white/40 text-[10px] mt-0.5">documento{documents.length !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-3">
+              <div className="text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1">Categorías</div>
+              <div className="text-white text-xl font-black tabular-nums">{categoriesUsed}</div>
+              <div className="text-white/40 text-[10px] mt-0.5">en uso</div>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-3">
+              <div className="text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1">Espacio</div>
+              <div className="text-white text-xl font-black tabular-nums">{formatFileSize(totalSize)}</div>
+              <div className="text-white/40 text-[10px] mt-0.5">subidos</div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Search ─── */}
+        {documents.length > 0 && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar documento…"
+              className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl pl-10 pr-10 py-2.5 text-white text-sm placeholder:text-white/35 outline-none focus:border-violet-300/60 focus:bg-white/[0.08] backdrop-blur-sm transition-all"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ─── Filter chips ─── */}
+        {documents.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
             {FILTER_TABS.map((tab) => {
-              const count =
-                tab.key === 'all'
-                  ? documents.length
-                  : categoryCounts[tab.key] || 0;
+              const count = tab.key === 'all' ? documents.length : categoryCounts[tab.key] || 0;
               const isActive = activeFilter === tab.key;
-              const catConfig =
-                tab.key !== 'all' ? DOCUMENT_CATEGORIES[tab.key] : null;
-
+              const catConfig = tab.key !== 'all' ? DOCUMENT_CATEGORIES[tab.key] : null;
               if (tab.key !== 'all' && count === 0) return null;
-
+              const Icon = tab.key !== 'all' ? CATEGORY_ICONS[tab.key as DocumentCategory] : null;
               return (
                 <button
                   key={tab.key}
+                  type="button"
                   onClick={() => setActiveFilter(tab.key)}
                   className={classNames(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap',
+                    'flex-shrink-0 inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full text-xs font-medium transition-all border whitespace-nowrap',
                     isActive
-                      ? 'bg-red-100 text-red-700 shadow-sm'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-700'
+                      ? 'border-white/30 text-white'
+                      : 'bg-white/[0.03] border-white/[0.08] text-white/55 hover:text-white/85 hover:border-white/20',
                   )}
+                  style={
+                    isActive && catConfig
+                      ? { background: `${catConfig.color}22`, boxShadow: `0 0 14px ${catConfig.color}44` }
+                      : isActive
+                      ? { background: 'rgba(255,255,255,0.08)' }
+                      : undefined
+                  }
                 >
-                  {catConfig && (
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{
-                        backgroundColor: catConfig.color,
-                      }}
-                    />
+                  {Icon && catConfig ? (
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${catConfig.color}33` }}
+                    >
+                      <Icon className="w-3 h-3" style={{ color: catConfig.color }} />
+                    </span>
+                  ) : (
+                    <span className="w-1 h-1 ml-1" />
                   )}
                   {tab.label}
                   <span
                     className={classNames(
-                      'text-[10px] px-1.5 py-0.5 rounded-full',
-                      isActive
-                        ? 'bg-red-200 text-red-700'
-                        : 'bg-gray-200 text-gray-400'
+                      'text-[10px] font-bold rounded-full px-1.5 py-0.5 tabular-nums',
+                      isActive ? 'bg-white/15 text-white' : 'bg-white/[0.06] text-white/55',
                     )}
                   >
                     {count}
@@ -174,180 +296,191 @@ export default function DocumentsPage() {
               );
             })}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Upload component */}
-      <div className="mb-8">
-        <DocumentUpload
-          documents={[]}
-          onUpload={handleUpload}
-          onDelete={handleDelete}
-          loading={false}
-          category={selectedCategory}
-          hideCategorySelector={false}
-        />
-      </div>
-
-      {/* Documents grouped by category */}
-      {loading ? (
-        <div className="space-y-6">
-          <div className="space-y-2 mb-2">
-            <div className="h-4 w-40 bg-gray-200 rounded-lg animate-pulse" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="rounded-xl bg-white/40 backdrop-blur-sm border border-gray-200/60 p-3 flex items-center gap-3 animate-pulse"
-                style={{ animationDelay: `${i * 100}ms` }}
-              >
-                <div className="w-12 h-12 rounded-lg bg-gray-200 flex-shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-3/4 bg-gray-200 rounded" />
-                  <div className="h-3 w-1/3 bg-gray-100 rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* ─── Upload (delegates to existing component) ─── */}
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4">
+          <div className="text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-3">Subir documento</div>
+          <DocumentUpload
+            documents={[]}
+            onUpload={handleUpload}
+            onDelete={handleDelete}
+            loading={false}
+            category={selectedCategory}
+            hideCategorySelector={false}
+          />
         </div>
-      ) : filteredDocuments.length === 0 ? (
-        <div className="text-center py-8">
-          <FileText className="w-12 h-12 text-blue-300 mx-auto mb-3" />
-          <p className="text-gray-300 text-sm">Sube tus confirmaciones, boletos y documentos importantes</p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {Object.entries(groupedDocuments).map(([catKey, docs]) => {
-            const catConfig = DOCUMENT_CATEGORIES[catKey as DocumentCategory];
-            if (!catConfig) return null;
 
-            return (
-              <motion.div
-                key={catKey}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                {/* Section header */}
-                {activeFilter === 'all' && (
-                  <div className="flex items-center gap-2 mb-3">
-                    <div
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: catConfig.color }}
-                    />
-                    <h3 className="text-gray-700 text-sm font-semibold">
-                      {catConfig.label}
-                    </h3>
-                    <div className="flex-1 h-px bg-gray-200" />
-                    <span className="text-gray-300 text-xs">{docs.length}</span>
+        {/* ─── List ─── */}
+        {loading ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3 flex items-center gap-3 animate-pulse"
+                  style={{ animationDelay: `${i * 100}ms` }}
+                >
+                  <div className="w-12 h-12 rounded-xl bg-white/[0.06] flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-3/4 bg-white/[0.06] rounded" />
+                    <div className="h-2 w-1/3 bg-white/[0.04] rounded" />
                   </div>
-                )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : filteredDocuments.length === 0 ? (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-12 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-7 h-7 text-white/30" />
+            </div>
+            <p className="text-white/85 font-semibold mb-1">
+              {documents.length === 0 ? 'Sin documentos aún' : 'Nada coincide con los filtros'}
+            </p>
+            <p className="text-white/40 text-xs">
+              {documents.length === 0 ? 'Sube boletos, reservaciones y documentos importantes' : 'Prueba con otros filtros o limpia la búsqueda'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <AnimatePresence initial={false} mode="popLayout">
+              {Object.entries(groupedDocuments).map(([catKey, docs]) => {
+                const catConfig = DOCUMENT_CATEGORIES[catKey as DocumentCategory];
+                if (!catConfig) return null;
+                const Icon = CATEGORY_ICONS[catKey as DocumentCategory] || MoreHorizontal;
 
-                {/* Documents grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {docs.map((d) => {
-                    const isImage = d.type.startsWith('image/');
-                    const isPdf = d.type === 'application/pdf';
-                    const eventName = d.eventId
-                      ? eventsMap.get(d.eventId)
-                      : null;
+                return (
+                  <motion.div
+                    key={catKey}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    {/* Section header */}
+                    {activeFilter === 'all' && (
+                      <div className="flex items-center gap-2 mb-3 px-1">
+                        <span
+                          className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{
+                            backgroundColor: `${catConfig.color}22`,
+                            boxShadow: `0 0 12px ${catConfig.color}33`,
+                          }}
+                        >
+                          <Icon className="w-3.5 h-3.5" style={{ color: catConfig.color }} />
+                        </span>
+                        <h3 className="text-white text-sm font-bold">{catConfig.label}</h3>
+                        <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
+                        <span className="text-white/40 text-[11px] tabular-nums">{docs.length}</span>
+                      </div>
+                    )}
 
-                    return (
-                      <div
-                        key={d.id}
-                        className="glass rounded-xl p-3 flex items-center gap-3 group"
-                      >
-                        {/* Thumbnail / icon */}
-                        <div className="w-12 h-12 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                          {isImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={d.url}
-                              alt={d.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <FileText
-                              className="w-6 h-6"
-                              style={{ color: catConfig.color }}
-                            />
-                          )}
-                        </div>
+                    {/* Documents grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {docs.map((d) => {
+                        const isImage = d.type.startsWith('image/');
+                        const isPdf = d.type === 'application/pdf';
+                        const eventName = d.eventId ? eventsMap.get(d.eventId) : null;
+                        const isConfirming = confirmingDelete === d.id;
 
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-gray-700 text-sm font-medium truncate">
-                            {d.name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-gray-300 text-xs">
-                              {formatFileSize(d.size)}
-                            </span>
-                            {eventName && (
-                              <span className="text-gray-400 text-xs truncate">
-                                {eventName}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity">
-                          {(isImage || isPdf) && (
+                        return (
+                          <motion.div
+                            key={d.id}
+                            layout
+                            whileHover={{ y: -1 }}
+                            transition={{ duration: 0.2 }}
+                            className="relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-3 flex items-center gap-3 group hover:border-white/20 hover:bg-white/[0.06] transition-all"
+                          >
+                            {/* Thumbnail / icon */}
                             <a
                               href={d.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="p-1.5 text-gray-300 hover:text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                              aria-label="Ver"
+                              className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/10"
+                              style={{ background: isImage ? 'transparent' : `${catConfig.color}18` }}
                             >
-                              <FileText className="w-4 h-4" />
+                              {isImage ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={d.url} alt={d.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Icon className="w-5 h-5" style={{ color: catConfig.color }} />
+                              )}
                             </a>
-                          )}
-                          <button
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Eliminar "${d.name}"?`
-                                )
-                              ) {
-                                handleDelete(d.id, d.url);
-                              }
-                            }}
-                            className="p-1.5 text-red-400/50 hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors"
-                            aria-label="Eliminar"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M3 6h18" />
-                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white text-sm font-semibold truncate">{d.name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 text-[11px]">
+                                <span className="text-white/40 tabular-nums">{formatFileSize(d.size)}</span>
+                                {eventName && (
+                                  <>
+                                    <span className="text-white/20">·</span>
+                                    <span className="text-white/55 truncate">{eventName}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            {isConfirming ? (
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <span className="text-white/55 text-[11px] mr-1">¿Borrar?</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(d.id, d.url)}
+                                  className="px-2 py-1 text-[11px] font-bold rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors"
+                                >
+                                  Sí
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingDelete(null)}
+                                  className="px-2 py-1 text-[11px] font-bold rounded-md bg-white/10 text-white/70 hover:bg-white/15 transition-colors"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-0.5 flex-shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                {(isImage || isPdf) && (
+                                  <a
+                                    href={d.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white/55 hover:text-white hover:bg-white/10 transition-all"
+                                    aria-label="Ver"
+                                    title="Ver"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingDelete(d.id)}
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white/55 hover:text-red-300 hover:bg-red-400/10 transition-all"
+                                  aria-label="Eliminar"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 }
-
-/* ─── Helpers ───────────────────────────────────── */
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
