@@ -690,12 +690,12 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
         </div>
       </div>
 
-      {/* Hidden file input (always mounted) */}
+      {/* Hidden file input (always mounted) — no capture so mobile shows
+          camera / gallery / files chooser including PDFs */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*,application/pdf"
-        capture="environment"
         onChange={handlePhotoChange}
         className="hidden"
       />
