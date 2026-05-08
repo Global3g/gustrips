@@ -31,6 +31,7 @@ import type { LucideIcon } from 'lucide-react';
 import { differenceInMinutes } from 'date-fns';
 import { EVENT_TYPES, EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
 import { classNames, formatCurrency, getTimezoneAbbr } from '@/lib/utils/helpers';
+import { useExchangeRates } from '@/hooks/useExchangeRates';
 import DocumentUpload from '@/components/trips/DocumentUpload';
 import PhotoGallery from '@/components/trips/PhotoGallery';
 import EventPattern from '@/components/trips/EventPattern';
@@ -310,13 +311,16 @@ export default function EventCard({
   const docCategory: DocumentCategory = EVENT_TYPE_TO_DOC_CATEGORY[event.type] || 'other';
   const docCount = eventDocuments.length;
 
-  /* Real cost vs estimated cost — only sum expenses with same currency as event */
+  /* Real cost vs estimated cost — convert each expense to the event's currency
+     so a 9 EUR dinner gets summed against a 1500 MXN planned budget. */
   const eventCurrency = event.currency || 'MXN';
+  const { convert: fxConvert } = useExchangeRates(eventCurrency);
   const realCost = useMemo(() => {
-    return eventExpenses
-      .filter((exp) => (exp.currency || 'MXN') === eventCurrency)
-      .reduce((sum, exp) => sum + (exp.amount || 0), 0);
-  }, [eventExpenses, eventCurrency]);
+    return eventExpenses.reduce((sum, exp) => {
+      const fromCur = exp.currency || eventCurrency;
+      return sum + fxConvert(exp.amount || 0, fromCur);
+    }, 0);
+  }, [eventExpenses, eventCurrency, fxConvert]);
   const hasRealCost = eventExpenses.length > 0;
   const costDelta = realCost - event.cost;
   const costDeltaPct = event.cost > 0 ? (costDelta / event.cost) * 100 : 0;
