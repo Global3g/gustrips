@@ -23,7 +23,7 @@ import {
   Sparkles,
   Clock,
 } from 'lucide-react';
-import { classNames, formatCurrency } from '@/lib/utils/helpers';
+import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { ROUTES } from '@/config/constants';
 import StatusChangeMenu from '@/components/trips/sidebar/StatusChangeMenu';
@@ -350,11 +350,6 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
     return groups;
   }, [itineraryDays]);
 
-  /* ---- Budget ---- */
-
-  const totalSpent = useMemo(() => events.reduce((sum, e) => sum + (e.cost || 0), 0), [events]);
-  const budgetCurrency = trip?.budgetCurrency || 'MXN';
-
   /* ---- Date range formatted ---- */
 
   const dateRange = useMemo(() => {
@@ -579,13 +574,6 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             icon={<Wallet className="w-4 h-4" />}
             isActive={isActive('/budget')}
             color="budget"
-            badge={
-              totalSpent > 0 ? (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-sm border bg-emerald-500/15 text-emerald-400 border-emerald-500/10 shadow-lg shadow-emerald-500/5">
-                  {formatCurrency(totalSpent, budgetCurrency)}
-                </span>
-              ) : undefined
-            }
           />
           <NavItem
             href={basePath + '/expenses'}

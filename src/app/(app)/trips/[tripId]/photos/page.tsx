@@ -278,40 +278,52 @@ export default function PhotosPage() {
       setUploading(true);
       const today = selectedDate;
       let successCount = 0;
+      const newUrls: string[] = [];
       try {
+        // Upload each photo to the album, track URLs
         for (const file of fileArray) {
           try {
             const photo = await addPhoto(file, today, undefined, eventId || undefined);
-            if (eventId) {
-              try {
-                const event = events.find((e) => e.id === eventId);
-                const currentPhotos = event?.photos ?? [];
-                const updates: any = { photos: [...currentPhotos, photo.url] };
-                if (city && city !== event?.city) updates.city = city;
-                if (country && country !== event?.country) updates.country = country;
-                if (eventName && eventType) {
-                  const detailKey = getEventNameFieldKey(eventType);
-                  if (detailKey) {
-                    const currentDetails = event?.details || {};
-                    if (currentDetails[detailKey] !== eventName) {
-                      updates.details = { ...currentDetails, [detailKey]: eventName };
-                    }
-                  }
-                }
-                await updateEvent(eventId, updates);
-              } catch (linkErr) {
-                console.error('Error vinculando foto al evento:', linkErr);
-              }
-            }
+            if (eventId) newUrls.push(photo.url);
             successCount++;
           } catch (err) {
             console.error('Error uploading photo:', err);
             toast('Error al subir foto', 'error');
           }
         }
+
+        // Batch update the event ONCE with all new photo URLs + meta.
+        // Previously this ran inside the upload loop, where the stale
+        // event.photos closure caused every iteration to overwrite the
+        // last — only the final photo survived.
+        if (eventId && newUrls.length > 0) {
+          try {
+            const event = events.find((e) => e.id === eventId);
+            const currentPhotos = event?.photos ?? [];
+            const updates: any = { photos: [...currentPhotos, ...newUrls] };
+            if (city && city !== event?.city) updates.city = city;
+            if (country && country !== event?.country) updates.country = country;
+            if (eventName && eventType) {
+              const detailKey = getEventNameFieldKey(eventType);
+              if (detailKey) {
+                const currentDetails = event?.details || {};
+                if (currentDetails[detailKey] !== eventName) {
+                  updates.details = { ...currentDetails, [detailKey]: eventName };
+                }
+              }
+            }
+            await updateEvent(eventId, updates);
+          } catch (linkErr) {
+            console.error('Error vinculando fotos al evento:', linkErr);
+          }
+        }
+
         if (successCount > 0) {
+          const linkedNote = eventId ? ' y vinculada' + (successCount === 1 ? '' : 's') + ' al evento' : '';
           toast(
-            successCount === 1 ? 'Foto agregada al álbum' : `${successCount} fotos agregadas al álbum`,
+            successCount === 1
+              ? `Foto agregada al álbum${linkedNote}`
+              : `${successCount} fotos agregadas al álbum${linkedNote}`,
             'success',
           );
         }
@@ -882,6 +894,16 @@ export default function PhotosPage() {
                     {pendingFiles.length} {pendingFiles.length === 1 ? 'foto' : 'fotos'}
                   </span>
                 </div>
+
+                {pendingFiles.length > 1 && (
+                  <div className="mb-4 rounded-xl border border-amber-300/30 bg-amber-400/[0.08] backdrop-blur-sm px-3 py-2 text-[11px] text-amber-100/90 flex items-start gap-2">
+                    <span className="text-base leading-none">📸</span>
+                    <span>
+                      Las <span className="font-bold">{pendingFiles.length} fotos</span> se tratarán como un grupo y se vincularán al
+                      mismo evento que selecciones abajo.
+                    </span>
+                  </div>
+                )}
 
                 {/* Date */}
                 <label className="block text-white/45 text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5">
