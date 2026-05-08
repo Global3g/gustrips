@@ -97,27 +97,39 @@ export default function PhotoLightbox({
             pinch={{ step: 5 }}
             limitToBounds={false}
             centerOnInit
+            centerZoomedOut
           >
             <TransformComponent
-              wrapperStyle={{ width: '100%', height: '100%' }}
-              contentStyle={{ width: '100%', height: '100%' }}
+              wrapperStyle={{
+                width: '100vw',
+                height: '100vh',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              contentStyle={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
-              <div className="w-screen h-screen flex items-center justify-center select-none">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  key={photo.url}
-                  src={fullSrc}
-                  alt={photo.caption || 'Foto'}
-                  draggable={false}
-                  style={{
-                    transform: `rotate(${rotation}deg)`,
-                    transition: 'transform 0.25s ease',
-                    maxWidth: '92vw',
-                    maxHeight: '88vh',
-                    objectFit: 'contain',
-                  }}
-                />
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={photo.url}
+                src={fullSrc}
+                alt={photo.caption || 'Foto'}
+                draggable={false}
+                style={{
+                  transform: `rotate(${rotation}deg)`,
+                  transition: 'transform 0.25s ease',
+                  maxWidth: '92vw',
+                  maxHeight: '85vh',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  userSelect: 'none',
+                }}
+              />
             </TransformComponent>
           </TransformWrapper>
 

@@ -797,7 +797,7 @@ export default function PhotosPage() {
                     <div className="w-7 h-7 rounded-lg bg-white/[0.06] animate-pulse" />
                     <div className="h-4 w-44 bg-white/[0.06] rounded-lg animate-pulse" />
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
                     {[0, 1, 2, 3, 4, 5].map((i) => (
                       <div
                         key={i}
@@ -971,7 +971,7 @@ export default function PhotosPage() {
                       ));
 
                       const grid = (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{photoCards}</div>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">{photoCards}</div>
                       );
 
                       if (!reorderable || !group.eventId) return grid;
