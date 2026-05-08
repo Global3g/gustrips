@@ -485,10 +485,13 @@ export default function PhotosPage() {
     }
   }, [editingPhoto, editPhotoCaption, editPhotoDate, editPhotoEventId, updatePhoto, toast]);
 
-  /* ── Drag-and-drop reorder within an event group ── */
+  /* ── Drag-and-drop reorder within an event group ──
+     - PointerSensor distance:8 → click within 8px = open lightbox,
+       beyond that = start drag.
+     - TouchSensor delay:250 → tap = open, long-press = drag. */
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
