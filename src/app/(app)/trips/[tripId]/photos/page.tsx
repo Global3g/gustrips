@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, parseISO, eachDayOfInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -81,6 +81,8 @@ function getEventName(event: any): string | undefined {
 
 export default function PhotosPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
   const { events, updateEvent, loading: eventsLoading } = useEvents(tripId);
@@ -279,6 +281,16 @@ export default function PhotosPage() {
 
   /* ── Flat photo list for lightbox ── */
   const flatPhotos = useMemo(() => allPhotos, [allPhotos]);
+
+  /* ── Auto-open the file picker when navigated with ?upload=1 ── */
+  useEffect(() => {
+    if (searchParams.get('upload') !== '1') return;
+    const t = setTimeout(() => fileInputRef.current?.click(), 220);
+    // Strip the param so re-renders / back nav don't re-trigger
+    router.replace(`/trips/${tripId}/photos`, { scroll: false });
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── Upload handlers ── */
   const handleFiles = useCallback((files: FileList | File[]) => {
