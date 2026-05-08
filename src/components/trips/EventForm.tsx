@@ -37,6 +37,7 @@ import type { TripEvent, EventType, ExpenseCategory, PaymentMethod } from '@/typ
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
+import { useTrip } from '@/hooks/useTrip';
 import { getClientStorage } from '@/lib/firebase/client';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { extractReceiptData } from '@/lib/utils/receiptOCR';
@@ -400,13 +401,14 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const { user } = useAuth();
   const { addTripExpense } = useExpenses(tripId || '');
   const { travelers: allTravelers } = useGlobalTravelers();
+  const { trip } = useTrip(tripId || '');
 
-  // Get trip travelers (filtered by tripId)
+  // Get trip travelers (filtered by trip.travelerIds — only people actually on this trip)
   const tripTravelers = useMemo(() => {
-    // For now, we'll use allTravelers. In a real scenario, you'd filter by trip.travelerIds
-    // But we don't have the trip object here. We can pass it as a prop or get it from context
-    return allTravelers;
-  }, [allTravelers]);
+    const ids = trip?.travelerIds;
+    if (!ids || ids.length === 0) return allTravelers;
+    return allTravelers.filter((t) => ids.includes(t.id));
+  }, [allTravelers, trip?.travelerIds]);
 
   // Initialize paidBy and splitBetween when travelers load and when "Already paid" is selected
   useEffect(() => {
