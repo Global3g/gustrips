@@ -217,6 +217,8 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
       if (fileInputRef.current) fileInputRef.current.value = '';
 
       toast('Gasto registrado', 'success');
+      // Return to the trip overview after a successful capture
+      router.push(`/trips/${tripId}`);
     } catch {
       toast('Error al registrar gasto', 'error');
     } finally {
