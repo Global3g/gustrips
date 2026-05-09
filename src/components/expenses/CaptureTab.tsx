@@ -126,10 +126,12 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
         setCurrency(result.currency);
         setCategory(result.category);
         if (result.paymentMethod) setPaymentMethod(result.paymentMethod);
-        toast('Datos extraidos del ticket', 'success');
+        toast('Datos extraídos del ticket', 'success');
       }
-    } catch {
-      // Silently fail — user can fill manually
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No pude analizar el ticket.';
+      console.error('[OCR]', err);
+      toast(msg, 'error');
     } finally {
       setProcessingOCR(false);
     }

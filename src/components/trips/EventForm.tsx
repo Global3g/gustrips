@@ -508,7 +508,15 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const handleScanReceipt = async (file: File) => {
     setScanningReceipt(true);
     try {
-      const scanned = await extractReceiptData(file);
+      let scanned;
+      try {
+        scanned = await extractReceiptData(file);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'No pude leer el ticket.';
+        console.error('[OCR]', err);
+        alert(msg);
+        return;
+      }
 
       if (!scanned) {
         alert('No se pudo leer el ticket. Intenta con otra foto más clara.');
