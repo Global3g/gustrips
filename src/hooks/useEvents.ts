@@ -15,6 +15,7 @@ import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
 import { saveDeletedItem, clearOldDeletedItems } from '@/lib/utils/recovery';
+import { markMutation } from '@/components/SyncIndicator';
 import type { TripEvent } from '@/types';
 
 const UNDO_DELAY_MS = 8000;
@@ -66,6 +67,7 @@ export function useEvents(tripId: string) {
       createdBy: user.uid,
       createdAt: nowISO(),
     });
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
     return docRef.id;
   };
 
@@ -73,6 +75,7 @@ export function useEvents(tripId: string) {
     const db = getClientDb();
     const eventRef = doc(db, `trips/${tripId}/events`, eventId);
     await updateDoc(eventRef, data);
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
   };
 
   /**
@@ -96,6 +99,7 @@ export function useEvents(tripId: string) {
 
       // Soft delete: set deletedAt timestamp
       await updateDoc(eventRef, { deletedAt: nowISO() });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       // Clear any previous undo timer
       if (undoTimerRef.current) {
@@ -110,6 +114,7 @@ export function useEvents(tripId: string) {
         }
         // Remove deletedAt to restore the event
         await updateDoc(eventRef, { deletedAt: null });
+        try { markMutation(); } catch { /* localStorage may be unavailable */ }
         options?.onUndo?.();
       };
 
@@ -117,6 +122,7 @@ export function useEvents(tripId: string) {
       undoTimerRef.current = setTimeout(async () => {
         try {
           await deleteDoc(eventRef);
+          try { markMutation(); } catch { /* localStorage may be unavailable */ }
           options?.onConfirm?.();
         } catch (err) {
           console.error('Error al eliminar evento permanentemente:', err);

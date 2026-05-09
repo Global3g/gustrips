@@ -13,6 +13,7 @@ import {
 import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
+import { markMutation } from '@/components/SyncIndicator';
 import type { TripMember, TripInvite, MemberRole, TravelerInfo } from '@/types';
 
 interface UseMembersReturn {
@@ -102,6 +103,7 @@ export function useMembers(tripId: string): UseMembersReturn {
         invitedBy: user.uid,
         createdAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [user, tripId],
   );
@@ -115,6 +117,7 @@ export function useMembers(tripId: string): UseMembersReturn {
       const memberRef = doc(db, 'trips', tripId, 'members', uid);
 
       await setDoc(memberRef, { travelerInfo: info }, { merge: true });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [user, tripId],
   );

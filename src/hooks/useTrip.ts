@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
 import { nowISO, generateId } from '@/lib/utils/helpers';
+import { markMutation } from '@/components/SyncIndicator';
 import type { Trip } from '@/types';
 
 interface UseTripReturn {
@@ -57,6 +58,7 @@ export function useTrip(tripId: string): UseTripReturn {
         ...data,
         updatedAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [tripId],
   );
@@ -72,6 +74,7 @@ export function useTrip(tripId: string): UseTripReturn {
       shareToken: token,
       updatedAt: nowISO(),
     });
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
     return token;
   }, [tripId]);

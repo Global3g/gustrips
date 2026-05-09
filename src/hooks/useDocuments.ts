@@ -14,6 +14,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { getClientDb, getClientStorage } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
+import { markMutation } from '@/components/SyncIndicator';
 import type { TripAttachment, DocumentCategory } from '@/types';
 
 interface UploadOptions {
@@ -85,6 +86,7 @@ export function useDocuments(tripId: string) {
       }
 
       await addDoc(attachmentsRef, docData);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       return url;
     },
@@ -105,6 +107,7 @@ export function useDocuments(tripId: string) {
       const db = getClientDb();
       const docRef = doc(db, `trips/${tripId}/attachments`, docId);
       await deleteDoc(docRef);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [tripId]
   );

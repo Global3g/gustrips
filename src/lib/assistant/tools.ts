@@ -132,6 +132,72 @@ export const TOOL_SCHEMAS = [
       'Lee estadísticas del viaje (totales gastados, presupuesto, breakdown por categoría, balance) sin modificar nada. Úsalo para responder preguntas tipo "¿cuánto llevo gastado?".',
     parameters: { type: 'OBJECT', properties: {} },
   },
+  {
+    name: 'searchPlaces',
+    description:
+      'Busca lugares reales (restaurantes, hoteles, atracciones, etc.) cerca de un destino o coordenadas usando Google Places. Úsalo cuando el usuario pida sugerencias o quiera saber qué hay cerca.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: {
+          type: 'STRING',
+          description: "Texto de búsqueda, ej. 'restaurantes de mariscos' o 'cafés con wifi'",
+        },
+        near: {
+          type: 'STRING',
+          description:
+            "Lugar o ciudad de referencia, ej. 'Mazatlán' o 'Hotel Playa'. Si no se da, usa el destino del viaje.",
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'getPlaceDetails',
+    description:
+      'Obtiene detalles de un lugar específico devuelto por searchPlaces (horarios, teléfono, reviews, fotos). Usa el placeId que viene en el resultado.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        placeId: { type: 'STRING', description: 'ID del lugar devuelto por searchPlaces' },
+      },
+      required: ['placeId'],
+    },
+  },
+  {
+    name: 'addEventFromPlace',
+    description:
+      "Crea un evento del itinerario usando los datos de un lugar de Google Places. Útil después de searchPlaces — el usuario dice 'agrégalo' y tú llamas a este tool con el placeId, fecha y hora.",
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        placeId: { type: 'STRING', description: 'ID del lugar (de searchPlaces)' },
+        date: { type: 'STRING', description: 'Fecha en formato YYYY-MM-DD' },
+        startTime: { type: 'STRING', description: 'Hora de inicio HH:MM (24h), opcional' },
+        endTime: { type: 'STRING', description: 'Hora de fin HH:MM (24h), opcional' },
+        type: {
+          type: 'STRING',
+          enum: [
+            'flight',
+            'hotel',
+            'car_rental',
+            'activity',
+            'restaurant',
+            'transport',
+            'cruise',
+            'souvenirs',
+            'snacks',
+            'clothing',
+            'fuel',
+            'misc',
+          ],
+          description: 'Tipo de evento. Si no se da, se infiere de los types del lugar.',
+        },
+        notes: { type: 'STRING', description: 'Notas adicionales, opcional' },
+      },
+      required: ['placeId', 'date'],
+    },
+  },
 ] as const;
 
 /* ─── Client-side executor ───────────────────────────── */
@@ -289,6 +355,155 @@ export async function executeToolCall(
         byCategoryBase: byCategory,
         eventsCount: deps.events.length,
         expensesCount: deps.expenses.length,
+      });
+    }
+
+    case 'searchPlaces': {
+      const rawQuery = String(args.query || '').trim();
+      if (!rawQuery) {
+        return JSON.stringify({ ok: false, error: 'Falta query' });
+      }
+      const near = String(args.near || deps.trip?.destination || '').trim();
+      const fullQuery = near ? `${rawQuery} en ${near}` : rawQuery;
+      try {
+        const res = await fetch(
+          `/api/places?action=search&q=${encodeURIComponent(fullQuery)}`,
+          { signal: AbortSignal.timeout(30_000) },
+        );
+        const json = await res.json();
+        if (!json?.ok) {
+          return JSON.stringify({
+            ok: false,
+            error: json?.error || `Error ${res.status}`,
+          });
+        }
+        const list = Array.isArray(json.data) ? json.data : [];
+        const compact = list.slice(0, 5).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          address: p.address,
+          rating: p.rating,
+          openNow: p.openNow,
+          types: p.types,
+        }));
+        return JSON.stringify({ ok: true, results: compact });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Error desconocido';
+        return JSON.stringify({ ok: false, error: message });
+      }
+    }
+
+    case 'getPlaceDetails': {
+      const placeId = String(args.placeId || '').trim();
+      if (!placeId) return JSON.stringify({ ok: false, error: 'Falta placeId' });
+      try {
+        const res = await fetch(
+          `/api/places?action=details&id=${encodeURIComponent(placeId)}`,
+          { signal: AbortSignal.timeout(30_000) },
+        );
+        const json = await res.json();
+        if (!json?.ok) {
+          return JSON.stringify({
+            ok: false,
+            error: json?.error || `Error ${res.status}`,
+          });
+        }
+        return JSON.stringify({ ok: true, data: json.data });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Error desconocido';
+        return JSON.stringify({ ok: false, error: message });
+      }
+    }
+
+    case 'addEventFromPlace': {
+      const placeId = String(args.placeId || '').trim();
+      const date = String(args.date || '').trim();
+      if (!placeId) return JSON.stringify({ ok: false, error: 'Falta placeId' });
+      if (!date) return JSON.stringify({ ok: false, error: 'Falta fecha (YYYY-MM-DD)' });
+
+      let place: any;
+      try {
+        const res = await fetch(
+          `/api/places?action=details&id=${encodeURIComponent(placeId)}`,
+          { signal: AbortSignal.timeout(30_000) },
+        );
+        const json = await res.json();
+        if (!json?.ok) {
+          return JSON.stringify({
+            ok: false,
+            error: json?.error || `No se pudieron obtener detalles del lugar`,
+          });
+        }
+        place = json.data;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Error desconocido';
+        return JSON.stringify({ ok: false, error: message });
+      }
+
+      // Infer event type from Google Places types when the caller didn't pick one.
+      const placeTypes: string[] = Array.isArray(place?.types) ? place.types : [];
+      const inferType = (): EventType => {
+        if (placeTypes.some((t) => t === 'restaurant' || t === 'cafe' || t === 'bar' || t === 'food'))
+          return 'restaurant';
+        if (placeTypes.some((t) => t === 'lodging' || t === 'hotel')) return 'hotel';
+        if (
+          placeTypes.some(
+            (t) =>
+              t === 'tourist_attraction' ||
+              t === 'museum' ||
+              t === 'park' ||
+              t === 'amusement_park' ||
+              t === 'zoo' ||
+              t === 'aquarium',
+          )
+        )
+          return 'activity';
+        if (placeTypes.some((t) => t === 'airport')) return 'flight';
+        if (placeTypes.some((t) => t === 'car_rental')) return 'car_rental';
+        return 'activity';
+      };
+      const eventType: EventType = (args.type as EventType) || inferType();
+
+      const address: string = String(place?.address || '');
+      // Best-effort city: penultimate comma segment.
+      let city = '';
+      const segments = address
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (segments.length >= 2) {
+        city = segments[segments.length - 2];
+        // Strip leading postal codes / numeric prefixes.
+        city = city.replace(/^\d{4,6}\s+/, '').trim();
+      } else if (segments.length === 1) {
+        city = segments[0];
+      }
+
+      const userNotes = args.notes ? String(args.notes).trim() : '';
+      const phoneLine = place?.phone ? `Phone: ${place.phone}` : '';
+      const notes = [userNotes, phoneLine].filter(Boolean).join('\n');
+
+      const data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'> = {
+        title: String(place?.name || 'Lugar'),
+        type: eventType,
+        date,
+        startTime: args.startTime ? String(args.startTime) : '',
+        endTime: args.endTime ? String(args.endTime) : '',
+        location: address,
+        city: city || undefined,
+        notes,
+        cost: 0,
+        currency: deps.trip?.budgetCurrency || 'MXN',
+        attachments: [],
+        latitude: typeof place?.lat === 'number' ? place.lat : undefined,
+        longitude: typeof place?.lng === 'number' ? place.lng : undefined,
+      };
+
+      const id = await deps.createEvent(data);
+      return JSON.stringify({
+        ok: true,
+        eventId: id,
+        message: `Evento creado: ${data.title} el ${date}`,
       });
     }
 

@@ -14,6 +14,7 @@ import {
 import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
+import { markMutation } from '@/components/SyncIndicator';
 import type { SharedExpense, TripExpense } from '@/types';
 
 export interface Debt {
@@ -105,6 +106,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
         notes: '',
         createdAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [user, tripId],
   );
@@ -122,6 +124,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
         if (value !== undefined) cleanData[key] = value;
       }
       await addDoc(expensesRef, cleanData);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [user, tripId],
   );
@@ -133,6 +136,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
       // Remove id from partial to avoid writing it as a field
       const { id: _id, ...updateData } = data as Partial<TripExpense> & { id?: string };
       await updateDoc(expenseRef, updateData);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [tripId],
   );
@@ -142,6 +146,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
       const db = getClientDb();
       const expenseRef = doc(db, `trips/${tripId}/expenses`, expenseId);
       await deleteDoc(expenseRef);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [tripId],
   );

@@ -15,6 +15,7 @@ import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
 import { saveDeletedItem, clearOldDeletedItems } from '@/lib/utils/recovery';
+import { markMutation } from '@/components/SyncIndicator';
 import type { ChecklistItem, ChecklistPhase } from '@/types';
 
 const UNDO_DELAY_MS = 8000;
@@ -67,12 +68,14 @@ export function useChecklist(tripId: string) {
       createdBy: user.uid,
       createdAt: nowISO(),
     });
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
   };
 
   const toggleItem = async (itemId: string, checked: boolean) => {
     const db = getClientDb();
     const itemRef = doc(db, `trips/${tripId}/checklist`, itemId);
     await updateDoc(itemRef, { checked });
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
   };
 
   /**
@@ -94,6 +97,7 @@ export function useChecklist(tripId: string) {
 
       // Soft delete
       await updateDoc(itemRef, { deletedAt: nowISO() });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       if (undoTimerRef.current) {
         clearTimeout(undoTimerRef.current);
@@ -105,12 +109,14 @@ export function useChecklist(tripId: string) {
           undoTimerRef.current = null;
         }
         await updateDoc(itemRef, { deletedAt: null });
+        try { markMutation(); } catch { /* localStorage may be unavailable */ }
         options?.onUndo?.();
       };
 
       undoTimerRef.current = setTimeout(async () => {
         try {
           await deleteDoc(itemRef);
+          try { markMutation(); } catch { /* localStorage may be unavailable */ }
           options?.onConfirm?.();
         } catch (err) {
           console.error('Error al eliminar item permanentemente:', err);

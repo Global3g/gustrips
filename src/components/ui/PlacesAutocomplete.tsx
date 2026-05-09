@@ -54,10 +54,19 @@ export default function PlacesAutocomplete({
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/places?action=search&q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      setSuggestions(data.results || []);
-      setShowDropdown((data.results || []).length > 0);
+      const list: PlaceResult[] = Array.isArray(data?.data)
+        ? data.data.map((p: { id?: string; name?: string; address?: string; lat?: number; lng?: number }) => ({
+            name: p.name || '',
+            address: p.address || '',
+            lat: p.lat || 0,
+            lng: p.lng || 0,
+            placeId: p.id || '',
+          }))
+        : [];
+      setSuggestions(list);
+      setShowDropdown(list.length > 0);
     } catch {
       setSuggestions([]);
     } finally {

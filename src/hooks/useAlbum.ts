@@ -5,6 +5,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { nowISO } from '@/lib/utils/helpers';
+import { markMutation } from '@/components/SyncIndicator';
 import type { Trip, AlbumPhoto } from '@/types';
 
 /* ─── Image compression ─────────────────────────── */
@@ -150,6 +151,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         albumPhotos: arrayUnion(cleanUndefined(photo)),
         updatedAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       return photo;
     },
@@ -168,6 +170,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         albumPhotos: filtered,
         updatedAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       // Try to delete both thumbnail and full-quality versions from storage (best-effort)
       const tryDelete = async (firebaseUrl: string) => {
@@ -207,6 +210,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         albumPhotos: updatedPhotos,
         updatedAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [tripId, trip],
   );
@@ -226,6 +230,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         albumPhotos: updatedPhotos,
         updatedAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [tripId, trip],
   );
@@ -339,6 +344,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         albumPhotos: updated,
         updatedAt: nowISO(),
       });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       return { migrated, failed, skipped, urlMap };
     },
@@ -359,6 +365,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       albumPhotos: cleaned,
       updatedAt: nowISO(),
     });
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
     return cleaned.length;
   }, [tripId, trip]);
 

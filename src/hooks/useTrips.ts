@@ -16,6 +16,7 @@ import { getClientDb } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { nowISO } from '@/lib/utils/helpers';
 import { saveDeletedItem, clearOldDeletedItems } from '@/lib/utils/recovery';
+import { markMutation } from '@/components/SyncIndicator';
 import type { Trip, TripMember } from '@/types';
 
 interface UseTripsReturn {
@@ -88,6 +89,7 @@ export function useTrips(): UseTripsReturn {
       };
 
       const docRef = await addDoc(collection(db, 'trips'), tripData);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       // Crear miembro owner en subcoleccion
       const memberData: Omit<TripMember, 'uid'> & { uid: string } = {
@@ -100,6 +102,7 @@ export function useTrips(): UseTripsReturn {
       };
 
       await setDoc(doc(db, 'trips', docRef.id, 'members', user.uid), memberData);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       return docRef.id;
     },
@@ -121,6 +124,7 @@ export function useTrips(): UseTripsReturn {
 
       const db = getClientDb();
       await deleteDoc(doc(db, 'trips', id));
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
     [user, trips],
   );
