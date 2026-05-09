@@ -1,0 +1,298 @@
+/* AI Trip Assistant — tool definitions (Gemini function-calling schema)
+   plus a client-side executor that maps tool calls onto the existing
+   data hooks (createEvent, addTripExpense, updateTrip, etc.).
+
+   The executor returns a compact, human-readable result string so the
+   model can echo confirmation back to the user. */
+
+import type { TripEvent, EventType, Trip, TripExpense, ExpenseCategory } from '@/types';
+
+/* ─── Gemini function declarations ───────────────────── */
+
+export const TOOL_SCHEMAS = [
+  {
+    name: 'createEvent',
+    description:
+      'Crea un nuevo evento en el itinerario del viaje actual. Úsalo cuando el usuario pida agregar un evento (cena, vuelo, hotel, actividad, transporte, etc.).',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        title: { type: 'STRING', description: 'Título corto del evento, ej. "Cena en La Docena"' },
+        type: {
+          type: 'STRING',
+          enum: [
+            'flight',
+            'hotel',
+            'car_rental',
+            'activity',
+            'restaurant',
+            'transport',
+            'cruise',
+            'souvenirs',
+            'snacks',
+            'clothing',
+            'fuel',
+            'misc',
+          ],
+          description: 'Tipo de evento',
+        },
+        date: { type: 'STRING', description: 'Fecha en formato YYYY-MM-DD' },
+        startTime: { type: 'STRING', description: 'Hora de inicio HH:MM (24h), opcional' },
+        endTime: { type: 'STRING', description: 'Hora de fin HH:MM (24h), opcional' },
+        location: { type: 'STRING', description: 'Ubicación o dirección, opcional' },
+        cost: { type: 'NUMBER', description: 'Costo estimado del evento, opcional' },
+        currency: { type: 'STRING', description: 'Moneda (MXN, USD, EUR…), opcional' },
+        notes: { type: 'STRING', description: 'Notas adicionales, opcional' },
+      },
+      required: ['title', 'type', 'date'],
+    },
+  },
+  {
+    name: 'updateEvent',
+    description:
+      'Actualiza un evento existente. Solo úsalo cuando el usuario pida cambiar un evento específico que ya existe.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        eventId: { type: 'STRING', description: 'ID del evento a actualizar' },
+        title: { type: 'STRING' },
+        date: { type: 'STRING' },
+        startTime: { type: 'STRING' },
+        endTime: { type: 'STRING' },
+        location: { type: 'STRING' },
+        cost: { type: 'NUMBER' },
+        currency: { type: 'STRING' },
+        notes: { type: 'STRING' },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'deleteEvent',
+    description: 'Elimina un evento del itinerario.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        eventId: { type: 'STRING', description: 'ID del evento a eliminar' },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'addExpense',
+    description:
+      'Registra un gasto del viaje. Úsalo cuando el usuario diga "gasté X en Y" o equivalente.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        description: { type: 'STRING', description: 'Descripción corta del gasto' },
+        amount: { type: 'NUMBER', description: 'Monto del gasto (puede ser 0 si fue ahorrado)' },
+        currency: { type: 'STRING', description: 'Moneda del gasto (MXN, USD, EUR…)' },
+        category: {
+          type: 'STRING',
+          enum: [
+            'flight',
+            'hotel',
+            'car_rental',
+            'activity',
+            'restaurant',
+            'transport',
+            'cruise',
+            'souvenirs',
+            'snacks',
+            'clothing',
+            'fuel',
+            'misc',
+          ],
+          description: 'Categoría del gasto',
+        },
+        date: { type: 'STRING', description: 'Fecha en YYYY-MM-DD; si no la dan, usa hoy' },
+        eventId: { type: 'STRING', description: 'ID de evento relacionado, opcional' },
+        notes: { type: 'STRING', description: 'Notas opcionales' },
+      },
+      required: ['description', 'amount', 'currency', 'category', 'date'],
+    },
+  },
+  {
+    name: 'updateBudget',
+    description:
+      'Cambia el presupuesto total del viaje y/o la moneda base. Úsalo solo cuando el usuario pida ajustar el presupuesto.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        budget: { type: 'NUMBER', description: 'Nuevo presupuesto total' },
+        budgetCurrency: { type: 'STRING', description: 'Moneda base del viaje' },
+      },
+      required: ['budget'],
+    },
+  },
+  {
+    name: 'getStats',
+    description:
+      'Lee estadísticas del viaje (totales gastados, presupuesto, breakdown por categoría, balance) sin modificar nada. Úsalo para responder preguntas tipo "¿cuánto llevo gastado?".',
+    parameters: { type: 'OBJECT', properties: {} },
+  },
+] as const;
+
+/* ─── Client-side executor ───────────────────────────── */
+
+export interface ToolDeps {
+  trip: Trip | null;
+  events: TripEvent[];
+  expenses: TripExpense[];
+  currentUserId: string;
+  defaultPaidBy: string;
+  defaultSplitBetween: string[];
+  todayDate: string;
+  createEvent: (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => Promise<string>;
+  updateEvent: (id: string, updates: Partial<TripEvent>) => Promise<void>;
+  deleteEvent: (
+    id: string,
+    options?: { onUndo?: () => void; onConfirm?: () => void },
+  ) => Promise<{ undo: () => Promise<void> }>;
+  addTripExpense: (data: Omit<TripExpense, 'id' | 'createdAt'>) => Promise<void>;
+  updateTrip: (data: Partial<Omit<Trip, 'id' | 'createdBy' | 'createdAt'>>) => Promise<void>;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+function pickEventFields(args: Record<string, any>) {
+  const fields: Partial<TripEvent> = {};
+  if (args.title !== undefined) fields.title = String(args.title);
+  if (args.type !== undefined) fields.type = args.type as EventType;
+  if (args.date !== undefined) fields.date = String(args.date);
+  if (args.startTime !== undefined) fields.startTime = String(args.startTime);
+  if (args.endTime !== undefined) fields.endTime = String(args.endTime);
+  if (args.location !== undefined) fields.location = String(args.location);
+  if (args.cost !== undefined) fields.cost = Number(args.cost) || 0;
+  if (args.currency !== undefined) fields.currency = String(args.currency);
+  if (args.notes !== undefined) fields.notes = String(args.notes);
+  return fields;
+}
+
+function formatCurrencyTuple(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: currency || 'MXN',
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount} ${currency}`;
+  }
+}
+
+export async function executeToolCall(
+  name: string,
+  args: Record<string, any>,
+  deps: ToolDeps,
+): Promise<string> {
+  switch (name) {
+    case 'createEvent': {
+      const data = {
+        title: String(args.title || 'Evento'),
+        type: (args.type || 'misc') as EventType,
+        date: String(args.date || deps.todayDate),
+        startTime: args.startTime ? String(args.startTime) : '',
+        endTime: args.endTime ? String(args.endTime) : '',
+        location: args.location ? String(args.location) : '',
+        notes: args.notes ? String(args.notes) : '',
+        cost: args.cost ? Number(args.cost) : 0,
+        currency: args.currency ? String(args.currency) : (deps.trip?.budgetCurrency || 'MXN'),
+        attachments: [] as string[],
+      };
+      const id = await deps.createEvent(data);
+      return JSON.stringify({
+        ok: true,
+        eventId: id,
+        message: `Evento creado: "${data.title}" el ${data.date}${data.startTime ? ' a las ' + data.startTime : ''}.`,
+      });
+    }
+
+    case 'updateEvent': {
+      const eventId = String(args.eventId);
+      if (!eventId) return JSON.stringify({ ok: false, error: 'Falta eventId' });
+      const updates = pickEventFields(args);
+      delete (updates as Record<string, unknown>).eventId;
+      await deps.updateEvent(eventId, updates);
+      return JSON.stringify({ ok: true, message: 'Evento actualizado.' });
+    }
+
+    case 'deleteEvent': {
+      const eventId = String(args.eventId);
+      if (!eventId) return JSON.stringify({ ok: false, error: 'Falta eventId' });
+      await deps.deleteEvent(eventId);
+      return JSON.stringify({ ok: true, message: 'Evento eliminado.' });
+    }
+
+    case 'addExpense': {
+      const amount = Number(args.amount) || 0;
+      const currency = String(args.currency || deps.trip?.budgetCurrency || 'MXN');
+      const category = (args.category || 'misc') as ExpenseCategory;
+      await deps.addTripExpense({
+        tripId: deps.trip?.id || '',
+        description: String(args.description || 'Gasto'),
+        amount,
+        currency,
+        category,
+        paidBy: deps.defaultPaidBy,
+        splitBetween: deps.defaultSplitBetween,
+        eventId: args.eventId ? String(args.eventId) : undefined,
+        date: String(args.date || deps.todayDate),
+        notes: args.notes ? String(args.notes) : undefined,
+        paymentMethod: 'cash',
+        receiptUrl: undefined,
+        settled: false,
+        createdBy: deps.currentUserId,
+      });
+      return JSON.stringify({
+        ok: true,
+        message: `Gasto registrado: ${formatCurrencyTuple(amount, currency)} — ${args.description}.`,
+      });
+    }
+
+    case 'updateBudget': {
+      const updates: Partial<Trip> = {};
+      if (args.budget !== undefined) updates.budget = Number(args.budget);
+      if (args.budgetCurrency !== undefined) updates.budgetCurrency = String(args.budgetCurrency);
+      await deps.updateTrip(updates);
+      const cur = updates.budgetCurrency || deps.trip?.budgetCurrency || 'MXN';
+      return JSON.stringify({
+        ok: true,
+        message: `Presupuesto actualizado a ${formatCurrencyTuple(updates.budget ?? deps.trip?.budget ?? 0, cur)}.`,
+      });
+    }
+
+    case 'getStats': {
+      const baseCurrency = deps.trip?.budgetCurrency || 'MXN';
+      const totalSpent = deps.expenses
+        .filter((e) => e.paymentMethod !== 'points')
+        .reduce((sum, e) => sum + (e.currency === baseCurrency ? e.amount : 0), 0);
+      const otherCur: Record<string, number> = {};
+      for (const e of deps.expenses) {
+        if (e.paymentMethod === 'points') continue;
+        if (e.currency === baseCurrency) continue;
+        otherCur[e.currency] = (otherCur[e.currency] || 0) + e.amount;
+      }
+      const byCategory: Record<string, number> = {};
+      for (const e of deps.expenses) {
+        if (e.paymentMethod === 'points') continue;
+        if (e.currency !== baseCurrency) continue;
+        byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+      }
+      return JSON.stringify({
+        ok: true,
+        budget: deps.trip?.budget ?? 0,
+        baseCurrency,
+        totalSpent,
+        otherCurrencies: otherCur,
+        byCategoryBase: byCategory,
+        eventsCount: deps.events.length,
+        expensesCount: deps.expenses.length,
+      });
+    }
+
+    default:
+      return JSON.stringify({ ok: false, error: `Herramienta desconocida: ${name}` });
+  }
+}

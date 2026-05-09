@@ -8,7 +8,10 @@ import { ChatbotButton } from './ChatbotButton';
 import { ChatbotPanel } from './ChatbotPanel';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
+import { useExpenses } from '@/hooks/useExpenses';
+import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
+import { TOOL_SCHEMAS, executeToolCall, type ToolDeps } from '@/lib/assistant/tools';
 import type { TripEvent, Trip, GlobalTraveler } from '@/types';
 
 function getDaysBetween(start: string, end: string): string[] {
@@ -143,14 +146,40 @@ export function Chatbot() {
   const tripIdMatch = pathname.match(/^\/trips\/([^/]+)/);
   const tripId = tripIdMatch ? tripIdMatch[1] : '';
 
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
+  const { trip, updateTrip } = useTrip(tripId);
+  const { events, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
+  const { expenses, addTripExpense } = useExpenses(tripId);
   const { travelers } = useGlobalTravelers();
+  const { user } = useAuth();
 
   const tripContext = useMemo(() => {
     if (!trip || !tripId) return null;
     return buildTripContext(trip, events, travelers);
   }, [trip, events, travelers, tripId]);
+
+  // Bundle the dependencies the executor needs to actually mutate trip data.
+  const toolDeps: ToolDeps | null = useMemo(() => {
+    if (!trip || !tripId || !user) return null;
+    const tripTravelerIds = trip.travelerIds || [];
+    const filteredTravelers = travelers.filter((t) => tripTravelerIds.includes(t.id));
+    const defaultPaidBy = filteredTravelers[0]?.id || user.uid;
+    const defaultSplitBetween = filteredTravelers.map((t) => t.id);
+    if (defaultSplitBetween.length === 0) defaultSplitBetween.push(user.uid);
+    return {
+      trip,
+      events,
+      expenses,
+      currentUserId: user.uid,
+      defaultPaidBy,
+      defaultSplitBetween,
+      todayDate: new Date().toISOString().split('T')[0],
+      createEvent,
+      updateEvent,
+      deleteEvent,
+      addTripExpense,
+      updateTrip,
+    };
+  }, [trip, tripId, user, travelers, events, expenses, createEvent, updateEvent, deleteEvent, addTripExpense, updateTrip]);
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ReadonlyArray<ChatMessage>>([
@@ -173,38 +202,86 @@ export function Chatbot() {
     if (!messageText.trim() || loading) return;
 
     const userMessage: ChatMessage = { role: 'user', content: messageText.trim() };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
+    let convo: ChatMessage[] = [...messages, userMessage];
+    setMessages(convo);
     setInput('');
     setLoading(true);
 
-    try {
-      const historial = updatedMessages.slice(-20).map((m) => ({
+    const enableTools = !!toolDeps;
+    const toolsPayload = enableTools
+      ? TOOL_SCHEMAS.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        }))
+      : undefined;
+
+    const buildHistorial = (latest: ChatMessage[]) => {
+      const trimmed = latest.slice(-30).map((m) => ({
         role: m.role,
         content: m.content,
+        toolName: m.toolName,
+        toolCalls: m.toolCalls ? m.toolCalls.map((tc) => ({ ...tc })) : undefined,
       }));
+      if (tripContext) trimmed.unshift({ role: 'user', content: tripContext, toolName: undefined, toolCalls: undefined });
+      return trimmed;
+    };
 
-      // Inject trip context as the first user message if available
-      if (tripContext) {
-        historial.unshift({ role: 'user', content: tripContext });
-      }
+    try {
+      // Tool-call loop. Cap at 5 round-trips so a runaway model can't burn
+      // the user's API quota.
+      for (let i = 0; i < 5; i++) {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: buildHistorial(convo),
+            tools: toolsPayload,
+            enableTools,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Error ${response.status}`);
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: historial }),
-      });
+        const toolCalls: { name: string; args: Record<string, unknown> }[] | undefined = data.toolCalls;
+        const content: string | undefined = data.content;
 
-      const data = await response.json();
+        if (toolCalls && toolCalls.length > 0 && toolDeps) {
+          // Add the assistant turn that requested tool calls
+          const assistantTurn: ChatMessage = {
+            role: 'assistant',
+            content: content || `Ejecutando: ${toolCalls.map((tc) => tc.name).join(', ')}…`,
+            toolCalls,
+          };
+          convo = [...convo, assistantTurn];
+          setMessages(convo);
 
-      if (!response.ok) {
-        throw new Error(data.error || `Error ${response.status}`);
-      }
+          // Execute each tool sequentially so dependent state updates settle
+          const toolResultMessages: ChatMessage[] = [];
+          for (const tc of toolCalls) {
+            try {
+              const result = await executeToolCall(tc.name, tc.args as Record<string, unknown>, toolDeps);
+              toolResultMessages.push({ role: 'tool', content: result, toolName: tc.name });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              toolResultMessages.push({
+                role: 'tool',
+                content: JSON.stringify({ ok: false, error: msg }),
+                toolName: tc.name,
+              });
+            }
+          }
+          convo = [...convo, ...toolResultMessages];
+          setMessages(convo);
+          // Loop back so the model can craft a final reply with the results
+          continue;
+        }
 
-      if (data.content) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.content }]);
-      } else {
-        throw new Error('Respuesta invalida');
+        if (content) {
+          convo = [...convo, { role: 'assistant', content }];
+          setMessages(convo);
+        }
+        break;
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
@@ -215,7 +292,7 @@ export function Chatbot() {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, messages, tripContext]);
+  }, [input, loading, messages, tripContext, toolDeps]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
