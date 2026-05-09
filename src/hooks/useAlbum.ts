@@ -247,6 +247,17 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       let skipped = 0;
       let done = 0;
 
+      // Helper: read an image's natural width without re-uploading.
+      // Lets us mark already-small thumbs as optimized=true cheaply.
+      const measureWidth = (url: string): Promise<number> =>
+        new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img.naturalWidth);
+          img.onerror = () => reject(new Error('image load failed'));
+          img.src = url;
+        });
+
       for (const photo of currentPhotos) {
         if (photo.optimized) {
           updated.push(cleanUndefined(photo));
@@ -256,6 +267,24 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           continue;
         }
         try {
+          // Smart-skip: if the existing thumbnail is already small enough
+          // (likely re-uploaded yesterday), just stamp optimized=true.
+          let alreadySmall = false;
+          try {
+            const w = await measureWidth(photo.url);
+            if (w > 0 && w <= 800) alreadySmall = true;
+          } catch {
+            // ignore — fall back to recompress
+          }
+
+          if (alreadySmall) {
+            updated.push(cleanUndefined({ ...photo, optimized: true }));
+            skipped++;
+            done++;
+            onProgress?.(done, total);
+            continue;
+          }
+
           // Prefer the full-quality original; fall back to the thumbnail.
           const source = photo.fullUrl || photo.url;
           const res = await fetch(source);
