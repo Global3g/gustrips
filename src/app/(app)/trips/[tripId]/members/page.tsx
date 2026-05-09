@@ -32,6 +32,7 @@ import InviteForm from '@/components/trips/InviteForm';
 import { MEMBER_ROLES } from '@/config/constants';
 import { Modal } from '@/components/ui/Modal';
 import { glassStyle, classNames, getInitials } from '@/lib/utils/helpers';
+import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/Button';
 import type { MemberRole, GlobalTraveler } from '@/types';
 
@@ -457,10 +458,14 @@ export default function MembersPage() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 rounded-xl border border-dashed border-gray-300">
-            <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-gray-400 text-sm mb-3">No hay viajeros asignados a este viaje</p>
-            <div className="flex items-center justify-center gap-3">
+          <div className="rounded-xl border border-dashed border-gray-300">
+            <EmptyState
+              variant="travelers"
+              title="Sin viajeros asignados"
+              description="Agrega a quienes vienen contigo para compartir gastos, documentos y vivencias."
+              compact
+            />
+            <div className="flex items-center justify-center gap-3 pb-6">
               <Button variant="secondary" size="sm" onClick={() => setShowSelector(true)}>
                 Asignar viajeros
               </Button>

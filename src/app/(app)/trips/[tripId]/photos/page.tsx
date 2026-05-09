@@ -45,6 +45,7 @@ import TripInsights from '@/components/trips/TripInsights';
 import PhotoLightbox from '@/components/trips/photos/PhotoLightbox';
 import SortablePhoto from '@/components/trips/photos/SortablePhoto';
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
+import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
 import { EVENT_TYPES } from '@/config/constants';
 import type { AlbumPhoto } from '@/types';
@@ -954,12 +955,16 @@ export default function PhotosPage() {
               ))}
             </div>
           ) : stats.total === 0 ? (
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-12 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto mb-4">
-                <Camera className="w-7 h-7 text-white/30" />
-              </div>
-              <p className="text-white/85 font-semibold mb-1">Aún no hay fotos</p>
-              <p className="text-white/40 text-xs">Sube fotos para documentar tu viaje</p>
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm">
+              <EmptyState
+                variant="photos"
+                title="Aún no hay fotos"
+                description="Sube fotos para documentar los mejores momentos de tu viaje"
+                action={{
+                  label: 'Subir primera foto',
+                  onClick: () => fileInputRef.current?.click(),
+                }}
+              />
             </div>
           ) : (
             <div className="space-y-7">

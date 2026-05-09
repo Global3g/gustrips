@@ -7,6 +7,7 @@ import { useChecklist } from '@/hooks/useChecklist';
 import { useToast } from '@/context/ToastContext';
 import ChecklistSection from '@/components/trips/ChecklistSection';
 import TemplateSelector from '@/components/trips/TemplateSelector';
+import { EmptyState } from '@/components/EmptyState';
 // config/constants not needed after removing back button
 import type { ChecklistTemplate } from '@/config/checklistTemplates';
 import type { ChecklistPhase } from '@/types';
@@ -131,23 +132,16 @@ export default function ChecklistPage() {
 
       {/* Empty state with prominent template CTA */}
       {isEmpty && (
-        <div className="glass rounded-2xl px-6 py-10 mb-6 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mx-auto mb-4">
-            <Sparkles className="w-7 h-7 text-blue-600" />
-          </div>
-          <h2 className="text-gray-900 font-bold text-lg mb-2">
-            Comienza con un template
-          </h2>
-          <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
-            Elige un template predefinido para agregar rapidamente los elementos esenciales a tu checklist.
-          </p>
-          <button
-            onClick={() => setTemplateOpen(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-400 hover:to-blue-500 shadow-lg shadow-blue-500/25 border border-blue-400/20 transition-all duration-200 active:scale-[0.97]"
-          >
-            <Sparkles className="w-4 h-4" />
-            Explorar templates
-          </button>
+        <div className="glass rounded-2xl mb-6">
+          <EmptyState
+            variant="checklist"
+            title="Comienza con un template"
+            description="Elige un template predefinido para agregar rápidamente los elementos esenciales a tu checklist."
+            action={{
+              label: 'Explorar templates',
+              onClick: () => setTemplateOpen(true),
+            }}
+          />
         </div>
       )}
 

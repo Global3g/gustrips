@@ -37,6 +37,7 @@ import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
 import { EVENT_TYPES, CURRENCIES } from '@/config/constants';
 import { classNames, formatCurrency, formatDateES } from '@/lib/utils/helpers';
+import { EmptyState } from '@/components/EmptyState';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 import type { EventType, TripExpense } from '@/types';
 import type { LucideIcon } from 'lucide-react';
@@ -504,13 +505,11 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
           <Particles count={20} />
         </div>
         <div className="relative">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/10 bg-white/[0.03]">
-            <AlertCircle className="w-7 h-7 text-white/40" />
-          </div>
-          <h3 className="text-white/85 font-semibold mb-1">Sin datos para comparar</h3>
-          <p className="text-white/40 text-xs max-w-xs mx-auto">
-            Configura el presupuesto por categorías o agrega costos a tus eventos del itinerario
-          </p>
+          <EmptyState
+            variant="budget"
+            title="Sin datos para comparar"
+            description="Configura el presupuesto por categorías o agrega costos a tus eventos del itinerario"
+          />
         </div>
       </motion.div>
     );

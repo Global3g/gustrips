@@ -41,6 +41,7 @@ import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Particles from '@/components/ui/Particles';
 import { SwipeActions, type SwipeAction } from '@/components/SwipeActions';
+import { EmptyState } from '@/components/EmptyState';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
 import { classNames, formatCurrency, getInitials, formatDateES } from '@/lib/utils/helpers';
 import type { ExpenseCategory, TripExpense, PaymentMethod } from '@/types';
@@ -623,19 +624,23 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
 
           {/* ─── List grouped by day ──────────────────── */}
           {filteredExpenses.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-white/10 bg-white/[0.03]">
-                <Receipt className="w-7 h-7 text-white/30" />
-              </div>
-              <h3 className="text-white/85 font-semibold mb-1">
-                {expenses.length === 0 ? 'Sin gastos aún' : 'Nada coincide con los filtros'}
-              </h3>
-              <p className="text-white/40 text-xs">
-                {expenses.length === 0
-                  ? 'Captura el primer gasto en la pestaña Capturar'
-                  : 'Prueba con otros filtros o limpia la búsqueda'}
-              </p>
-            </div>
+            <EmptyState
+              variant="expenses"
+              title={expenses.length === 0 ? 'Sin gastos aún' : 'Nada coincide con los filtros'}
+              description={
+                expenses.length === 0
+                  ? 'Captura el primer gasto para empezar a llevar el control de tu viaje'
+                  : 'Prueba con otros filtros o limpia la búsqueda'
+              }
+              action={
+                expenses.length === 0
+                  ? {
+                      label: 'Capturar primer gasto',
+                      href: `/trips/${tripId}/expenses?capture=1`,
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <div className="space-y-5">
               <AnimatePresence initial={false} mode="popLayout">

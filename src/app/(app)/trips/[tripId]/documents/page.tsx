@@ -28,6 +28,7 @@ import DocumentUpload from '@/components/trips/DocumentUpload';
 import Particles from '@/components/ui/Particles';
 import { DOCUMENT_CATEGORIES } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
+import { EmptyState } from '@/components/EmptyState';
 import type { DocumentCategory, TripAttachment } from '@/types';
 import type { LucideIcon } from 'lucide-react';
 
@@ -331,16 +332,16 @@ export default function DocumentsPage() {
             </div>
           </div>
         ) : filteredDocuments.length === 0 ? (
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-7 h-7 text-white/30" />
-            </div>
-            <p className="text-white/85 font-semibold mb-1">
-              {documents.length === 0 ? 'Sin documentos aún' : 'Nada coincide con los filtros'}
-            </p>
-            <p className="text-white/40 text-xs">
-              {documents.length === 0 ? 'Sube boletos, reservaciones y documentos importantes' : 'Prueba con otros filtros o limpia la búsqueda'}
-            </p>
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm">
+            <EmptyState
+              variant="documents"
+              title={documents.length === 0 ? 'Sin documentos aún' : 'Nada coincide con los filtros'}
+              description={
+                documents.length === 0
+                  ? 'Sube boletos, reservaciones y documentos importantes para tenerlos a la mano'
+                  : 'Prueba con otros filtros o limpia la búsqueda'
+              }
+            />
           </div>
         ) : (
           <div className="space-y-5">

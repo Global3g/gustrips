@@ -54,6 +54,7 @@ import { useTrips } from '@/hooks/useTrips';
 import { useEvents } from '@/hooks/useEvents';
 import { useMembers } from '@/hooks/useMembers';
 import { useChecklist } from '@/hooks/useChecklist';
+import { useMilestones } from '@/hooks/useMilestones';
 import { useToast } from '@/context/ToastContext';
 import TripForm from '@/components/trips/TripForm';
 import { Button } from '@/components/ui/Button';
@@ -464,6 +465,7 @@ export default function TripDetailPage() {
   const router = useRouter();
   const tripId = params.tripId as string;
   const { trip, loading, updateTrip, generateShareToken } = useTrip(tripId);
+  useMilestones(tripId);
 
   // One-time cleanup: legacy done notes (from before the toggle-deletes
   // change) are filtered silently when the trip loads.

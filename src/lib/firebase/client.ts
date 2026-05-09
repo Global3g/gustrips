@@ -1,6 +1,11 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
-import { initializeFirestore, type Firestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -31,9 +36,24 @@ export function getClientAuth(): Auth {
 
 export function getClientDb(): Firestore {
   if (!_db) {
-    _db = initializeFirestore(getApp_(), {
-      experimentalAutoDetectLongPolling: true,
-    });
+    try {
+      _db = initializeFirestore(getApp_(), {
+        experimentalAutoDetectLongPolling: true,
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      });
+    } catch (err) {
+      // Some browsers (e.g. private mode, older Safari) may fail to init
+      // IndexedDB-backed persistence. Fall back to the original config so the
+      // app still works without offline persistence.
+      if (typeof console !== 'undefined') {
+        console.warn('[firebase/client] persistentLocalCache init failed; falling back', err);
+      }
+      _db = initializeFirestore(getApp_(), {
+        experimentalAutoDetectLongPolling: true,
+      });
+    }
   }
   return _db;
 }

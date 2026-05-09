@@ -10,6 +10,9 @@ import { ToastProvider } from '@/context/ToastContext';
 import { Chatbot } from '@/components/chat/Chatbot';
 import CommandPaletteProvider from '@/components/CommandPaletteProvider';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import MilestoneBanner from '@/components/MilestoneBanner';
+import OfflineIndicator from '@/components/OfflineIndicator';
+import SyncIndicator from '@/components/SyncIndicator';
 import { classNames } from '@/lib/utils/helpers';
 
 /** Detect if we are inside a trip detail view (has tripId in path) */
@@ -61,6 +64,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             {/* Global keyboard shortcuts (e, g, f, m, i, b, r, ?) */}
             <KeyboardShortcuts />
+
+            {/* Confetti milestone toast banner */}
+            <MilestoneBanner />
+
+            {/* Offline / sync UX */}
+            <OfflineIndicator />
+            <SyncIndicator />
           </div>
         </ErrorBoundary>
       </ToastProvider>

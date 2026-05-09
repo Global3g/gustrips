@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import Particles from '@/components/ui/Particles';
 import { classNames, formatCurrency, getInitials } from '@/lib/utils/helpers';
+import { EmptyState } from '@/components/EmptyState';
 
 interface BalanceTabProps {
   tripId: string;
@@ -275,11 +276,13 @@ export function BalanceTab({ tripId }: BalanceTabProps) {
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-8 text-center">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 bg-white/[0.04] border border-white/10">
-              <Wallet className="w-5 h-5 text-white/40" />
-            </div>
-            <p className="text-white/55 text-xs">Aún no hay movimientos para calcular balance</p>
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm">
+            <EmptyState
+              variant="balance"
+              title="Sin movimientos aún"
+              description="Captura gastos compartidos para calcular el balance entre viajeros"
+              compact
+            />
           </div>
         )}
 
