@@ -716,11 +716,16 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                             <motion.div
                               layout
                               className={classNames(
-                                'rounded-xl border backdrop-blur-sm overflow-hidden transition-colors',
+                                'rounded-xl border backdrop-blur-md overflow-hidden transition-colors shadow-md shadow-black/20',
                                 selectionMode && isSelected
-                                  ? 'border-amber-300/50 bg-amber-300/[0.08] shadow-[0_0_16px_rgba(245,158,11,0.18)]'
-                                  : 'border-white/[0.06] bg-white/[0.03]',
+                                  ? 'border-amber-300/50 shadow-[0_0_16px_rgba(245,158,11,0.18)]'
+                                  : 'border-white/[0.08]',
                               )}
+                              style={
+                                selectionMode && isSelected
+                                  ? { background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.10) 100%)' }
+                                  : { background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }
+                              }
                               whileHover={{ y: -1 }}
                             >
                               {/* Row */}
