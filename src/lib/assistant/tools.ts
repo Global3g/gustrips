@@ -210,6 +210,8 @@ export interface ToolDeps {
   defaultPaidBy: string;
   defaultSplitBetween: string[];
   todayDate: string;
+  /** Live device location, only present when the user has granted geo permission. */
+  userLocation?: { lat: number; lng: number; accuracy?: number } | null;
   createEvent: (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => Promise<string>;
   updateEvent: (id: string, updates: Partial<TripEvent>) => Promise<void>;
   deleteEvent: (
@@ -363,11 +365,23 @@ export async function executeToolCall(
       if (!rawQuery) {
         return JSON.stringify({ ok: false, error: 'Falta query' });
       }
-      const near = String(args.near || deps.trip?.destination || '').trim();
+      // Prefer the user's live device location when available — it makes
+      // "qué hay cerca" actually mean "cerca de mí". Fall back to the
+      // trip's destination as a textual hint.
+      const hasGeo = !!deps.userLocation;
+      const near = String(args.near || (hasGeo ? '' : deps.trip?.destination || '')).trim();
       const fullQuery = near ? `${rawQuery} en ${near}` : rawQuery;
+      const params = new URLSearchParams({
+        action: 'search',
+        q: fullQuery,
+      });
+      if (hasGeo && deps.userLocation) {
+        params.set('location', `${deps.userLocation.lat},${deps.userLocation.lng}`);
+        params.set('radius', '2500');
+      }
       try {
         const res = await fetch(
-          `/api/places?action=search&q=${encodeURIComponent(fullQuery)}`,
+          `/api/places?${params.toString()}`,
           { signal: AbortSignal.timeout(30_000) },
         );
         const json = await res.json();

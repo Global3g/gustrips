@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Trash2,
   Download,
+  Share2,
   RotateCw,
   RotateCcw,
   ZoomIn,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import type { AlbumPhoto } from '@/types';
+import { sharePhoto } from '@/lib/sharePhoto';
 
 export interface LightboxPhoto extends AlbumPhoto {
   source: 'album' | 'event';
@@ -46,8 +48,15 @@ export default function PhotoLightbox({
 }: PhotoLightboxProps) {
   const photo = photos[index];
   const [rotation, setRotation] = useState(0);
+  const [canShare, setCanShare] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const prevIndex = useRef(index);
+
+  // Feature-detect navigator.share once on mount (avoids SSR mismatch).
+  useEffect(() => {
+    setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
+  }, []);
 
   // Reset rotation + zoom only when navigating to a DIFFERENT photo,
   // not on first mount — fighting centerOnInit on mount made the photo
@@ -81,6 +90,27 @@ export default function PhotoLightbox({
   const zoomIn = () => transformRef.current?.zoomIn(0.4);
   const zoomOut = () => transformRef.current?.zoomOut(0.4);
   const resetView = () => transformRef.current?.resetTransform(220);
+
+  const handleShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const result = await sharePhoto({
+        url: photo.fullUrl || photo.url,
+        caption: photo.caption,
+        tripTitle: photo.eventTitle,
+      });
+      if (!result.ok) {
+        if (result.reason === 'unsupported') {
+          alert('Tu navegador no soporta compartir directo — descarga la foto y compártela manualmente.');
+        } else if (result.reason === 'failed') {
+          console.error('[PhotoLightbox] share failed:', result.error);
+        }
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -134,6 +164,17 @@ export default function PhotoLightbox({
 
           {/* Top-right controls */}
           <div className="absolute top-4 right-4 flex gap-1.5 z-10">
+            {canShare && (
+              <button
+                type="button"
+                onClick={handleShare}
+                disabled={sharing}
+                className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 disabled:opacity-60"
+                title="Compartir"
+              >
+                {sharing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Share2 className="w-5 h-5" />}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onDownload(photo)}

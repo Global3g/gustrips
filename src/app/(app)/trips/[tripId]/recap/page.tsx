@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Users,
   Coins,
+  Loader2,
 } from 'lucide-react';
 import { differenceInDays, parseISO, isAfter } from 'date-fns';
 import { useTrip } from '@/hooks/useTrip';
@@ -34,7 +35,7 @@ import {
   formatDateES,
   getInitials,
 } from '@/lib/utils/helpers';
-import { exportTripPdf } from '@/lib/utils/exportPdf';
+import { exportRecapPdf } from '@/lib/utils/exportRecapPdf';
 import Particles from '@/components/ui/Particles';
 import type { TripEvent, ExpenseCategory, AlbumPhoto } from '@/types';
 
@@ -76,8 +77,10 @@ export default function TripRecapPage() {
   const { albumPhotos } = useAlbum(tripId, trip);
   const { travelers: globalTravelers } = useGlobalTravelers();
   const { members } = useMembers(tripId);
-  const { items: checklistItems } = useChecklist(tripId);
+  // Checklist hook is invoked for parity with previous export plumbing; not used by the recap PDF.
+  useChecklist(tripId);
   const { toast } = useToast();
+  const [isExporting, setIsExporting] = useState(false);
 
   const baseCurrency = trip?.budgetCurrency || DEFAULT_CURRENCY;
   const { convert } = useExchangeRates(baseCurrency);
@@ -303,13 +306,60 @@ export default function TripRecapPage() {
     }
   };
 
-  const handleDownloadPdf = () => {
-    if (!trip) return;
+  const handleDownloadPdf = async () => {
+    if (!trip || isExporting) return;
+    setIsExporting(true);
     try {
-      exportTripPdf(trip, events, members, checklistItems);
+      const topEventForExport = stats.topEvent
+        ? (() => {
+            const linked = albumPhotos.filter(
+              (p) => p.eventId === stats.topEvent!.id,
+            ).length;
+            const own = stats.topEvent.photos?.length ?? 0;
+            return {
+              id: stats.topEvent.id,
+              title: stats.topEvent.title,
+              cost: stats.topEvent.cost,
+              photoCount: linked + own,
+            };
+          })()
+        : undefined;
+
+      const topCategoryForExport = stats.topCategory
+        ? {
+            type: stats.topCategory.category,
+            label:
+              EVENT_TYPES[stats.topCategory.category]?.label ||
+              stats.topCategory.category,
+            total: stats.topCategory.total,
+          }
+        : undefined;
+
+      await exportRecapPdf({
+        trip,
+        events,
+        expenses,
+        albumPhotos,
+        members,
+        travelers: globalTravelers,
+        baseCurrency,
+        totalSpent: stats.totalSpent,
+        totalSavings: stats.totalSavings,
+        pacePercent: stats.pacePercent,
+        cities: stats.cities,
+        kmTraveled: stats.kmTraveled,
+        daysVisited: stats.daysVisited,
+        topPhotos: stats.topPhotos,
+        peakDayDate: stats.peakDay?.date,
+        peakDaySpent: stats.peakDay?.total,
+        topCategory: topCategoryForExport,
+        topEvent: topEventForExport,
+      });
       toast('PDF descargado', 'success');
     } catch {
       toast('Error al generar PDF', 'error');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -593,10 +643,15 @@ export default function TripRecapPage() {
                 </button>
                 <button
                   onClick={handleDownloadPdf}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm font-semibold text-white transition-colors"
+                  disabled={isExporting}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm font-semibold text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Download className="w-4 h-4 text-amber-300" />
-                  Descargar PDF
+                  {isExporting ? (
+                    <Loader2 className="w-4 h-4 text-amber-300 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 text-amber-300" />
+                  )}
+                  {isExporting ? 'Generando PDF...' : 'Descargar PDF'}
                 </button>
               </div>
               <Link

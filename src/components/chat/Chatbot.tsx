@@ -18,6 +18,7 @@ import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { TOOL_SCHEMAS, executeToolCall, type ToolDeps } from '@/lib/assistant/tools';
+import { useUserLocation } from '@/hooks/useUserLocation';
 import type { TripEvent, Trip, GlobalTraveler } from '@/types';
 
 function getDaysBetween(start: string, end: string): string[] {
@@ -163,6 +164,10 @@ export function Chatbot() {
     return buildTripContext(trip, events, travelers);
   }, [trip, events, travelers, tripId]);
 
+  // Live user location — only enabled when chat is open and inside a trip.
+  // The hook itself only reads navigator.geolocation when granted.
+  const { location: userLocation } = useUserLocation({ enabled: !!tripId });
+
   // Bundle the dependencies the executor needs to actually mutate trip data.
   const toolDeps: ToolDeps | null = useMemo(() => {
     if (!trip || !tripId || !user) return null;
@@ -179,13 +184,16 @@ export function Chatbot() {
       defaultPaidBy,
       defaultSplitBetween,
       todayDate: new Date().toISOString().split('T')[0],
+      userLocation: userLocation
+        ? { lat: userLocation.lat, lng: userLocation.lng, accuracy: userLocation.accuracy }
+        : null,
       createEvent,
       updateEvent,
       deleteEvent,
       addTripExpense,
       updateTrip,
     };
-  }, [trip, tripId, user, travelers, events, expenses, createEvent, updateEvent, deleteEvent, addTripExpense, updateTrip]);
+  }, [trip, tripId, user, travelers, events, expenses, userLocation, createEvent, updateEvent, deleteEvent, addTripExpense, updateTrip]);
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ReadonlyArray<ChatMessage>>([

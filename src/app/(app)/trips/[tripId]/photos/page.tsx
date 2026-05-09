@@ -16,6 +16,7 @@ import {
   Pencil,
   Check,
   Download,
+  Share2,
   MapPin,
   Sparkles,
   CheckSquare,
@@ -48,6 +49,7 @@ const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePh
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
+import { sharePhoto } from '@/lib/sharePhoto';
 import { EVENT_TYPES } from '@/config/constants';
 import type { AlbumPhoto } from '@/types';
 
@@ -95,6 +97,7 @@ export default function PhotosPage() {
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);
+  const [canShare, setCanShare] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
   const [captionText, setCaptionText] = useState('');
@@ -125,6 +128,11 @@ export default function PhotosPage() {
     await new Promise((r) => setTimeout(r, 600));
     window.location.reload();
   });
+
+  /* ── Feature-detect Web Share API once on mount ── */
+  useEffect(() => {
+    setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
+  }, []);
 
   /* ── Pre-fill event fields ── */
   useEffect(() => {
@@ -1135,6 +1143,32 @@ export default function PhotosPage() {
                                       title="Editar foto"
                                     >
                                       <Pencil className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                  {canShare && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        sharePhoto({
+                                          url: photo.fullUrl || photo.url,
+                                          caption: photo.caption,
+                                          tripTitle: trip?.title,
+                                          destination: trip?.destination,
+                                          date: photo.date,
+                                        }).then((result) => {
+                                          if (!result.ok) {
+                                            if (result.reason === 'unsupported') {
+                                              alert('Tu navegador no soporta compartir directo — descarga la foto y compártela manualmente.');
+                                            } else if (result.reason === 'failed') {
+                                              console.error('[PhotosPage] share failed:', result.error);
+                                            }
+                                          }
+                                        });
+                                      }}
+                                      className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 shadow-lg"
+                                      title="Compartir foto"
+                                    >
+                                      <Share2 className="w-3 h-3" />
                                     </button>
                                   )}
                                   <button
