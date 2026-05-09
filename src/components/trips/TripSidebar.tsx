@@ -18,7 +18,6 @@ import {
   ExternalLink,
   Camera,
   Map,
-  ArrowLeft,
   HardDriveDownload,
   Loader2,
   Sparkles,
@@ -30,6 +29,7 @@ import { ROUTES } from '@/config/constants';
 import Particles from '@/components/ui/Particles';
 import StatusChangeMenu from '@/components/trips/sidebar/StatusChangeMenu';
 import JumpToTodayButton from '@/components/trips/sidebar/JumpToTodayButton';
+import TripSwitcher from '@/components/trips/sidebar/TripSwitcher';
 import type { Trip, TripEvent, TripStatus } from '@/types';
 
 /* ------------------------------------------------------------------ */
@@ -581,15 +581,9 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
       {/* Subtle noise texture */}
       <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'1\'/%3E%3C/svg%3E")' }} />
 
-      {/* ====== TOP — Back ====== */}
+      {/* ====== TOP — Trip Switcher ====== */}
       <div className="px-4 pt-4 pb-2 relative z-10">
-        <Link
-          href={ROUTES.app.dashboard}
-          className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-white/80 hover:text-white transition-all duration-200 rounded-lg px-2 py-1.5 -ml-1 hover:bg-white/[0.06] group"
-        >
-          <ArrowLeft className="w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" />
-          <span>Mis Viajes</span>
-        </Link>
+        <TripSwitcher currentTripId={tripId} currentTitle={trip?.title} />
       </div>
 
       {/* ====== Trip Identity ====== */}
@@ -755,6 +749,13 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
                 {photoCount}
               </span>
             ) : undefined}
+          />
+          <NavItem
+            href={basePath + '/recap'}
+            label="Recap"
+            icon={<Sparkles className="w-4 h-4" />}
+            isActive={isActive('/recap')}
+            color="travelers"
           />
         </CollapsibleSection>
 

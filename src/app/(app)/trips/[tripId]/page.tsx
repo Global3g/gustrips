@@ -68,6 +68,7 @@ import { nowISO } from '@/lib/utils/helpers';
 import SpotlightCard from '@/components/ui/SpotlightCard';
 import Particles from '@/components/ui/Particles';
 import PendingExpensesBanner from '@/components/expenses/PendingExpensesBanner';
+import SmartSuggestionsBanner from '@/components/trips/SmartSuggestionsBanner';
 import QuickActionsRow from '@/components/trips/QuickActionsRow';
 import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
 
@@ -642,6 +643,9 @@ export default function TripDetailPage() {
 
             {/* ── Pending Expenses Banner ── */}
             <PendingExpensesBanner tripId={tripId} />
+
+            {/* ── Smart Suggestions Banner ── */}
+            <SmartSuggestionsBanner tripId={tripId} />
 
             {/* ── Quick actions: scan, add event, upload photo ── */}
             <QuickActionsRow tripId={tripId} trip={trip} />

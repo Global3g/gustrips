@@ -113,16 +113,16 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
 
   if (eventsWithCoords.length === 0) {
     return (
-      <div className={className || "h-[400px] lg:h-[500px] rounded-2xl border border-gray-200 bg-gray-50"}>
+      <div className={className || "h-[400px] lg:h-[500px]"} style={{ background: '#0d1b2e' }}>
         <div className="flex items-center justify-center h-full">
           <div className="text-center px-6">
-            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/10" style={{ background: 'rgba(255,255,255,0.05)' }}>
+              <svg className="w-8 h-8 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 0115 0z" />
               </svg>
             </div>
-            <p className="text-gray-400 text-sm">
+            <p className="text-white/60 text-sm">
               Agrega coordenadas a tus eventos para verlos en el mapa
             </p>
           </div>
@@ -132,8 +132,11 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
   }
 
   return (
-    <div className={className || "rounded-2xl overflow-hidden border border-gray-200 h-[400px] lg:h-[500px]"}>
+    <div className={className || "rounded-2xl overflow-hidden border border-white/[0.08] h-[400px] lg:h-[500px]"} style={{ background: '#0d1b2e' }}>
       <style>{`
+        .leaflet-container {
+          background: #0d1b2e !important;
+        }
         .leaflet-popup-content-wrapper {
           background: rgba(15, 15, 25, 0.85) !important;
           backdrop-filter: blur(20px) !important;
@@ -164,20 +167,22 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
           color: white !important;
         }
         .leaflet-control-zoom a {
-          background: white !important;
-          color: #374151 !important;
-          border-color: #e5e7eb !important;
+          background: rgba(15, 23, 42, 0.85) !important;
+          color: rgba(255,255,255,0.85) !important;
+          border-color: rgba(255,255,255,0.12) !important;
+          backdrop-filter: blur(8px) !important;
         }
         .leaflet-control-zoom a:hover {
-          background: #f3f4f6 !important;
+          background: rgba(30, 41, 59, 0.95) !important;
         }
         .leaflet-control-attribution {
-          background: rgba(255,255,255,0.8) !important;
-          color: #9ca3af !important;
+          background: rgba(15, 23, 42, 0.7) !important;
+          color: rgba(255,255,255,0.55) !important;
           font-size: 10px !important;
+          backdrop-filter: blur(6px) !important;
         }
         .leaflet-control-attribution a {
-          color: #6b7280 !important;
+          color: rgba(125,211,252,0.85) !important;
         }
       `}</style>
       <MapContainer
@@ -187,8 +192,8 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
         zoomControl={true}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
         />
 
         <FitBounds positions={positions} />
@@ -200,7 +205,7 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
             key={`poly-${idx}`}
             positions={line}
             pathOptions={{
-              color: 'rgba(96, 165, 250, 0.5)',
+              color: 'rgba(125, 211, 252, 0.7)',
               weight: 2,
               dashArray: '6, 8',
             }}

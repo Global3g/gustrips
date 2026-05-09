@@ -197,6 +197,18 @@ export function Chatbot() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Listen for external requests to open the assistant with a prefilled prompt.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt?: string }>).detail;
+      setIsOpen(true);
+      if (detail?.prompt) setInput(detail.prompt);
+    };
+    window.addEventListener('gustrips:open-assistant', handler);
+    return () => window.removeEventListener('gustrips:open-assistant', handler);
+  }, []);
+
   const sendMessage = useCallback(async (text?: string) => {
     const messageText = text || input;
     if (!messageText.trim() || loading) return;

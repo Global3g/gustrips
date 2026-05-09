@@ -8,6 +8,7 @@ import AppBottomNav from '@/components/layout/AppBottomNav';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { ToastProvider } from '@/context/ToastContext';
 import { Chatbot } from '@/components/chat/Chatbot';
+import CommandPaletteProvider from '@/components/CommandPaletteProvider';
 import { classNames } from '@/lib/utils/helpers';
 
 /** Detect if we are inside a trip detail view (has tripId in path) */
@@ -53,6 +54,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             {/* AI Chatbot - floating assistant */}
             <Chatbot />
+
+            {/* Global command palette (Cmd/Ctrl + K) */}
+            <CommandPaletteProvider />
           </div>
         </ErrorBoundary>
       </ToastProvider>
