@@ -27,6 +27,8 @@ import {
   X,
   Users,
   CreditCard,
+  Check,
+  CheckSquare,
 } from 'lucide-react';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useEvents } from '@/hooks/useEvents';
@@ -38,6 +40,7 @@ import { useToast } from '@/context/ToastContext';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import Particles from '@/components/ui/Particles';
+import { SwipeActions, type SwipeAction } from '@/components/SwipeActions';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
 import { classNames, formatCurrency, getInitials, formatDateES } from '@/lib/utils/helpers';
 import type { ExpenseCategory, TripExpense, PaymentMethod } from '@/types';
@@ -134,6 +137,8 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingExpense, setEditingExpense] = useState<TripExpense | null>(null);
   const [editDesc, setEditDesc] = useState('');
   const [editAmount, setEditAmount] = useState('');
@@ -312,6 +317,54 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
       toast('Gasto eliminado', 'success');
     } catch {
       toast('Error al eliminar gasto', 'error');
+    }
+  };
+
+  /* ─── Bulk selection ─────────────────────────────── */
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const enterSelectionMode = () => {
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+    setExpanded(new Set());
+    setConfirmingDelete(null);
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`¿Borrar ${selectedIds.size} gasto${selectedIds.size !== 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return;
+    const ids = [...selectedIds];
+    let okCount = 0;
+    let failCount = 0;
+    for (const id of ids) {
+      try {
+        await deleteExpense(id);
+        okCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    exitSelectionMode();
+    if (failCount === 0) {
+      toast(`${okCount} gasto${okCount !== 1 ? 's eliminados' : ' eliminado'}`, 'success');
+    } else {
+      toast(`${okCount} eliminados, ${failCount} fallaron`, 'error');
     }
   };
 
@@ -535,6 +588,39 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
             )}
           </div>
 
+          {/* ─── Selection mode toggle ────────────────── */}
+          {filteredExpenses.length > 0 && (
+            <div className="flex items-center justify-between px-1">
+              <div className="text-white/45 text-[11px] uppercase tracking-[0.18em] font-bold">
+                {selectionMode
+                  ? `${selectedIds.size} seleccionado${selectedIds.size !== 1 ? 's' : ''}`
+                  : `${filteredExpenses.length} gasto${filteredExpenses.length !== 1 ? 's' : ''}`}
+              </div>
+              <button
+                type="button"
+                onClick={() => (selectionMode ? exitSelectionMode() : enterSelectionMode())}
+                className={classNames(
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all',
+                  selectionMode
+                    ? 'bg-amber-300/15 border-amber-300/40 text-amber-100 hover:bg-amber-300/20'
+                    : 'bg-white/[0.04] border-white/[0.1] text-white/70 hover:text-white hover:border-white/25 hover:bg-white/[0.08]',
+                )}
+              >
+                {selectionMode ? (
+                  <>
+                    <X className="w-3.5 h-3.5" />
+                    Cancelar
+                  </>
+                ) : (
+                  <>
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    Seleccionar
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* ─── List grouped by day ──────────────────── */}
           {filteredExpenses.length === 0 ? (
             <div className="text-center py-12">
@@ -593,35 +679,75 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                           const Icon = CATEGORY_ICONS[cat] ?? Package;
                           const eventName = getEventName(expense.eventId);
                           const payerName = getMemberName(expense.paidBy);
-                          const isExpanded = expanded.has(expense.id);
+                          const isExpanded = !selectionMode && expanded.has(expense.id);
+                          const isSelected = selectedIds.has(expense.id);
                           const splitNames = (expense.splitBetween || []).map(getMemberName);
                           const perPerson =
                             (expense.splitBetween?.length || 0) > 0
                               ? expense.amount / (expense.splitBetween?.length || 1)
                               : 0;
 
+                          const swipeActions: SwipeAction[] = [
+                            {
+                              icon: Pencil,
+                              label: 'Editar',
+                              color: 'amber',
+                              onClick: () => openEdit(expense),
+                            },
+                            {
+                              icon: Trash2,
+                              label: 'Borrar',
+                              color: 'red',
+                              onClick: () => setConfirmingDelete(expense.id),
+                            },
+                          ];
+
                           return (
-                            <motion.div
+                            <SwipeActions
                               key={expense.id}
+                              actions={swipeActions}
+                              disabled={selectionMode}
+                            >
+                            <motion.div
                               layout
-                              className="rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm overflow-hidden"
+                              className={classNames(
+                                'rounded-xl border backdrop-blur-sm overflow-hidden transition-colors',
+                                selectionMode && isSelected
+                                  ? 'border-amber-300/50 bg-amber-300/[0.08] shadow-[0_0_16px_rgba(245,158,11,0.18)]'
+                                  : 'border-white/[0.06] bg-white/[0.03]',
+                              )}
                               whileHover={{ y: -1 }}
                             >
                               {/* Row */}
                               <button
                                 type="button"
-                                onClick={() => toggleExpand(expense.id)}
+                                onClick={() =>
+                                  selectionMode ? toggleSelection(expense.id) : toggleExpand(expense.id)
+                                }
                                 className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.03] transition-colors"
                               >
-                                <div
-                                  className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-shadow"
-                                  style={{
-                                    backgroundColor: `${cfg.color}22`,
-                                    boxShadow: isExpanded ? `0 0 14px ${cfg.color}55` : 'none',
-                                  }}
-                                >
-                                  <Icon className="w-4 h-4" style={{ color: cfg.color }} />
-                                </div>
+                                {selectionMode ? (
+                                  <div
+                                    className={classNames(
+                                      'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 border transition-all',
+                                      isSelected
+                                        ? 'bg-amber-300 border-amber-200 text-amber-950 shadow-[0_0_12px_rgba(245,158,11,0.4)]'
+                                        : 'bg-white/[0.04] border-white/20 text-transparent',
+                                    )}
+                                  >
+                                    <Check className="w-4 h-4" strokeWidth={3} />
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-shadow"
+                                    style={{
+                                      backgroundColor: `${cfg.color}22`,
+                                      boxShadow: isExpanded ? `0 0 14px ${cfg.color}55` : 'none',
+                                    }}
+                                  >
+                                    <Icon className="w-4 h-4" style={{ color: cfg.color }} />
+                                  </div>
+                                )}
                                 <div className="flex-1 min-w-0">
                                   <p className="text-white text-sm font-semibold truncate">{expense.description}</p>
                                   <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-white/45">
@@ -645,13 +771,15 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                                     </div>
                                   )}
                                 </div>
-                                <motion.div
-                                  animate={{ rotate: isExpanded ? 180 : 0 }}
-                                  transition={{ duration: 0.2 }}
-                                  className="text-white/40 flex-shrink-0"
-                                >
-                                  <ChevronDown className="w-4 h-4" />
-                                </motion.div>
+                                {!selectionMode && (
+                                  <motion.div
+                                    animate={{ rotate: isExpanded ? 180 : 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="text-white/40 flex-shrink-0"
+                                  >
+                                    <ChevronDown className="w-4 h-4" />
+                                  </motion.div>
+                                )}
                               </button>
 
                               {/* Expanded inline details */}
@@ -757,6 +885,7 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                                 )}
                               </AnimatePresence>
                             </motion.div>
+                            </SwipeActions>
                           );
                         })}
                       </div>
@@ -767,6 +896,44 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
             </div>
           )}
         </div>
+
+        {/* ─── Floating bulk action bar ─────────────── */}
+        <AnimatePresence>
+          {selectionMode && selectedIds.size > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.95 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="fixed bottom-3 left-1/2 -translate-x-1/2 z-50"
+            >
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-full border border-white/[0.1] backdrop-blur-xl shadow-2xl shadow-black/50"
+                style={{ background: 'rgba(15,23,42,0.85)' }}
+              >
+                <span className="text-white text-xs font-bold whitespace-nowrap pl-2 pr-1 tabular-nums">
+                  {selectedIds.size} seleccionado{selectedIds.size !== 1 ? 's' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/90 text-white hover:bg-red-500 transition-colors shadow-[0_0_16px_rgba(239,68,68,0.35)]"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Borrar
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 text-white/80 hover:bg-white/15 hover:text-white transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Limpiar
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* ── Edit modal (opens only via "Editar" button) ── */}

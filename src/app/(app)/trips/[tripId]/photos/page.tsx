@@ -17,6 +17,7 @@ import {
   Download,
   MapPin,
   Sparkles,
+  CheckSquare,
 } from 'lucide-react';
 import {
   DndContext,
@@ -37,11 +38,13 @@ import {
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
 import TripInsights from '@/components/trips/TripInsights';
 import PhotoLightbox from '@/components/trips/photos/PhotoLightbox';
 import SortablePhoto from '@/components/trips/photos/SortablePhoto';
+import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
 import { EVENT_TYPES } from '@/config/constants';
 import type { AlbumPhoto } from '@/types';
@@ -109,7 +112,17 @@ export default function PhotosPage() {
   const [editPhotoDate, setEditPhotoDate] = useState('');
   const [editPhotoEventId, setEditPhotoEventId] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /* ── Pull-to-refresh ──
+     v1: brief delay then full reload. TODO: replace with hook re-fetch. */
+  const { pullDistance, isRefreshing } = usePullToRefresh(async () => {
+    await new Promise((r) => setTimeout(r, 600));
+    window.location.reload();
+  });
 
   /* ── Pre-fill event fields ── */
   useEffect(() => {
@@ -432,6 +445,98 @@ export default function PhotosPage() {
     [deletePhoto, toast, lightboxIndex, flatPhotos, events, updateEvent],
   );
 
+  /* ── Bulk selection ── */
+  const togglePhotoSelection = useCallback((url: string) => {
+    setSelectedUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
+  }, []);
+
+  const enterSelectionMode = useCallback(() => {
+    setSelectionMode(true);
+    setSelectedUrls(new Set());
+  }, []);
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedUrls(new Set());
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedUrls(new Set());
+  }, []);
+
+  const handleBulkDownload = useCallback(async () => {
+    if (selectedUrls.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const urls = [...selectedUrls];
+      const photos = urls
+        .map((u) => allPhotos.find((p) => p.url === u))
+        .filter((p): p is (typeof allPhotos)[number] => Boolean(p));
+      toast(`Descargando ${photos.length} foto${photos.length !== 1 ? 's' : ''}…`, 'success');
+      for (let i = 0; i < photos.length; i++) {
+        const p = photos[i];
+        try {
+          const w = window.open(p.fullUrl || p.url, '_blank', 'noopener,noreferrer');
+          // Some browsers may block — best effort
+          if (!w) {
+            const link = document.createElement('a');
+            link.href = p.fullUrl || p.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        } catch (err) {
+          console.error('Error opening photo:', err);
+        }
+        if (i < photos.length - 1) {
+          await new Promise((res) => setTimeout(res, 350));
+        }
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selectedUrls, allPhotos, toast]);
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedUrls.size === 0) return;
+    if (!confirm(`¿Borrar ${selectedUrls.size} foto${selectedUrls.size !== 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return;
+    setBulkBusy(true);
+    const urls = [...selectedUrls];
+    let okCount = 0;
+    let failCount = 0;
+    try {
+      for (const url of urls) {
+        const photo = allPhotos.find((p) => p.url === url);
+        if (!photo) {
+          failCount++;
+          continue;
+        }
+        try {
+          await handleDelete(photo);
+          okCount++;
+        } catch {
+          failCount++;
+        }
+      }
+      if (failCount === 0) {
+        toast(`${okCount} foto${okCount !== 1 ? 's eliminadas' : ' eliminada'}`, 'success');
+      } else {
+        toast(`${okCount} eliminadas, ${failCount} fallaron`, 'error');
+      }
+    } finally {
+      setBulkBusy(false);
+      setSelectionMode(false);
+      setSelectedUrls(new Set());
+    }
+  }, [selectedUrls, allPhotos, handleDelete, toast]);
+
   /* ── Caption ── */
   const saveCaption = useCallback(
     async (photo: typeof flatPhotos[number]) => {
@@ -587,6 +692,7 @@ export default function PhotosPage() {
 
   return (
     <div className="max-w-6xl mx-auto">
+      <PullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshing} />
       {/* ─── Dark glass stage ─── */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -658,20 +764,46 @@ export default function PhotosPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="relative inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed group flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
-            >
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-              <span className="hidden sm:inline">Agregar fotos</span>
-              <div
-                className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)' }}
-              />
-              <span className="relative z-10 sm:hidden">Subir</span>
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {stats.total > 0 && (
+                <button
+                  type="button"
+                  onClick={() => (selectionMode ? exitSelectionMode() : enterSelectionMode())}
+                  className={classNames(
+                    'inline-flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold border transition-all',
+                    selectionMode
+                      ? 'bg-amber-300/15 border-amber-300/40 text-amber-100 hover:bg-amber-300/20'
+                      : 'bg-white/[0.05] border-white/[0.12] text-white/80 hover:text-white hover:border-white/25 hover:bg-white/[0.1]',
+                  )}
+                >
+                  {selectionMode ? (
+                    <>
+                      <X className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Cancelar</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Seleccionar</span>
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="relative inline-flex items-center gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed group flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+              >
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+                <span className="hidden sm:inline">Agregar fotos</span>
+                <div
+                  className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)' }}
+                />
+                <span className="relative z-10 sm:hidden">Subir</span>
+              </button>
+            </div>
           </div>
 
           {/* ─── Optimize legacy thumbnails ─── */}
@@ -904,9 +1036,11 @@ export default function PhotosPage() {
 
                     {/* Photo grid (sortable when photos belong to an event) */}
                     {(() => {
-                      const reorderable = !!group.eventId && group.photos.length > 1;
+                      const reorderable = !selectionMode && !!group.eventId && group.photos.length > 1;
                       const photoIds = group.photos.map((p) => p.url);
-                      const photoCards = group.photos.map((photo) => (
+                      const photoCards = group.photos.map((photo) => {
+                        const isSelected = selectedUrls.has(photo.url);
+                        return (
                         <SortablePhoto key={photo.url} id={photo.url} enabled={reorderable}>
                           <motion.div
                             whileHover={{ y: -2 }}
@@ -914,56 +1048,87 @@ export default function PhotosPage() {
                             className="space-y-1.5"
                           >
                             <div
-                              className="relative group rounded-2xl overflow-hidden bg-black/40 aspect-square cursor-pointer border border-white/10 hover:border-amber-300/50 transition-all hover:shadow-[0_8px_30px_rgba(245,158,11,0.18)]"
-                              onClick={() => openLightbox(photo)}
+                              className={classNames(
+                                'relative group rounded-2xl overflow-hidden bg-black/40 aspect-square cursor-pointer border transition-all',
+                                selectionMode && isSelected
+                                  ? 'border-amber-300 ring-2 ring-amber-300/60 shadow-[0_8px_30px_rgba(245,158,11,0.45)]'
+                                  : 'border-white/10 hover:border-amber-300/50 hover:shadow-[0_8px_30px_rgba(245,158,11,0.18)]',
+                              )}
+                              onClick={() => {
+                                if (selectionMode) togglePhotoSelection(photo.url);
+                                else openLightbox(photo);
+                              }}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={photo.url}
                                 alt={photo.caption || 'Foto del viaje'}
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                className={classNames(
+                                  'w-full h-full object-cover transition-transform duration-500',
+                                  selectionMode && isSelected
+                                    ? 'scale-95 brightness-75'
+                                    : 'group-hover:scale-110',
+                                )}
                                 loading="lazy"
                                 decoding="async"
                               />
                               {/* Gradient overlay on hover */}
                               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
 
+                              {/* Selection check badge */}
+                              {selectionMode && (
+                                <div className="absolute top-2 left-2 z-10">
+                                  <div
+                                    className={classNames(
+                                      'w-7 h-7 rounded-full flex items-center justify-center border-2 backdrop-blur-md transition-all',
+                                      isSelected
+                                        ? 'bg-amber-300 border-amber-200 text-amber-950 shadow-[0_0_14px_rgba(245,158,11,0.55)]'
+                                        : 'bg-black/40 border-white/50 text-transparent',
+                                    )}
+                                  >
+                                    <Check className="w-4 h-4" strokeWidth={3} />
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Action buttons */}
-                              <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                                {photo.source === 'album' && (
+                              {!selectionMode && (
+                                <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                  {photo.source === 'album' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openEditPhotoModal(photo);
+                                      }}
+                                      className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 shadow-lg"
+                                      title="Editar foto"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                  )}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      openEditPhotoModal(photo);
+                                      downloadPhoto(photo);
                                     }}
-                                    className="w-7 h-7 rounded-full bg-white/15 backdrop-blur-md hover:bg-white/25 flex items-center justify-center text-white transition-all border border-white/20 shadow-lg"
-                                    title="Editar foto"
+                                    className="w-7 h-7 rounded-full bg-sky-500/40 backdrop-blur-md hover:bg-sky-500/60 flex items-center justify-center text-white transition-all border border-sky-300/40 shadow-lg"
+                                    title="Descargar foto"
                                   >
-                                    <Pencil className="w-3 h-3" />
+                                    <Download className="w-3 h-3" />
                                   </button>
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    downloadPhoto(photo);
-                                  }}
-                                  className="w-7 h-7 rounded-full bg-sky-500/40 backdrop-blur-md hover:bg-sky-500/60 flex items-center justify-center text-white transition-all border border-sky-300/40 shadow-lg"
-                                  title="Descargar foto"
-                                >
-                                  <Download className="w-3 h-3" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDelete(photo);
-                                  }}
-                                  disabled={deleting === photo.url}
-                                  className="w-7 h-7 rounded-full bg-red-500/40 backdrop-blur-md hover:bg-red-500/60 flex items-center justify-center text-white transition-all border border-red-300/40 shadow-lg disabled:opacity-50"
-                                  title="Eliminar foto"
-                                >
-                                  {deleting === photo.url ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                                </button>
-                              </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete(photo);
+                                    }}
+                                    disabled={deleting === photo.url}
+                                    className="w-7 h-7 rounded-full bg-red-500/40 backdrop-blur-md hover:bg-red-500/60 flex items-center justify-center text-white transition-all border border-red-300/40 shadow-lg disabled:opacity-50"
+                                    title="Eliminar foto"
+                                  >
+                                    {deleting === photo.url ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                              )}
 
                               {/* Source pill (event vs album) */}
                               {photo.source === 'event' && (
@@ -980,7 +1145,8 @@ export default function PhotosPage() {
                             )}
                           </motion.div>
                         </SortablePhoto>
-                      ));
+                        );
+                      });
 
                       const grid = (
                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">{photoCards}</div>
@@ -1013,6 +1179,56 @@ export default function PhotosPage() {
             </div>
           )}
         </div>
+
+        {/* ─── Floating bulk action bar ─────────────── */}
+        <AnimatePresence>
+          {selectionMode && selectedUrls.size > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.95 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="fixed bottom-3 left-1/2 -translate-x-1/2 z-50"
+            >
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-full border border-white/[0.1] backdrop-blur-xl shadow-2xl shadow-black/50"
+                style={{ background: 'rgba(15,23,42,0.85)' }}
+              >
+                <span className="text-white text-xs font-bold whitespace-nowrap pl-2 pr-1 tabular-nums">
+                  {selectedUrls.size} foto{selectedUrls.size !== 1 ? 's' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleBulkDownload}
+                  disabled={bulkBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-sky-500/90 text-white hover:bg-sky-500 transition-colors shadow-[0_0_16px_rgba(56,189,248,0.35)] disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Descargar todas</span>
+                  <span className="sm:hidden">Descargar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  disabled={bulkBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/90 text-white hover:bg-red-500 transition-colors shadow-[0_0_16px_rgba(239,68,68,0.35)] disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {bulkBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Borrar
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  disabled={bulkBusy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 text-white/80 hover:bg-white/15 hover:text-white transition-colors disabled:opacity-60"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Limpiar
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* ── Trip insights (relocated from overview) ── */}

@@ -9,6 +9,7 @@ import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { ToastProvider } from '@/context/ToastContext';
 import { Chatbot } from '@/components/chat/Chatbot';
 import CommandPaletteProvider from '@/components/CommandPaletteProvider';
+import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import { classNames } from '@/lib/utils/helpers';
 
 /** Detect if we are inside a trip detail view (has tripId in path) */
@@ -57,6 +58,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
             {/* Global command palette (Cmd/Ctrl + K) */}
             <CommandPaletteProvider />
+
+            {/* Global keyboard shortcuts (e, g, f, m, i, b, r, ?) */}
+            <KeyboardShortcuts />
           </div>
         </ErrorBoundary>
       </ToastProvider>

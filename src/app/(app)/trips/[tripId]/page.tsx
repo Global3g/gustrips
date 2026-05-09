@@ -39,7 +39,7 @@ import {
   Sparkles,
   CalendarDays,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 import { format, parseISO, differenceInDays, isAfter, isBefore, isEqual, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -69,6 +69,8 @@ import SpotlightCard from '@/components/ui/SpotlightCard';
 import Particles from '@/components/ui/Particles';
 import PendingExpensesBanner from '@/components/expenses/PendingExpensesBanner';
 import SmartSuggestionsBanner from '@/components/trips/SmartSuggestionsBanner';
+import NotificationsBanner from '@/components/trips/NotificationsBanner';
+import CompanionBanner from '@/components/trips/CompanionBanner';
 import QuickActionsRow from '@/components/trips/QuickActionsRow';
 import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
 
@@ -86,11 +88,118 @@ function CountdownHero({ startDate, endDate }: { startDate: string; endDate: str
   if ((isAfter(today, start) || isEqual(today, start)) && (isBefore(today, end) || isEqual(today, end))) {
     const dayNumber = differenceInDays(today, start) + 1;
     const totalDays = differenceInDays(end, start) + 1;
-    return <span className="bg-emerald-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-white text-sm font-bold animate-pulse">Dia {dayNumber} de {totalDays}</span>;
+    return (
+      <span
+        className="bg-emerald-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-white text-sm font-bold animate-pulse"
+        style={{ boxShadow: '0 0 20px rgba(16,185,129,0.55), 0 0 40px rgba(16,185,129,0.25)' }}
+      >
+        Dia {dayNumber} de {totalDays}
+      </span>
+    );
   }
 
   const daysUntil = differenceInDays(start, today);
   return <span className="bg-amber-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-white text-sm font-bold">{daysUntil === 1 ? 'Manana!' : `Faltan ${daysUntil} dias`}</span>;
+}
+
+/* ─── Trip Hero (animated cover) ──────────────────── */
+
+interface TripHeroProps {
+  trip: Trip;
+  totalDays: number;
+  travelerNamesCount: number;
+  status: { label: string; color: string };
+  isInTripRange: boolean;
+  onMoreMenuToggle: () => void;
+}
+
+function TripHero({ trip, totalDays, travelerNamesCount, status, isInTripRange, onMoreMenuToggle }: TripHeroProps) {
+  const heroRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+  });
+
+  const imageY = useTransform(scrollYProgress, [0, 1], ['0%', '40%']);
+  const imageBlur = useTransform(scrollYProgress, [0, 1], ['blur(0px)', 'blur(4px)']);
+  const overlayOpacity = useTransform(scrollYProgress, [0, 1], [0.35, 0.85]);
+
+  return (
+    <motion.div
+      ref={heroRef}
+      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+      className="relative rounded-2xl overflow-hidden shadow-lg"
+    >
+      {trip.coverImage ? (
+        <motion.div
+          className="w-full h-52 sm:h-60 overflow-hidden"
+          style={{ y: imageY, filter: imageBlur }}
+        >
+          <motion.img
+            src={trip.coverImage}
+            alt={trip.title}
+            className="w-full h-full object-cover"
+            animate={{ scale: [1, 1.06, 1] }}
+            transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        </motion.div>
+      ) : (
+        <div className="w-full h-40 bg-gradient-to-br from-[#1e3a5f] via-[#2a5a8f] to-[#1e3a5f]" />
+      )}
+      <motion.div
+        className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none"
+        style={{ opacity: overlayOpacity }}
+      />
+      <div className="absolute bottom-0 left-0 right-0 p-5">
+        <div className="flex items-end justify-between">
+          <div>
+            <CountdownHero startDate={trip.startDate} endDate={trip.endDate} />
+            <h1
+              className="text-transparent bg-clip-text bg-gradient-to-b from-white to-amber-50 font-bold text-2xl sm:text-3xl mt-2 tracking-tight"
+              style={{ filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.55))' }}
+            >
+              {trip.title}
+            </h1>
+            <div className="flex items-center gap-3 mt-1.5">
+              <p className="text-white/70 text-sm flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5" /> {trip.destination}
+              </p>
+              <span className="text-white/40">·</span>
+              <p className="text-white/70 text-sm flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" /> {totalDays} dias
+              </p>
+              {travelerNamesCount > 0 && (
+                <>
+                  <span className="text-white/40">·</span>
+                  <p className="text-white/70 text-sm flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5" /> {travelerNamesCount}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onMoreMenuToggle}
+            className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-colors"
+          >
+            <MoreHorizontal className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      <div className="absolute top-4 left-4">
+        <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm inline-flex items-center gap-1.5"
+          style={{ backgroundColor: `${status.color}30`, color: '#fff', border: `1px solid ${status.color}60` }}>
+          {isInTripRange && (
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </span>
+          )}
+          {status.label}
+        </span>
+      </div>
+    </motion.div>
+  );
 }
 
 /* ─── Next Event Card ─────────────────────────────── */
@@ -419,6 +528,12 @@ export default function TripDetailPage() {
 
   const status = TRIP_STATUS[trip.status];
   const totalDays = differenceInDays(parseISO(trip.endDate), parseISO(trip.startDate)) + 1;
+  const _todayStart = startOfDay(new Date());
+  const _tripStart = startOfDay(parseISO(trip.startDate));
+  const _tripEnd = startOfDay(parseISO(trip.endDate));
+  const isInTripRange =
+    (isAfter(_todayStart, _tripStart) || isEqual(_todayStart, _tripStart)) &&
+    (isBefore(_todayStart, _tripEnd) || isEqual(_todayStart, _tripEnd));
   const spent = events.reduce((sum, e) => sum + (e.cost || 0), 0);
   const budget = trip.budget || 0;
   const budgetPct = budget > 0 ? Math.min(Math.round((spent / budget) * 100), 100) : 0;
@@ -561,54 +676,17 @@ export default function TripDetailPage() {
           <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-5">
 
             {/* ── Hero ── */}
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-              className="relative rounded-2xl overflow-hidden shadow-lg"
-            >
-              {trip.coverImage ? (
-                <img src={trip.coverImage} alt={trip.title} className="w-full h-52 sm:h-60 object-cover" />
-              ) : (
-                <div className="w-full h-40 bg-gradient-to-br from-[#1e3a5f] via-[#2a5a8f] to-[#1e3a5f]" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-5">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <CountdownHero startDate={trip.startDate} endDate={trip.endDate} />
-                    <h1 className="text-white font-bold text-2xl sm:text-3xl mt-2 drop-shadow-lg">{trip.title}</h1>
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <p className="text-white/70 text-sm flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5" /> {trip.destination}
-                      </p>
-                      <span className="text-white/40">·</span>
-                      <p className="text-white/70 text-sm flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" /> {totalDays} dias
-                      </p>
-                      {travelerNames.length > 0 && (
-                        <>
-                          <span className="text-white/40">·</span>
-                          <p className="text-white/70 text-sm flex items-center gap-1">
-                            <Users className="w-3.5 h-3.5" /> {travelerNames.length}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowMoreMenu(!showMoreMenu)}
-                    className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-colors"
-                  >
-                    <MoreHorizontal className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-              <div className="absolute top-4 left-4">
-                <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm"
-                  style={{ backgroundColor: `${status.color}30`, color: '#fff', border: `1px solid ${status.color}60` }}>
-                  {status.label}
-                </span>
-              </div>
-            </motion.div>
+            <TripHero
+              trip={trip}
+              totalDays={totalDays}
+              travelerNamesCount={travelerNames.length}
+              status={status}
+              isInTripRange={isInTripRange}
+              onMoreMenuToggle={() => setShowMoreMenu(!showMoreMenu)}
+            />
+
+            {/* ── Companion Banner (live during trip) ── */}
+            <CompanionBanner tripId={tripId} />
 
             {/* ── More Menu ── */}
             <AnimatePresence>
@@ -637,6 +715,9 @@ export default function TripDetailPage() {
                 </>
               )}
             </AnimatePresence>
+
+            {/* ── Smart Notifications Banner ── */}
+            <NotificationsBanner tripId={tripId} />
 
             {/* ── Status Suggestion ── */}
             <StatusSuggestionBanner trip={trip} onUpdate={handleStatusUpdate} />
