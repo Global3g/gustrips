@@ -146,9 +146,13 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
   };
 
   const handleSubmit = async () => {
-    if (paymentMethod !== 'points' && (!amount || parseFloat(amount) <= 0)) {
-      toast('Ingresa un monto valido', 'error');
-      return;
+    // Allow 0 (event didn't happen / free → savings) but not negative or empty
+    if (paymentMethod !== 'points') {
+      const parsed = parseFloat(amount);
+      if (amount === '' || Number.isNaN(parsed) || parsed < 0) {
+        toast('Ingresa un monto válido', 'error');
+        return;
+      }
     }
     if (!description.trim()) {
       toast('Agrega una descripcion', 'error');
@@ -233,31 +237,27 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
       className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30"
       style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
     >
-      {/* Visual layer (clipped) */}
+      {/* Visual layer — matches Historial tab so the look is consistent */}
       <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-        <Particles count={32} />
+        <Particles count={28} />
         <div
           className="absolute top-12 -left-12 w-72 h-72 rounded-full blur-3xl"
-          style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.22), transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.20), transparent 70%)' }}
         />
         <div
           className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-3xl"
-          style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.18), transparent 70%)' }}
         />
         <div
           className="absolute bottom-12 left-1/4 w-64 h-64 rounded-full blur-3xl"
-          style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.16), transparent 70%)' }}
-        />
-        <div
-          className="absolute -bottom-16 right-10 w-72 h-72 rounded-full blur-3xl transition-colors duration-500"
-          style={{ background: `radial-gradient(circle, ${categoryColor}30, transparent 70%)` }}
+          style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.14), transparent 70%)' }}
         />
       </div>
 
       {/* Content layer */}
       <div className="relative z-10 p-5 sm:p-7 space-y-5">
         {/* ── Hero: Receipt FAB + Amount + Description ─────────── */}
-        <div className="relative">
+        <div className="relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4 sm:p-5">
           {/* Receipt FAB top-right */}
           <div className="absolute top-0 right-0 z-10">
             {photoPreview ? (

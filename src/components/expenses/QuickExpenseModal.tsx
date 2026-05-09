@@ -10,7 +10,7 @@ import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/consta
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import { classNames, getInitials } from '@/lib/utils/helpers';
-import { Receipt, Loader2, DollarSign } from 'lucide-react';
+import { Receipt, Loader2, DollarSign, Ban } from 'lucide-react';
 import type { ExpenseCategory, PaymentMethod, TripEvent } from '@/types';
 
 interface QuickExpenseModalProps {
@@ -79,18 +79,20 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
     setSplitBetween((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   };
 
-  const handleSubmit = async () => {
-    const amt = parseFloat(amount);
-    if (!amt || amt <= 0) {
-      toast('Ingresa un monto valido', 'error');
+  const submitExpense = async (overrides?: { amount?: number; notes?: string; description?: string }) => {
+    const amt = overrides?.amount ?? parseFloat(amount);
+    // Allow 0 (event didn't happen / was free → savings) but not negative or NaN
+    if (amt === undefined || Number.isNaN(amt) || amt < 0) {
+      toast('Ingresa un monto válido', 'error');
       return;
     }
-    if (!description.trim()) {
-      toast('Agrega una descripcion', 'error');
+    const desc = (overrides?.description ?? description).trim();
+    if (!desc) {
+      toast('Agrega una descripción', 'error');
       return;
     }
     if (!paidBy) {
-      toast('Selecciona quien pago', 'error');
+      toast('Selecciona quien pagó', 'error');
       return;
     }
     if (splitBetween.length === 0) {
@@ -104,17 +106,18 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
 
     setSubmitting(true);
     try {
+      const noteValue = overrides?.notes !== undefined ? overrides.notes : notes.trim();
       await addTripExpense({
         tripId,
         eventId: event.id,
-        description: description.trim(),
+        description: desc,
         amount: amt,
         currency,
         category,
         paidBy,
         splitBetween,
         date,
-        notes: notes.trim() || undefined,
+        notes: noteValue || undefined,
         paymentMethod,
         pointsUsed: paymentMethod === 'points' ? Number(pointsUsed) || undefined : undefined,
         equivalentValue: paymentMethod === 'points' ? Number(equivalentValue) || undefined : undefined,
@@ -122,7 +125,7 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
         settled: false,
         createdBy: user.uid,
       });
-      toast('Gasto agregado al evento', 'success');
+      toast(amt === 0 ? 'Marcado como ahorrado' : 'Gasto agregado al evento', 'success');
       onCreated?.();
       onClose();
     } catch (err) {
@@ -132,6 +135,13 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
       setSubmitting(false);
     }
   };
+
+  const handleSubmit = () => submitExpense();
+  const handleMarkSkipped = () => submitExpense({
+    amount: 0,
+    notes: 'No se realizó — ahorrado',
+    description: description.trim() || event.title,
+  });
 
   const titleSlot = (
     <div className="flex items-center gap-3 min-w-0">
@@ -352,18 +362,32 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={submitting}
-            icon={submitting ? Loader2 : Receipt}
-            className="bg-emerald-500 hover:bg-emerald-600"
-          >
-            {submitting ? 'Guardando...' : 'Agregar gasto'}
-          </Button>
+        <div className="pt-3 border-t border-gray-200 space-y-2">
+          {/* Skip / savings shortcut */}
+          {event.cost > 0 && (
+            <button
+              type="button"
+              onClick={handleMarkSkipped}
+              disabled={submitting}
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-bold border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-60"
+            >
+              <Ban className="w-4 h-4" />
+              No se realizó — ahorrado
+            </button>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={submitting}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting}
+              icon={submitting ? Loader2 : Receipt}
+              className="bg-emerald-500 hover:bg-emerald-600"
+            >
+              {submitting ? 'Guardando...' : 'Agregar gasto'}
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -210,8 +210,8 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
   onDelete: (id: string) => void;
 }) {
   const [newNote, setNewNote] = useState('');
+  // Done notes are removed on toggle, so we only render pending ones.
   const pending = notes.filter((n) => !n.done);
-  const done = notes.filter((n) => n.done);
 
   const handleAdd = () => {
     const text = newNote.trim();
@@ -284,28 +284,6 @@ function QuickNotesSection({ notes, onAdd, onToggle, onDelete }: {
           </div>
         )}
 
-        {/* Done */}
-        {done.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {done.map((note) => (
-              <div key={note.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl group">
-                <button
-                  onClick={() => onToggle(note.id)}
-                  className="w-5 h-5 rounded-md bg-amber-500/40 flex-shrink-0 flex items-center justify-center"
-                >
-                  <Check className="w-3 h-3 text-amber-800" />
-                </button>
-                <span className="flex-1 text-sm text-amber-900/40 line-through">{note.text}</span>
-                <button
-                  onClick={() => onDelete(note.id)}
-                  className="w-6 h-6 rounded-lg text-amber-700/40 hover:text-red-600 hover:bg-red-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
 
         {notes.length === 0 && (
           <p className="text-amber-700/50 text-xs text-center py-2">Sin pendientes — escribe algo arriba</p>
@@ -376,6 +354,20 @@ export default function TripDetailPage() {
   const router = useRouter();
   const tripId = params.tripId as string;
   const { trip, loading, updateTrip, generateShareToken } = useTrip(tripId);
+
+  // One-time cleanup: legacy done notes (from before the toggle-deletes
+  // change) are filtered silently when the trip loads.
+  const cleanedLegacyNotes = useRef(false);
+  useEffect(() => {
+    if (!trip || cleanedLegacyNotes.current) return;
+    const notes = trip.quickNotes ?? [];
+    const hasDone = notes.some((n) => n.done);
+    if (!hasDone) return;
+    cleanedLegacyNotes.current = true;
+    updateTrip({ quickNotes: notes.filter((n) => !n.done) }).catch(() => {
+      cleanedLegacyNotes.current = false;
+    });
+  }, [trip, updateTrip]);
   const { createTrip } = useTrips();
   const { events } = useEvents(tripId);
   const { members } = useMembers(tripId);
@@ -450,8 +442,9 @@ export default function TripDetailPage() {
   };
 
   const handleToggleNote = async (id: string) => {
-    const updated = quickNotes.map((n) => n.id === id ? { ...n, done: !n.done } : n);
-    await updateTrip({ quickNotes: updated });
+    // Marking a note as "hecho" now removes it entirely so the section
+    // doesn't pile up with completed items below.
+    await updateTrip({ quickNotes: quickNotes.filter((n) => n.id !== id) });
   };
 
   const handleDeleteNote = async (id: string) => {
