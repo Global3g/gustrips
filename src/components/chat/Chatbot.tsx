@@ -36,6 +36,7 @@ function buildTripContext(
   trip: Trip,
   events: TripEvent[],
   allTravelers: GlobalTraveler[],
+  geoStatus: 'granted' | 'pending' | 'denied' | 'unsupported',
 ): string {
   const travelerNames = (trip.travelerIds ?? [])
     .map((id) => allTravelers.find((t) => t.id === id)?.fullName)
@@ -134,12 +135,26 @@ function buildTripContext(
     ? `\nANALISIS AUTOMATICO:\n${issues.map((i) => `- ${i}`).join('\n')}`
     : '\nANALISIS AUTOMATICO:\n- Todo parece cubierto';
 
+  const geoLine = (() => {
+    switch (geoStatus) {
+      case 'granted':
+        return 'GEO: ubicación del dispositivo disponible y se inyecta automáticamente en searchPlaces. NO preguntes dónde está el usuario; ya tienes sus coordenadas.';
+      case 'pending':
+        return 'GEO: pidiendo permiso al usuario. Si necesitas su ubicación inmediata, pídele que toque "Permitir" en el aviso del navegador.';
+      case 'denied':
+        return 'GEO: el usuario denegó el permiso de ubicación. Si quieres buscar lugares cerca, pídele que escriba la ciudad o lugar.';
+      case 'unsupported':
+        return 'GEO: el navegador no expone ubicación. Pregunta la ciudad / lugar si te hace falta.';
+    }
+  })();
+
   return `[CONTEXTO DEL VIAJE]
 Titulo: ${trip.title}
 Destino: ${trip.destination}
 Fechas: ${startDate} al ${endDate} (${totalDays} dias)
 Viajeros: ${travelerNames || 'No especificados'}
 ${trip.budget ? `Presupuesto: $${trip.budget.toLocaleString()} ${trip.budgetCurrency || 'MXN'}` : ''}
+${geoLine}
 
 EVENTOS (por fecha):
 ${eventsText || '- Sin eventos registrados'}
@@ -159,14 +174,25 @@ export function Chatbot() {
   const { travelers } = useGlobalTravelers();
   const { user } = useAuth();
 
+  // Live user location.
+  // watchPosition silently fails on Safari/iOS until permission is granted
+  // explicitly via getCurrentPosition. The hook exposes `request()` to fire
+  // that prompt — we trigger it the first time the user opens the chat.
+  const { location: userLocation, permission: geoPermission, request: requestGeo } = useUserLocation({
+    enabled: !!tripId,
+  });
+
   const tripContext = useMemo(() => {
     if (!trip || !tripId) return null;
-    return buildTripContext(trip, events, travelers);
-  }, [trip, events, travelers, tripId]);
-
-  // Live user location — only enabled when chat is open and inside a trip.
-  // The hook itself only reads navigator.geolocation when granted.
-  const { location: userLocation } = useUserLocation({ enabled: !!tripId });
+    const geoStatus: 'granted' | 'pending' | 'denied' | 'unsupported' = userLocation
+      ? 'granted'
+      : geoPermission === 'denied'
+      ? 'denied'
+      : geoPermission === 'unknown' || geoPermission === 'prompt'
+      ? 'pending'
+      : 'unsupported';
+    return buildTripContext(trip, events, travelers, geoStatus);
+  }, [trip, events, travelers, tripId, userLocation, geoPermission]);
 
   // Bundle the dependencies the executor needs to actually mutate trip data.
   const toolDeps: ToolDeps | null = useMemo(() => {
@@ -210,6 +236,18 @@ export function Chatbot() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // First time the chat opens, ask the browser for geo permission. This
+  // unlocks searchPlaces with the real device coordinates so the model
+  // doesn't have to ask "¿en qué ciudad estás?".
+  const geoRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen || geoRequestedRef.current) return;
+    if (geoPermission === 'unknown' || geoPermission === 'prompt') {
+      geoRequestedRef.current = true;
+      requestGeo();
+    }
+  }, [isOpen, geoPermission, requestGeo]);
 
   // Listen for external requests to open the assistant with a prefilled prompt.
   useEffect(() => {
