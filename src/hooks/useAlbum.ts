@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect } from 'react';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, getBlob } from 'firebase/storage';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { nowISO } from '@/lib/utils/helpers';
@@ -288,10 +288,29 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           }
 
           // Prefer the full-quality original; fall back to the thumbnail.
+          // Use the Storage SDK's getBlob — fetch() against
+          // firebasestorage.googleapis.com fails CORS in the browser,
+          // but the SDK uses an authenticated path that works.
           const source = photo.fullUrl || photo.url;
-          const res = await fetch(source);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const sourceBlob = await res.blob();
+          const sourcePath = (() => {
+            try {
+              const u = new URL(source);
+              const m = u.pathname.match(/\/o\/(.+?)(\?|$)/);
+              if (m) return decodeURIComponent(m[1]);
+            } catch {
+              // ignore — fall back to fetch below
+            }
+            return null;
+          })();
+
+          let sourceBlob: Blob;
+          if (sourcePath) {
+            sourceBlob = await getBlob(ref(storage, sourcePath));
+          } else {
+            const res = await fetch(source);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            sourceBlob = await res.blob();
+          }
           const sourceFile = new File([sourceBlob], 'photo.jpg', {
             type: sourceBlob.type || 'image/jpeg',
           });
