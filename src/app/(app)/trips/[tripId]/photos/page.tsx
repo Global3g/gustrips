@@ -90,7 +90,7 @@ export default function PhotosPage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip(tripId);
   const { events, updateEvent, loading: eventsLoading } = useEvents(tripId);
-  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails } = useAlbum(tripId, trip);
+  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum(tripId, trip);
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);
@@ -670,6 +670,20 @@ export default function PhotosPage() {
     }
   }, [migrating, migrateThumbnails, events, updateEvent, toast, albumPhotos]);
 
+  const handleMarkAllOptimized = useCallback(async () => {
+    if (migrating) return;
+    setMigrating(true);
+    try {
+      const n = await markAllOptimized();
+      toast(`${n} fotos marcadas como optimizadas`, 'success');
+    } catch (err) {
+      console.error('markAllOptimized failed:', err);
+      toast('No pude marcar las fotos. Intenta otra vez.', 'error');
+    } finally {
+      setMigrating(false);
+    }
+  }, [migrating, markAllOptimized, toast]);
+
   const photosToOptimize = useMemo(
     () => albumPhotos.filter((p) => !p.optimized).length,
     [albumPhotos],
@@ -833,18 +847,29 @@ export default function PhotosPage() {
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={handleMigrate}
-                disabled={migrating}
-                className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-950 bg-amber-300 hover:bg-amber-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {migrating ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <>⚡ Optimizar</>
-                )}
-              </button>
+              <div className="flex flex-col gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={handleMigrate}
+                  disabled={migrating}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-950 bg-amber-300 hover:bg-amber-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {migrating ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <>⚡ Optimizar</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleMarkAllOptimized}
+                  disabled={migrating}
+                  className="text-[10px] font-semibold text-amber-200/80 hover:text-amber-100 underline-offset-2 hover:underline disabled:opacity-50"
+                  title="Si las fotos ya se ven bien, marca todas como listas sin re-procesar"
+                >
+                  Solo marcar como listas
+                </button>
+              </div>
             </div>
           )}
 

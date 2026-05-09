@@ -82,6 +82,7 @@ interface UseAlbumReturn {
   migrateThumbnails: (
     onProgress?: (done: number, total: number) => void,
   ) => Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }>;
+  markAllOptimized: () => Promise<number>;
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
@@ -249,10 +250,11 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
 
       // Helper: read an image's natural width without re-uploading.
       // Lets us mark already-small thumbs as optimized=true cheaply.
+      // No crossOrigin — we only need natural dimensions (not pixel data),
+      // and crossOrigin breaks loading on hosts without explicit CORS.
       const measureWidth = (url: string): Promise<number> =>
         new Promise((resolve, reject) => {
           const img = new Image();
-          img.crossOrigin = 'anonymous';
           img.onload = () => resolve(img.naturalWidth);
           img.onerror = () => reject(new Error('image load failed'));
           img.src = url;
@@ -338,5 +340,30 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     [tripId, trip],
   );
 
-  return { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails };
+  // Last-resort: just stamp every photo with optimized=true so the
+  // banner stops nagging when re-processing keeps failing.
+  const markAllOptimized = useCallback(async (): Promise<number> => {
+    const db = getClientDb();
+    const tripRef = doc(db, 'trips', tripId);
+    const currentPhotos = trip?.albumPhotos ?? [];
+    if (currentPhotos.length === 0) return 0;
+    const cleaned = currentPhotos.map((p) =>
+      cleanUndefined({ ...p, optimized: true }),
+    );
+    await updateDoc(tripRef, {
+      albumPhotos: cleaned,
+      updatedAt: nowISO(),
+    });
+    return cleaned.length;
+  }, [tripId, trip]);
+
+  return {
+    albumPhotos,
+    addPhoto,
+    deletePhoto,
+    updateCaption,
+    updatePhoto,
+    migrateThumbnails,
+    markAllOptimized,
+  };
 }
