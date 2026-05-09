@@ -249,7 +249,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
 
       for (const photo of currentPhotos) {
         if (photo.optimized) {
-          updated.push(photo);
+          updated.push(cleanUndefined(photo));
           skipped++;
           done++;
           onProgress?.(done, total);
@@ -274,7 +274,9 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           const newUrl = await getDownloadURL(newRef);
 
           urlMap[photo.url] = newUrl;
-          updated.push({ ...photo, url: newUrl, optimized: true });
+          // cleanUndefined strips undefined optional fields (caption,
+          // eventId, fullUrl) that Firestore rejects inside arrays.
+          updated.push(cleanUndefined({ ...photo, url: newUrl, optimized: true }));
           migrated++;
 
           // Best-effort delete of the old thumbnail to free storage
@@ -289,7 +291,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           }
         } catch (err) {
           console.error('Failed to migrate photo:', photo.url, err);
-          updated.push(photo);
+          updated.push(cleanUndefined(photo));
           failed++;
         }
 
