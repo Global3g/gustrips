@@ -13,6 +13,7 @@ import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import MilestoneBanner from '@/components/MilestoneBanner';
 import OfflineIndicator from '@/components/OfflineIndicator';
 import SyncIndicator from '@/components/SyncIndicator';
+import PendingPhotoSync from '@/components/PendingPhotoSync';
 import { classNames } from '@/lib/utils/helpers';
 
 /** Detect if we are inside a trip detail view (has tripId in path) */
@@ -71,6 +72,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {/* Offline / sync UX */}
             <OfflineIndicator />
             <SyncIndicator />
+            <PendingPhotoSync />
           </div>
         </ErrorBoundary>
       </ToastProvider>

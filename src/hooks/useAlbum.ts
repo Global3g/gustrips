@@ -3,9 +3,16 @@
 import { useCallback, useEffect } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
+import { uploadPhoto, uploadOnePending } from '@/lib/photoUploader';
+import {
+  enqueuePhoto,
+  listPending,
+  removePending,
+  bumpAttempts,
+} from '@/lib/pendingPhotos';
 import type { Trip, AlbumPhoto } from '@/types';
 
 /* ─── Image compression ─────────────────────────── */
@@ -84,6 +91,7 @@ interface UseAlbumReturn {
     onProgress?: (done: number, total: number) => void,
   ) => Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }>;
   markAllOptimized: () => Promise<number>;
+  processPendingUploads: () => Promise<{ uploaded: number; failed: number }>;
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
@@ -112,48 +120,64 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
 
   const addPhoto = useCallback(
     async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {
-      const storage = getClientStorage();
-      const db = getClientDb();
-      const timestamp = Date.now();
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const storage_thumb = ref(storage, `trips/${tripId}/album/${timestamp}_${safeName}`);
-      const storage_full = ref(storage, `trips/${tripId}/album/${timestamp}_full_${safeName}`);
+      // If we're offline, persist the raw blob to IndexedDB and return a
+      // synthetic AlbumPhoto so the caller doesn't crash. PendingPhotoSync
+      // will drain the queue when the device comes back online.
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const id = await enqueuePhoto({
+          tripId,
+          date,
+          caption,
+          eventId,
+          fileBlob: file,
+          fileType: file.type,
+          fileName: file.name,
+        });
+        try { markMutation(); } catch { /* localStorage may be unavailable */ }
+        const pendingPhoto: AlbumPhoto = {
+          url: id ? `pending:${id}` : 'pending:',
+          optimized: true,
+          date,
+          uploadedAt: nowISO(),
+        };
+        if (caption) pendingPhoto.caption = caption;
+        if (eventId) pendingPhoto.eventId = eventId;
+        return pendingPhoto;
+      }
 
-      // Generate both versions in parallel — gallery thumbnail (small, fast)
-      // and full-quality original (used by the lightbox).
-      // 600px @ 75% covers retina rendering up to ~300px display while keeping
-      // each thumbnail around 50-100 KB for quick grid loading.
-      const [thumbBlob, fullBlob] = await Promise.all([
-        compressImage(file, 600, 0.75),
-        compressImage(file, 3000, 0.92),
-      ]);
-      const [, ] = await Promise.all([
-        uploadBytes(storage_thumb, thumbBlob, { contentType: 'image/jpeg' }),
-        uploadBytes(storage_full, fullBlob, { contentType: 'image/jpeg' }),
-      ]);
-      const [url, fullUrl] = await Promise.all([
-        getDownloadURL(storage_thumb),
-        getDownloadURL(storage_full),
-      ]);
-
-      const photo: AlbumPhoto = {
-        url,
-        fullUrl,
-        optimized: true, // already produced as a 600px thumbnail
+      return uploadPhoto({
+        tripId,
         date,
-        uploadedAt: nowISO(),
-      };
-      if (caption) photo.caption = caption;
-      if (eventId) photo.eventId = eventId;
-
-      const tripRef = doc(db, 'trips', tripId);
-      await updateDoc(tripRef, {
-        albumPhotos: arrayUnion(cleanUndefined(photo)),
-        updatedAt: nowISO(),
+        caption,
+        eventId,
+        fileBlob: file,
+        fileName: file.name,
+        fileType: file.type,
       });
-      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [tripId],
+  );
 
-      return photo;
+  /** Drain the offline queue for this trip. Returns success/failure tallies. */
+  const processPendingUploads = useCallback(
+    async (): Promise<{ uploaded: number; failed: number }> => {
+      let uploaded = 0;
+      let failed = 0;
+      const items = await listPending(tripId);
+      for (const item of items) {
+        try {
+          await uploadOnePending(item);
+          await removePending(item.id);
+          uploaded++;
+        } catch (err) {
+          if (typeof console !== 'undefined') {
+            console.warn('[useAlbum] pending upload failed', err);
+          }
+          await bumpAttempts(item.id);
+          failed++;
+        }
+      }
+      return { uploaded, failed };
     },
     [tripId],
   );
@@ -377,5 +401,6 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     updatePhoto,
     migrateThumbnails,
     markAllOptimized,
+    processPendingUploads,
   };
 }

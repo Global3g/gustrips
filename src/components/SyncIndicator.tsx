@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { listPending } from '@/lib/pendingPhotos';
 
 const STORAGE_KEY = 'gustrips:lastMutationAt';
 const RECENT_MUTATION_WINDOW_MS = 60_000;
@@ -43,6 +44,27 @@ export default function SyncIndicator() {
   const wasOfflineWithPendingRef = useRef(false);
   const [hasRecentMutation, setHasRecentMutation] = useState(false);
   const [showSyncedFlash, setShowSyncedFlash] = useState(false);
+  const [pendingPhotoCount, setPendingPhotoCount] = useState(0);
+
+  // Poll the IndexedDB queue every 5s for pending photo uploads. Cheap — the
+  // store is local and tiny; only the count matters here.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const items = await listPending();
+        if (!cancelled) setPendingPhotoCount(items.length);
+      } catch {
+        if (!cancelled) setPendingPhotoCount(0);
+      }
+    };
+    void tick();
+    const interval = window.setInterval(() => { void tick(); }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   // Re-evaluate whether there is a recent mutation while offline.
   useEffect(() => {
@@ -85,10 +107,31 @@ export default function SyncIndicator() {
   }, [isOnline, hasRecentMutation]);
 
   const showPending = !isOnline && hasRecentMutation;
+  const showPendingPhotos = pendingPhotoCount > 0;
 
   return (
     <AnimatePresence>
-      {showPending && (
+      {showPendingPhotos && (
+        <motion.div
+          key="sync-pending-photos"
+          initial={{ opacity: 0, y: 10, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.96 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="fixed bottom-56 right-6 lg:bottom-40 z-[55] pointer-events-none"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-sky-50 bg-sky-500/20 border border-sky-300/40 backdrop-blur-md shadow-lg shadow-sky-900/20 animate-pulse">
+            <span aria-hidden="true">{'\u{1F4F7}'}</span>
+            <span>
+              {pendingPhotoCount} {pendingPhotoCount === 1 ? 'foto por subir' : 'fotos por subir'}
+            </span>
+          </div>
+        </motion.div>
+      )}
+
+      {showPending && !showPendingPhotos && (
         <motion.div
           key="sync-pending"
           initial={{ opacity: 0, y: 10, scale: 0.96 }}
@@ -100,7 +143,7 @@ export default function SyncIndicator() {
           aria-live="polite"
         >
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-amber-50 bg-amber-500/20 border border-amber-300/40 backdrop-blur-md shadow-lg shadow-amber-900/20 animate-pulse">
-            <span aria-hidden="true">⏳</span>
+            <span aria-hidden="true">{'⏳'}</span>
             <span>Cambios pendientes</span>
           </div>
         </motion.div>

@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { EVENT_TYPES } from '@/config/constants';
 import { formatCurrency } from '@/lib/utils/helpers';
+import CachedTileLayer from '@/components/trips/CachedTileLayer';
 import type { TripEvent, EventType } from '@/types';
 
 /* ─── Fix default marker icon issue with Next.js ── */
@@ -191,9 +192,11 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
         style={{ height: '100%', width: '100%' }}
         zoomControl={true}
       >
-        <TileLayer
+        <CachedTileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+          subdomains="abcd"
+          maxZoom={19}
         />
 
         <FitBounds positions={positions} />

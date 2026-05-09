@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { Clock, Zap, ChevronRight, Sparkles } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Clock, Zap, ChevronRight, Sparkles, MapPin, Navigation } from 'lucide-react';
 import {
   parseISO,
   startOfDay,
@@ -15,8 +15,20 @@ import {
 } from 'date-fns';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
+import { useUserLocation } from '@/hooks/useUserLocation';
+import { haversineMeters } from '@/lib/utils/geo';
 import { ROUTES } from '@/config/constants';
 import type { TripEvent } from '@/types';
+
+const NEARBY_RADIUS_M = 500;
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) {
+    return `a ${Math.max(1, Math.round(meters))} m`;
+  }
+  const km = meters / 1000;
+  return `a ${km.toFixed(1)} km`;
+}
 
 interface Props {
   tripId: string;
@@ -108,6 +120,7 @@ export default function CompanionBanner({ tripId }: Props) {
   const { trip } = useTrip(tripId);
   const { events } = useEvents(tripId);
   const [now, setNow] = useState<Date>(() => new Date());
+  const { location, permission, request } = useUserLocation({ enabled: true });
 
   // Re-render every minute so countdown / clock stay fresh
   useEffect(() => {
@@ -152,9 +165,26 @@ export default function CompanionBanner({ tripId }: Props) {
     }
   }, [trip, events, now, timezone]);
 
+  const nearby = useMemo(() => {
+    if (!location || permission !== 'granted') return null;
+    let best: { event: TripEvent; distance: number } | null = null;
+    for (const ev of events) {
+      if (ev.latitude == null || ev.longitude == null) continue;
+      const d = haversineMeters(
+        { lat: location.lat, lng: location.lng },
+        { lat: ev.latitude, lng: ev.longitude }
+      );
+      if (d <= NEARBY_RADIUS_M && (!best || d < best.distance)) {
+        best = { event: ev, distance: d };
+      }
+    }
+    return best;
+  }, [events, location, permission]);
+
   if (!trip || !inRange || !computed) return null;
 
   const { dayNumber, totalDays, nextEvent, countdown, localTime } = computed;
+  const showLocationCta = permission === 'prompt' || permission === 'unknown';
 
   return (
     <motion.div
@@ -206,6 +236,62 @@ export default function CompanionBanner({ tripId }: Props) {
             )}
           </div>
         </div>
+
+        {/* Geo: nearby event hint */}
+        <AnimatePresence>
+          {nearby && (
+            <motion.div
+              key={`nearby-${nearby.event.id}`}
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="mt-4"
+            >
+              <Link
+                href={`${ROUTES.app.itinerary(tripId)}?day=${nearby.event.date}`}
+                className="group flex items-center gap-3 rounded-2xl bg-emerald-400/12 hover:bg-emerald-400/18 border border-emerald-300/30 hover:border-emerald-300/50 px-4 py-3 transition-colors"
+              >
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                </span>
+                <Sparkles className="w-4 h-4 text-emerald-200 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/90 text-sm font-medium truncate">
+                    Estás cerca de{' '}
+                    <span className="text-white font-semibold">{nearby.event.title}</span>
+                    <span className="text-emerald-200/90"> · {formatDistance(nearby.distance)}</span>
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-emerald-100/70 group-hover:text-white transition-colors shrink-0" />
+              </Link>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Geo: permission CTA */}
+        {!nearby && showLocationCta && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="mt-4 flex items-center gap-3 rounded-2xl bg-white/5 border border-white/10 px-4 py-2.5"
+          >
+            <MapPin className="w-4 h-4 text-emerald-200 shrink-0" />
+            <p className="text-white/75 text-xs flex-1">
+              Activa tu ubicación para ver eventos cercanos
+            </p>
+            <button
+              type="button"
+              onClick={request}
+              className="text-xs px-2.5 py-1 rounded-full bg-emerald-400/20 hover:bg-emerald-400/30 border border-emerald-300/30 text-emerald-100 transition-colors flex items-center gap-1.5"
+            >
+              <Navigation className="w-3 h-3" />
+              Activar ubicación
+            </button>
+          </motion.div>
+        )}
 
         {/* Bottom: next event */}
         <div className="mt-5">
