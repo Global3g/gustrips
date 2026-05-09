@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import CommandPalette from '@/components/CommandPalette';
+import dynamic from 'next/dynamic';
+
+const CommandPalette = dynamic(() => import('./CommandPalette'), { ssr: false });
 
 export default function CommandPaletteProvider() {
   const [open, setOpen] = useState(false);
@@ -21,5 +23,6 @@ export default function CommandPaletteProvider() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  if (!open) return null;
   return <CommandPalette open={open} onClose={handleClose} />;
 }

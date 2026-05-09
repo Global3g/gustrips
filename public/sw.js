@@ -8,16 +8,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-/* ── Fetch — required for PWA install prompt ──
-   We deliberately do NOT proxy cross-origin requests (e.g. Firebase
-   Storage). Re-issuing them inside the SW strips CORS context and
-   makes them fail. Pass-through only for our own origin; everything
-   else goes straight to the network without SW handling. */
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
-  event.respondWith(fetch(event.request));
-});
+/* ── Fetch handler intentionally omitted ──
+   We previously called `event.respondWith(fetch(event.request))` for same-origin
+   requests, which forced every navigation through the SW with no caching benefit
+   and added latency on slow mobile networks. Removing the listener entirely lets
+   the browser handle requests directly. The PWA install prompt does not require
+   the SW to actively intercept fetches — registration alone is sufficient on
+   modern browsers. */
 
 /* ── Push event — show notification ── */
 self.addEventListener('push', (event) => {

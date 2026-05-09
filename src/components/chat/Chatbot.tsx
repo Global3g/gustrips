@@ -2,10 +2,16 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import type { ChatMessage } from './types';
 import { GREETING, QUICK_ACTIONS } from './constants';
 import { ChatbotButton } from './ChatbotButton';
-import { ChatbotPanel } from './ChatbotPanel';
+
+// Lazy-load the heavy panel UI; the panel chunk only ships once the user opens the chat.
+const ChatbotPanel = dynamic(
+  () => import('./ChatbotPanel').then((m) => m.ChatbotPanel),
+  { ssr: false },
+);
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useExpenses } from '@/hooks/useExpenses';

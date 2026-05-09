@@ -1,9 +1,18 @@
-import confetti from 'canvas-confetti';
-
 export type ConfettiLevel = 'small' | 'big' | 'huge';
 
 // Palette aligned with the app — amber, emerald, sky, violet
 const PALETTE = ['#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6'];
+
+// Cache the dynamically loaded module so subsequent calls don't re-fetch.
+type ConfettiFn = (options?: Record<string, unknown>) => void;
+let confettiPromise: Promise<ConfettiFn> | null = null;
+
+function loadConfetti(): Promise<ConfettiFn> {
+  if (!confettiPromise) {
+    confettiPromise = import('canvas-confetti').then((m) => m.default as unknown as ConfettiFn);
+  }
+  return confettiPromise;
+}
 
 /**
  * Trigger celebratory confetti at one of three intensity levels.
@@ -12,8 +21,10 @@ const PALETTE = ['#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6'];
  * - `big`: 100 particles split between two side bursts.
  * - `huge`: 250 particles spread across three staggered bursts over ~1s.
  */
-export function triggerConfetti(level: ConfettiLevel = 'small'): void {
+export async function triggerConfetti(level: ConfettiLevel = 'small'): Promise<void> {
   if (typeof window === 'undefined') return;
+
+  const confetti = await loadConfetti();
 
   if (level === 'small') {
     confetti({
@@ -84,7 +95,8 @@ export function fireMilestone(
 ): void {
   if (typeof window === 'undefined') return;
 
-  triggerConfetti(level);
+  // Fire-and-forget: confetti load is async but we don't block dispatch.
+  void triggerConfetti(level);
 
   window.dispatchEvent(
     new CustomEvent('gustrips:milestone', {

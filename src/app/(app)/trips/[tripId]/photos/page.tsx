@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, parseISO, eachDayOfInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -42,8 +43,8 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
 import TripInsights from '@/components/trips/TripInsights';
-import PhotoLightbox from '@/components/trips/photos/PhotoLightbox';
-import SortablePhoto from '@/components/trips/photos/SortablePhoto';
+const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
+const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePhoto'), { ssr: false });
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
