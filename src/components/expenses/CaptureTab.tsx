@@ -259,7 +259,10 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
       {/* Content layer */}
       <div className="relative z-10 p-5 sm:p-7 space-y-5">
         {/* ── Hero: Receipt FAB + Amount + Description ─────────── */}
-        <div className="relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4 sm:p-5">
+        <div
+          className="relative rounded-2xl border border-white/[0.08] backdrop-blur-md p-4 sm:p-5 shadow-xl shadow-black/20"
+          style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+        >
           {/* Receipt FAB top-right */}
           <div className="absolute top-0 right-0 z-10">
             {photoPreview ? (
@@ -357,7 +360,10 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
         </div>
 
         {/* ── Card: Categoría ─────────────────────────────────── */}
-        <div className="relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4">
+        <div
+          className="relative rounded-2xl border border-white/[0.08] backdrop-blur-md p-4 shadow-xl shadow-black/20"
+          style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+        >
           <div className="text-white/50 text-[10px] uppercase tracking-[0.18em] font-bold mb-3">Categoría</div>
           <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
             {(Object.entries(EXPENSE_CATEGORIES) as [ExpenseCategory, (typeof EXPENSE_CATEGORIES)[ExpenseCategory]][]).map(
@@ -406,7 +412,10 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
         </div>
 
         {/* ── Card: Pago + Split ──────────────────────────────── */}
-        <div className="relative rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4 space-y-4">
+        <div
+          className="relative rounded-2xl border border-white/[0.08] backdrop-blur-md p-4 space-y-4 shadow-xl shadow-black/20"
+          style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+        >
           {/* Paid by */}
           <div>
             <div className="text-white/50 text-[10px] uppercase tracking-[0.18em] font-bold mb-2">Pagó</div>
@@ -495,7 +504,10 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
         </div>
 
         {/* ── Collapsible: Más detalles ───────────────────────── */}
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm overflow-hidden">
+        <div
+          className="rounded-2xl border border-white/[0.08] backdrop-blur-md overflow-hidden shadow-xl shadow-black/20"
+          style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
+        >
           <button
             type="button"
             onClick={() => setDetailsOpen((s) => !s)}
