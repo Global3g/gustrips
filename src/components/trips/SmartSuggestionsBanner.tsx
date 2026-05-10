@@ -89,6 +89,9 @@ export default function SmartSuggestionsBanner({ tripId }: Props) {
     const days = getDaysBetween(trip.startDate, trip.endDate);
     if (days.length === 0) return out;
 
+    // Don't surface forward-looking suggestions if the trip is over.
+    if (todayStr > trip.endDate) return out;
+
     const destination = trip.destination || 'tu destino';
 
     // Group events by date
@@ -103,23 +106,28 @@ export default function SmartSuggestionsBanner({ tripId }: Props) {
       }
     }
 
-    // 1. Empty days
-    for (let i = 0; i < days.length; i++) {
-      const day = days[i];
+    // Past days are noise — you can't plan a gap that already happened.
+    // Keep "today" so suggestions for the rest of the day still surface.
+    const upcomingDays = days.filter((d) => d >= todayStr);
+
+    // 1. Empty days (today + future only)
+    for (let i = 0; i < upcomingDays.length; i++) {
+      const day = upcomingDays[i];
+      const dayIndex = days.indexOf(day); // preserve "Día N" numbering across the trip
       const dayEvents = eventsByDay.get(day);
       if (!dayEvents || dayEvents.length === 0) {
         out.push({
           id: `empty-${day}`,
           kind: 'empty-day',
-          text: `Día ${i + 1} (${formatDayLabel(day)}) está vacío — ¿quieres planear algo?`,
+          text: `Día ${dayIndex + 1} (${formatDayLabel(day)}) está vacío — ¿quieres planear algo?`,
           prompt: `Sugiéreme cosas para hacer el día ${day} en ${destination}.`,
         });
         if (out.length >= 3) return out;
       }
     }
 
-    // 2. Time gaps > 4h on populated days
-    for (const day of days) {
+    // 2. Time gaps > 4h on populated days (today + future only)
+    for (const day of upcomingDays) {
       const dayEvents = eventsByDay.get(day);
       if (!dayEvents || dayEvents.length < 2) continue;
       // Sort by startTime
@@ -169,14 +177,16 @@ export default function SmartSuggestionsBanner({ tripId }: Props) {
       }
     }
 
-    // 4. Hotel nights uncovered (excluding cruise nights & last day)
+    // 4. Hotel nights uncovered (excluding cruise nights & last day & past nights)
     const cruiseNights = new Set<string>();
     const hotelNights = new Set<string>();
     for (const ev of events) {
       if (ev.type === 'cruise' && ev.date) cruiseNights.add(ev.date);
       if (ev.type === 'hotel' && ev.date) hotelNights.add(ev.date);
     }
-    const nightsNeedingHotel = days.slice(0, -1).filter((d) => !cruiseNights.has(d));
+    const nightsNeedingHotel = days
+      .slice(0, -1)
+      .filter((d) => d >= todayStr && !cruiseNights.has(d));
     const uncoveredNights = nightsNeedingHotel.filter((d) => !hotelNights.has(d));
     if (uncoveredNights.length > 0) {
       const list = uncoveredNights.join(', ');
@@ -222,7 +232,7 @@ export default function SmartSuggestionsBanner({ tripId }: Props) {
     }
 
     return out.slice(0, 3);
-  }, [trip, events, expenses]);
+  }, [trip, events, expenses, todayStr]);
 
   if (!trip) return null;
   if (dismissedToday) return null;
