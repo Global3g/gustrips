@@ -194,6 +194,7 @@ export default function PhotosPage() {
       eventCountry?: string;
       eventId?: string;
       eventColor?: string;
+      eventStartTime?: string;
       photos: typeof allPhotos;
     }> = [];
 
@@ -236,6 +237,7 @@ export default function PhotosPage() {
           eventCountry: event?.country,
           eventId,
           eventColor: cfg?.color,
+          eventStartTime: event?.startTime,
           photos: sortedEventPhotos,
         });
       }
@@ -243,7 +245,20 @@ export default function PhotosPage() {
         groups.push({ key: `${date}-no-event`, date, photos: noEvent });
       }
     }
-    return groups.sort((a, b) => a.date.localeCompare(b.date));
+    // Itinerary order within a day: by event startTime ascending. Events
+    // without a time fall to the bottom of the day, and the "Sin evento"
+    // bucket stays at the very end so it doesn't break the flow.
+    return groups.sort((a, b) => {
+      const dateCmp = a.date.localeCompare(b.date);
+      if (dateCmp !== 0) return dateCmp;
+      const aHasEvent = !!a.eventId;
+      const bHasEvent = !!b.eventId;
+      if (aHasEvent && !bHasEvent) return -1;
+      if (!aHasEvent && bHasEvent) return 1;
+      const aTime = a.eventStartTime || '99:99';
+      const bTime = b.eventStartTime || '99:99';
+      return aTime.localeCompare(bTime);
+    });
   }, [allPhotos, events]);
 
   /* ── Trip days for numbering ── */
@@ -1377,15 +1392,38 @@ export default function PhotosPage() {
                 >
                   <option value="">Sin vincular</option>
                   {(() => {
-                    const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
+                    // Sort by date then by startTime so the picker mirrors the
+                    // itinerary order. Events without a time go to the bottom
+                    // of their day.
+                    const sorted = [...events].sort((a, b) => {
+                      const dateCmp = a.date.localeCompare(b.date);
+                      if (dateCmp !== 0) return dateCmp;
+                      return (a.startTime || '99:99').localeCompare(b.startTime || '99:99');
+                    });
                     const grouped = new Map<string, typeof events>();
                     for (const ev of sorted) {
                       const list = grouped.get(ev.date) || [];
                       list.push(ev);
                       grouped.set(ev.date, list);
                     }
-                    return [...grouped.entries()].map(([dateStr, evts]) => (
-                      <optgroup key={dateStr} label={formatDateES(dateStr)}>
+                    // Surface the active date's group first so the picker
+                    // opens on "today" (or whatever selectedDate is) instead
+                    // of forcing a scroll down from day 1.
+                    const entries = [...grouped.entries()];
+                    const ordered = entries.sort(([a], [b]) => {
+                      if (a === selectedDate && b !== selectedDate) return -1;
+                      if (b === selectedDate && a !== selectedDate) return 1;
+                      return a.localeCompare(b);
+                    });
+                    return ordered.map(([dateStr, evts]) => (
+                      <optgroup
+                        key={dateStr}
+                        label={
+                          dateStr === selectedDate
+                            ? `${formatDateES(dateStr)} · seleccionado`
+                            : formatDateES(dateStr)
+                        }
+                      >
                         {evts.map((ev) => (
                           <option key={ev.id} value={ev.id}>
                             {ev.startTime ? `${ev.startTime} - ` : ''}
