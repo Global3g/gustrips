@@ -9,6 +9,7 @@ import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
+import { isHeicFile, normalizeImageFile } from '@/lib/heic';
 import type { AlbumPhoto } from '@/types';
 import type { PendingPhoto } from '@/lib/pendingPhotos';
 
@@ -92,14 +93,22 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
   const storage = getClientStorage();
   const db = getClientDb();
   const timestamp = Date.now();
-  const safeName = (fileName || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  // HEIC from Photos.app can't be decoded by canvas. Convert to JPEG up-front
+  // so the rest of the pipeline (compression, upload, thumbnails) works.
+  let workingFile: File =
+    fileBlob instanceof File
+      ? fileBlob
+      : new File([fileBlob], fileName || 'photo', { type: fileType || fileBlob.type || 'image/jpeg' });
+  if (isHeicFile(workingFile)) {
+    workingFile = await normalizeImageFile(workingFile);
+  }
+
+  const safeName = (workingFile.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
   const storage_thumb = ref(storage, `trips/${tripId}/album/${timestamp}_${safeName}`);
   const storage_full = ref(storage, `trips/${tripId}/album/${timestamp}_full_${safeName}`);
 
-  const blobForCompression: Blob =
-    fileBlob instanceof File
-      ? fileBlob
-      : new File([fileBlob], safeName, { type: fileType || fileBlob.type || 'image/jpeg' });
+  const blobForCompression: Blob = workingFile;
 
   const [thumbBlob, fullBlob] = await Promise.all([
     compressImage(blobForCompression, 600, 0.75),

@@ -7,6 +7,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
 import { uploadPhoto, uploadOnePending } from '@/lib/photoUploader';
+import { isHeicFile, normalizeImageFile } from '@/lib/heic';
 import {
   enqueuePhoto,
   listPending,
@@ -120,6 +121,10 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
 
   const addPhoto = useCallback(
     async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {
+      // Normalize HEIC → JPEG before anything else so neither path (online
+      // upload nor offline queue) holds an unrenderable blob.
+      const normalized = isHeicFile(file) ? await normalizeImageFile(file) : file;
+
       // If we're offline, persist the raw blob to IndexedDB and return a
       // synthetic AlbumPhoto so the caller doesn't crash. PendingPhotoSync
       // will drain the queue when the device comes back online.
@@ -129,9 +134,9 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           date,
           caption,
           eventId,
-          fileBlob: file,
-          fileType: file.type,
-          fileName: file.name,
+          fileBlob: normalized,
+          fileType: normalized.type,
+          fileName: normalized.name,
         });
         try { markMutation(); } catch { /* localStorage may be unavailable */ }
         const pendingPhoto: AlbumPhoto = {
@@ -150,9 +155,9 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         date,
         caption,
         eventId,
-        fileBlob: file,
-        fileName: file.name,
-        fileType: file.type,
+        fileBlob: normalized,
+        fileName: normalized.name,
+        fileType: normalized.type,
       });
     },
     [tripId],

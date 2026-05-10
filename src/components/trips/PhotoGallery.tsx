@@ -129,7 +129,7 @@ export default function PhotoGallery({ photos, onAddPhoto, onDeletePhoto }: Phot
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           className="hidden"
           onChange={handleFileSelect}
         />
