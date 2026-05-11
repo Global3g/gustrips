@@ -54,6 +54,8 @@ export default function PhotoSelector({
 }: PhotoSelectorProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // dragenter/dragleave fire on every descendant — count depth to avoid flicker.
+  const [dragDepth, setDragDepth] = useState(0);
   const [items, setItems] = useState<SelectedItem[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -61,9 +63,37 @@ export default function PhotoSelector({
 
   const { firebaseUser } = useAuthContext();
 
+  // Accept any image extension we know, OR any MIME starting with image/.
+  // Some sources (Apple Photos drag, Drive web, Outlook attachments) hand us
+  // files with empty/octet-stream MIME types, so we can't rely on MIME alone.
+  const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif|avif)$/i;
+
+  const isImageFile = useCallback((f: File): boolean => {
+    if (f.type && f.type.startsWith('image/')) return true;
+    if (IMAGE_EXT_RE.test(f.name)) return true;
+    // Some shares give us no name + no type but a hint via lastModified.
+    // Last resort: treat anything labeled type 'application/octet-stream'
+    // with a non-empty name as a possible image and let downstream EXIF
+    // extraction reject it cleanly.
+    if (f.type === 'application/octet-stream' && f.name.length > 0) return true;
+    return false;
+  }, []);
+
   const handleFiles = useCallback(
     (files: FileList | File[]) => {
-      const arr = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+      const incoming = Array.from(files);
+      const arr = incoming.filter(isImageFile);
+      const rejected = incoming.length - arr.length;
+      if (incoming.length > 0 && arr.length === 0) {
+        setGlobalError(
+          `No reconocimos ninguno de los ${incoming.length} archivos como imagen. ` +
+            'Si los arrastraste desde una galería, probá usar el botón para elegirlas.',
+        );
+      } else if (rejected > 0) {
+        setGlobalError(`Ignoramos ${rejected} archivo${rejected === 1 ? '' : 's'} que no parecían fotos.`);
+      } else {
+        setGlobalError(null);
+      }
       setItems((prev) => {
         const merged = [...prev, ...arr.map<SelectedItem>((file) => ({ file, status: 'pending' }))]
           .slice(0, maxPhotos);
@@ -71,15 +101,63 @@ export default function PhotoSelector({
         return merged;
       });
     },
-    [maxPhotos, onSelect],
+    [maxPhotos, onSelect, isImageFile],
   );
+
+  /**
+   * Extract files from a DataTransfer. Reads both `.files` and `.items`
+   * because Apple Photos / iCloud / some browser drags only populate one
+   * or the other. Deduplicates by name+size+lastModified.
+   */
+  const collectFromDataTransfer = (dt: DataTransfer): File[] => {
+    const out: File[] = [];
+    const seen = new Set<string>();
+    const pushUnique = (f: File | null | undefined): void => {
+      if (!f) return;
+      const key = `${f.name}|${f.size}|${f.lastModified}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(f);
+    };
+    // 1. The classic path.
+    if (dt.files && dt.files.length > 0) {
+      for (let i = 0; i < dt.files.length; i++) pushUnique(dt.files.item(i));
+    }
+    // 2. DataTransferItemList — covers Apple Photos and similar.
+    if (dt.items && dt.items.length > 0) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const item = dt.items[i];
+        if (item.kind === 'file') {
+          pushUnique(item.getAsFile());
+        }
+      }
+    }
+    return out;
+  };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
+    setDragDepth(0);
     if (disabled || processing) return;
-    if (e.dataTransfer.files.length === 0) return;
-    handleFiles(e.dataTransfer.files);
+    const files = collectFromDataTransfer(e.dataTransfer);
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(
+        '[PhotoSelector] drop:',
+        files.length,
+        'files',
+        files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+      );
+    }
+    if (files.length === 0) {
+      setGlobalError(
+        'No pudimos leer las fotos arrastradas. Algunas galerías (Apple Photos, iCloud) ' +
+          'no permiten drag directo — probá usar el botón "tocá para elegir".',
+      );
+      return;
+    }
+    handleFiles(files);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,11 +268,34 @@ export default function PhotoSelector({
     <div className="space-y-3">
       <motion.div
         whileHover={isBusy ? undefined : { scale: 1.005 }}
-        onDragOver={(e) => {
+        onDragEnter={(e) => {
           e.preventDefault();
-          if (!isBusy) setIsDragging(true);
+          e.stopPropagation();
+          if (isBusy) return;
+          setDragDepth((d) => {
+            const next = d + 1;
+            if (next > 0) setIsDragging(true);
+            return next;
+          });
         }}
-        onDragLeave={() => setIsDragging(false)}
+        onDragOver={(e) => {
+          // Required for onDrop to fire. Also set dropEffect for nicer cursor.
+          e.preventDefault();
+          e.stopPropagation();
+          if (!isBusy) {
+            e.dataTransfer.dropEffect = 'copy';
+            if (!isDragging) setIsDragging(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragDepth((d) => {
+            const next = Math.max(0, d - 1);
+            if (next === 0) setIsDragging(false);
+            return next;
+          });
+        }}
         onDrop={handleDrop}
         onClick={() => !isBusy && inputRef.current?.click()}
         className={`relative rounded-3xl border-2 border-dashed p-8 cursor-pointer transition-all duration-200 ${
