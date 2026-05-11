@@ -23,7 +23,13 @@ import {
   Sparkles,
   Clock,
   BookHeart,
+  Home,
+  Pencil,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
+import { useTrips } from '@/hooks/useTrips';
+import { useToast } from '@/context/ToastContext';
 import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { ROUTES } from '@/config/constants';
@@ -315,12 +321,39 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   const basePath = ROUTES.app.trip(tripId);
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { deleteTrip } = useTrips();
+  const { toast } = useToast();
   const [backingUp, setBackingUp] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const activeDayRef = useRef<HTMLAnchorElement>(null);
   const itineraryScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollFade, setShowScrollFade] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+
+  // Auto-cancel the delete confirmation after 6s so the button doesn't sit
+  // primed indefinitely.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 6000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+
+  const handleDelete = async () => {
+    if (!trip) return;
+    try {
+      setDeleting(true);
+      await deleteTrip(tripId);
+      toast('Viaje borrado', 'success');
+      router.push(ROUTES.app.dashboard);
+    } catch (err) {
+      console.error('Error deleting trip:', err);
+      toast('No pudimos borrar el viaje', 'error');
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
 
   // Stripe-style mouse-follow spotlight
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -801,12 +834,73 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
         )}
       </nav>
 
-      {/* ====== BOTTOM — Backup + Brand ====== */}
+      {/* ====== BOTTOM — Actions + Backup + Brand ====== */}
       <div className="relative z-10">
         {/* Gradient divider */}
         <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
 
         <div className="px-4 py-3 space-y-2">
+          {/* Mis Viajes — siempre visible para volver al dashboard */}
+          <Link
+            href={ROUTES.app.dashboard}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11.5px] font-semibold text-white/85 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/[0.12] transition-all duration-200"
+          >
+            <Home className="w-3.5 h-3.5" />
+            <span>Mis Viajes</span>
+          </Link>
+
+          {/* Editar viaje */}
+          <Link
+            href={`${basePath}/edit`}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-white/75 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] transition-all duration-200"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            <span>Editar viaje</span>
+          </Link>
+
+          {/* Borrar viaje — confirmación inline */}
+          {!confirmDelete ? (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              disabled={!trip || deleting}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-rose-300/85 hover:text-rose-200 bg-rose-500/[0.04] hover:bg-rose-500/[0.10] border border-rose-500/[0.10] hover:border-rose-400/30 transition-all duration-200 disabled:opacity-40"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Borrar viaje</span>
+            </button>
+          ) : (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/[0.08] p-2.5 space-y-2">
+              <div className="flex items-start gap-1.5 text-[11px] text-rose-100/95">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-rose-300" />
+                <span>Esta acción no se puede deshacer.</span>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white bg-gradient-to-br from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 shadow-lg shadow-rose-500/30 transition-all disabled:opacity-60"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3 h-3" />
+                  )}
+                  Confirmar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white/85 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Backup button */}
           <button
             onClick={handleSidebarBackup}
