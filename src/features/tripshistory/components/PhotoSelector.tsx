@@ -135,6 +135,25 @@ export default function PhotoSelector({
     return out;
   };
 
+  /**
+   * Detect drags coming from Apple Photos / iCloud Photos.
+   * Photos.app sets distinctive UTIs and almost never delivers the actual
+   * bytes — the OS owes the file to the browser via a "promised file"
+   * mechanism that browsers don't resolve. We detect it up-front so we can
+   * give the user a clear path (click to pick instead).
+   */
+  const isApplePhotosDrag = (dt: DataTransfer): boolean => {
+    const types = Array.from(dt.types || []);
+    const lower = types.map((t) => t.toLowerCase());
+    return lower.some(
+      (t) =>
+        t.includes('apple.photos') ||
+        t.includes('apple.icloud.photos') ||
+        t === 'com.apple.pasteboard.promised-file-content-type' ||
+        t === 'com.apple.pasteboard.promised-file-url',
+    );
+  };
+
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -146,15 +165,23 @@ export default function PhotoSelector({
       console.info(
         '[PhotoSelector] drop:',
         files.length,
-        'files',
+        'files,',
+        'types:',
+        Array.from(e.dataTransfer.types || []),
         files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
       );
     }
     if (files.length === 0) {
-      setGlobalError(
-        'No pudimos leer las fotos arrastradas. Algunas galerías (Apple Photos, iCloud) ' +
-          'no permiten drag directo — probá usar el botón "tocá para elegir".',
-      );
+      if (isApplePhotosDrag(e.dataTransfer)) {
+        setGlobalError(
+          'Apple Photos no entrega las fotos al arrastrar al navegador (es una limitación de macOS). ' +
+            'Tocá el área para abrir el selector — desde ahí podés elegir fotos de "Photos" en el sidebar y macOS las exporta.',
+        );
+      } else {
+        setGlobalError(
+          'No pudimos leer las fotos arrastradas. Probá tocar el área para abrir el selector.',
+        );
+      }
       return;
     }
     handleFiles(files);
@@ -321,12 +348,29 @@ export default function PhotoSelector({
           </div>
           <div>
             <p className="text-base font-semibold text-white">
-              Arrastrá tus fotos o tocá para elegir
+              Arrastrá tus fotos o tocá acá para elegir
             </p>
             <p className="text-sm text-white/60 mt-1">
               Subí al menos {minPhotos} fotos del viaje. Cuantas más, mejor.
             </p>
+            <p className="text-[11px] text-white/45 mt-2 max-w-md mx-auto">
+              ¿Mac con app Photos? Tocá el área y, en el selector, elegí
+              <span className="font-semibold text-white/70"> Photos </span>
+              del sidebar — macOS no permite arrastrar directo desde la app.
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isBusy) inputRef.current?.click();
+            }}
+            disabled={isBusy}
+            className="mt-1 inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-500 text-white text-sm font-bold shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-shadow disabled:opacity-50"
+          >
+            <ImagePlus className="w-4 h-4" />
+            Elegir fotos de la galería
+          </button>
         </div>
       </motion.div>
 
