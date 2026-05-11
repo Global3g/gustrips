@@ -110,6 +110,19 @@ export default function PhotoSelector({
       if (!target || !(target instanceof Element)) return null;
       return target.closest('[data-tripshistory-dropzone="true"]');
     };
+    // Window-level dragenter — fires the *first* time the user drags ANY
+    // payload over the page. Logs every drag the browser sees, even ones
+    // outside our zone. Crucial for diagnosing "no logs at all" reports.
+    const onWindowDragEnter = (e: DragEvent): void => {
+      const target = e.target instanceof Element ? e.target.tagName : 'unknown';
+      const zone = findZone(e.target) ? 'over-zone' : 'elsewhere';
+      // eslint-disable-next-line no-console
+      console.log('[PhotoSelector] window dragenter', {
+        target,
+        zone,
+        types: Array.from(e.dataTransfer?.types || []),
+      });
+    };
     const onWindowDragOver = (e: DragEvent): void => {
       if (!findZone(e.target)) return;
       e.preventDefault();
@@ -143,9 +156,11 @@ export default function PhotoSelector({
       console.log('[PhotoSelector] window-level files:', out.length);
       if (out.length > 0) handleFiles(out);
     };
+    window.addEventListener('dragenter', onWindowDragEnter);
     window.addEventListener('dragover', onWindowDragOver);
     window.addEventListener('drop', onWindowDrop);
     return () => {
+      window.removeEventListener('dragenter', onWindowDragEnter);
       window.removeEventListener('dragover', onWindowDragOver);
       window.removeEventListener('drop', onWindowDrop);
     };
