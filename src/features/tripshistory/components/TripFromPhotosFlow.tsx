@@ -283,45 +283,39 @@ export default function TripFromPhotosFlow({ onSwitchToManual }: TripFromPhotosF
         </p>
       </div>
 
-      {/* Picker — visible only on 'pick' or after error from pick. */}
-      <AnimatePresence mode="wait">
-        {step === 'pick' || step === 'creating-story' ? (
-          <motion.div
-            key="picker"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.25 }}
-            className="space-y-3"
-          >
-            {story ? (
-              <PhotoSelector
-                storyId={story.id}
-                onPhotosReady={handlePhotosReady}
-                disabled={isBusy}
-              />
-            ) : (
-              <div className="rounded-3xl border-2 border-dashed border-white/15 bg-white/[0.03] p-8 text-center">
-                <Loader2 className="w-6 h-6 animate-spin text-amber-300 mx-auto" />
-                <p className="text-white/70 text-sm mt-3">Preparando tu viaje...</p>
-              </div>
-            )}
+      {/* Picker — visible only on 'pick' or after error from pick.
+          NOTE: deliberately a plain <div>, no motion. framer-motion wrappers
+          intercept drag pointer events and break the file drop in some
+          browsers (same trap that bit the inner drop zone). */}
+      {(step === 'pick' || step === 'creating-story') && (
+        <div className="space-y-3">
+          {story ? (
+            <PhotoSelector
+              storyId={story.id}
+              onPhotosReady={handlePhotosReady}
+              disabled={isBusy}
+            />
+          ) : (
+            <div className="rounded-3xl border-2 border-dashed border-white/15 bg-white/[0.03] p-8 text-center">
+              <Loader2 className="w-6 h-6 animate-spin text-amber-300 mx-auto" />
+              <p className="text-white/70 text-sm mt-3">Preparando tu viaje...</p>
+            </div>
+          )}
 
-            {onSwitchToManual && (
-              <p className="text-center text-[11px] text-white/40">
-                ¿Preferís el formulario clásico?{' '}
-                <button
-                  type="button"
-                  onClick={onSwitchToManual}
-                  className="text-amber-300 hover:text-amber-200 underline-offset-2 hover:underline"
-                >
-                  Cargá los datos a mano
-                </button>
-              </p>
-            )}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+          {onSwitchToManual && (
+            <p className="text-center text-[11px] text-white/40">
+              ¿Preferís el formulario clásico?{' '}
+              <button
+                type="button"
+                onClick={onSwitchToManual}
+                className="text-amber-300 hover:text-amber-200 underline-offset-2 hover:underline"
+              >
+                Cargá los datos a mano
+              </button>
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Progress card — covers upload + analyze + convert */}
       <AnimatePresence>
