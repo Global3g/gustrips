@@ -1,7 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookHeart,
   Sparkles,
@@ -12,8 +13,12 @@ import {
   CalendarDays,
   Image as ImageIcon,
   MapPin,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useStoriesList } from '@/features/tripshistory/hooks/useStoriesList';
+import { deleteStory } from '@/features/tripshistory/api/endpoints';
+import { useToast } from '@/context/ToastContext';
 import type { Story, StoryStatus } from '@/features/tripshistory/types';
 
 /**
@@ -25,7 +30,23 @@ import type { Story, StoryStatus } from '@/features/tripshistory/types';
  * can pick up where they left off.
  */
 export default function TripshistoryIndexPage() {
-  const { stories, loading, error } = useStoriesList();
+  const { stories, loading, error, refetch } = useStoriesList();
+  const { toast } = useToast();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (storyId: string) => {
+    try {
+      setDeletingId(storyId);
+      await deleteStory(storyId);
+      toast('Historia borrada', 'success');
+      await refetch();
+    } catch (err) {
+      console.error('Error deleting story:', err);
+      toast('No pudimos borrar la historia', 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const inProgress = stories.filter(
     (s) => s.status !== 'ready' && s.status !== 'finalized',
@@ -128,7 +149,13 @@ export default function TripshistoryIndexPage() {
           </div>
           <ul className="space-y-2.5">
             {inProgress.map((story, idx) => (
-              <StoryListItem key={story.id} story={story} index={idx} />
+              <StoryListItem
+                key={story.id}
+                story={story}
+                index={idx}
+                onDelete={handleDelete}
+                deleting={deletingId === story.id}
+              />
             ))}
           </ul>
         </section>
@@ -142,7 +169,13 @@ export default function TripshistoryIndexPage() {
           </h2>
           <ul className="space-y-2.5">
             {ready.map((story, idx) => (
-              <StoryListItem key={story.id} story={story} index={idx} />
+              <StoryListItem
+                key={story.id}
+                story={story}
+                index={idx}
+                onDelete={handleDelete}
+                deleting={deletingId === story.id}
+              />
             ))}
           </ul>
         </section>
@@ -169,7 +202,14 @@ const STATUS_CLASS: Record<StoryStatus, string> = {
   finalized: 'bg-violet-500/15 text-violet-200 border-violet-400/30',
 };
 
-function StoryListItem({ story, index }: { story: Story; index: number }) {
+interface StoryListItemProps {
+  story: Story;
+  index: number;
+  onDelete: (storyId: string) => Promise<void>;
+  deleting: boolean;
+}
+
+function StoryListItem({ story, index, onDelete, deleting }: StoryListItemProps) {
   // If the story is already linked to a trip, deep-link into the trip's
   // tripshistory route; otherwise use the standalone route.
   const href = story.tripId
@@ -179,56 +219,125 @@ function StoryListItem({ story, index }: { story: Story; index: number }) {
   const dayCount = story.dayCount ?? 0;
   const eventCount = story.eventCount ?? 0;
 
+  const [confirm, setConfirm] = useState(false);
+
+  // Auto-cancel the primed delete after 6 s so a stray click can't sit primed.
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(false), 6000);
+    return () => clearTimeout(t);
+  }, [confirm]);
+
   return (
     <motion.li
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: 0.04 * index, ease: 'easeOut' }}
+      className="rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.14] transition-colors overflow-hidden"
     >
-      <Link
-        href={href}
-        className="group flex items-center gap-4 p-4 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.14] transition-colors"
-      >
-        <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400/30 to-rose-500/30 border border-white/[0.08] flex items-center justify-center">
-          <BookHeart className="w-5 h-5 text-amber-200" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-white font-bold text-base truncate">
-              {story.title?.trim() || 'Historia sin título'}
-            </h3>
-            <span
-              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${STATUS_CLASS[story.status]}`}
-            >
-              {STATUS_LABEL[story.status]}
-            </span>
-            {!story.tripId && (
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/30">
-                Sin viaje
-              </span>
-            )}
+      <div className="flex items-center gap-3 p-4">
+        <Link href={href} className="flex items-center gap-4 flex-1 min-w-0 group">
+          <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400/30 to-rose-500/30 border border-white/[0.08] flex items-center justify-center">
+            <BookHeart className="w-5 h-5 text-amber-200" />
           </div>
-          <div className="mt-1 flex items-center gap-3 text-xs text-white/60">
-            <span className="inline-flex items-center gap-1">
-              <ImageIcon className="w-3 h-3" />
-              {photoCount} {photoCount === 1 ? 'foto' : 'fotos'}
-            </span>
-            {dayCount > 0 && (
-              <span className="inline-flex items-center gap-1">
-                <CalendarDays className="w-3 h-3" />
-                {dayCount} {dayCount === 1 ? 'día' : 'días'}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-white font-bold text-base truncate">
+                {story.title?.trim() || 'Historia sin título'}
+              </h3>
+              <span
+                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${STATUS_CLASS[story.status]}`}
+              >
+                {STATUS_LABEL[story.status]}
               </span>
-            )}
-            {eventCount > 0 && (
+              {!story.tripId && (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/30">
+                  Sin viaje
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex items-center gap-3 text-xs text-white/60">
               <span className="inline-flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {eventCount} {eventCount === 1 ? 'evento' : 'eventos'}
+                <ImageIcon className="w-3 h-3" />
+                {photoCount} {photoCount === 1 ? 'foto' : 'fotos'}
               </span>
-            )}
+              {dayCount > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <CalendarDays className="w-3 h-3" />
+                  {dayCount} {dayCount === 1 ? 'día' : 'días'}
+                </span>
+              )}
+              {eventCount > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  {eventCount} {eventCount === 1 ? 'evento' : 'eventos'}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-        <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-white/70 transition-colors" />
-      </Link>
+          <ChevronRight className="w-5 h-5 text-white/40 group-hover:text-white/70 transition-colors shrink-0" />
+        </Link>
+
+        {/* Borrar — confirmación inline */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setConfirm(true);
+          }}
+          disabled={deleting || confirm}
+          aria-label="Borrar historia"
+          className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-xl text-rose-300/85 hover:text-rose-200 bg-rose-500/[0.04] hover:bg-rose-500/[0.12] border border-rose-500/[0.12] hover:border-rose-400/30 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {confirm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            className="border-t border-rose-500/20 bg-rose-500/[0.05]"
+          >
+            <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
+              <div className="flex items-start gap-1.5 text-[12px] text-rose-100/95 flex-1 min-w-0">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-rose-300" />
+                <span>
+                  ¿Borrar esta historia? Se eliminan días, eventos, preguntas y
+                  fotos asociadas. No afecta al viaje en GusTrips.
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onDelete(story.id)}
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-white bg-gradient-to-br from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 shadow-lg shadow-rose-500/30 transition-all disabled:opacity-60"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3 h-3" />
+                  )}
+                  Confirmar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirm(false)}
+                  disabled={deleting}
+                  className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white/85 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.li>
   );
 }
