@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImagePlus, Loader2, UploadCloud, X } from 'lucide-react';
 import { useAuthContext } from '@/context/AuthContext';
 import { extractPhotoMetadata } from '@/features/tripshistory/utils/photoMetadata';
@@ -100,6 +100,56 @@ export default function PhotoSelector({
     },
     [maxPhotos, onSelect, isImageFile],
   );
+
+  // Belt-and-suspenders: also listen at the window level. If something in
+  // a parent component swallows the drop event before it reaches our <div>,
+  // this catches it as long as the drop happens visually over our zone
+  // (identified by the data attribute below).
+  useEffect(() => {
+    const findZone = (target: EventTarget | null): Element | null => {
+      if (!target || !(target instanceof Element)) return null;
+      return target.closest('[data-tripshistory-dropzone="true"]');
+    };
+    const onWindowDragOver = (e: DragEvent): void => {
+      if (!findZone(e.target)) return;
+      e.preventDefault();
+    };
+    const onWindowDrop = (e: DragEvent): void => {
+      if (!findZone(e.target)) return;
+      e.preventDefault();
+      // eslint-disable-next-line no-console
+      console.log('[PhotoSelector] window-level drop intercepted');
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      const out: File[] = [];
+      const seen = new Set<string>();
+      const pushUnique = (f: File | null | undefined): void => {
+        if (!f) return;
+        const key = `${f.name}|${f.size}|${f.lastModified}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(f);
+      };
+      if (dt.files && dt.files.length > 0) {
+        for (let i = 0; i < dt.files.length; i++) pushUnique(dt.files.item(i));
+      }
+      if (dt.items && dt.items.length > 0) {
+        for (let i = 0; i < dt.items.length; i++) {
+          const item = dt.items[i];
+          if (item.kind === 'file') pushUnique(item.getAsFile());
+        }
+      }
+      // eslint-disable-next-line no-console
+      console.log('[PhotoSelector] window-level files:', out.length);
+      if (out.length > 0) handleFiles(out);
+    };
+    window.addEventListener('dragover', onWindowDragOver);
+    window.addEventListener('drop', onWindowDrop);
+    return () => {
+      window.removeEventListener('dragover', onWindowDragOver);
+      window.removeEventListener('drop', onWindowDrop);
+    };
+  }, [handleFiles]);
 
   /**
    * Extract files from a DataTransfer. Reads both `.files` and `.items`
@@ -299,12 +349,51 @@ export default function PhotoSelector({
     setIsDragging(false);
   };
 
+  // Loud render log so we can confirm the right code is mounted.
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.log('[PhotoSelector] render', {
+      storyId,
+      isBusy,
+      isDragging,
+      itemCount: items.length,
+    });
+  }
+
   return (
     <div className="space-y-3">
       <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        data-tripshistory-dropzone="true"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          // eslint-disable-next-line no-console
+          console.log('[PhotoSelector] dragenter');
+          if (!isBusy) setIsDragging(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          // eslint-disable-next-line no-console
+          console.log('[PhotoSelector] dragover');
+          if (!isBusy) {
+            try {
+              e.dataTransfer.dropEffect = 'copy';
+            } catch {
+              /* no-op */
+            }
+            setIsDragging(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          // eslint-disable-next-line no-console
+          console.log('[PhotoSelector] dragleave');
+          setIsDragging(false);
+        }}
+        onDrop={(e) => {
+          // eslint-disable-next-line no-console
+          console.log('[PhotoSelector] drop fired');
+          handleDrop(e);
+        }}
         onClick={() => !isBusy && inputRef.current?.click()}
         className={`relative rounded-3xl border-2 border-dashed p-8 cursor-pointer transition-all duration-200 ${
           isBusy
