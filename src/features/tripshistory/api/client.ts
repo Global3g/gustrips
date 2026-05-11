@@ -15,7 +15,7 @@ import type { TripshistoryApiError } from '@/features/tripshistory/types';
 /* ─── Config ───────────────────────────────────────── */
 
 const DEFAULT_BASE_URL =
-  'http://localhost:5001/gustrips/us-central1/tripshistory';
+  'https://us-central1-gustrips-a317e.cloudfunctions.net/tripshistory';
 
 function getBaseUrl(): string {
   const envUrl =
