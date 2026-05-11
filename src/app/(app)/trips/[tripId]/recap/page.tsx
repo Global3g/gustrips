@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
   Wallet,
@@ -17,6 +17,8 @@ import {
   Users,
   Coins,
   Loader2,
+  BookHeart,
+  X,
 } from 'lucide-react';
 import { differenceInDays, parseISO, isAfter } from 'date-fns';
 import { useTrip } from '@/hooks/useTrip';
@@ -81,6 +83,32 @@ export default function TripRecapPage() {
   useChecklist(tripId);
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
+
+  /* ─── Tripshistory banner (dismissible per-trip) ─── */
+  const bannerStorageKey = `tripshistory-recap-banner-dismissed-${tripId}`;
+  const [bannerHydrated, setBannerHydrated] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(bannerStorageKey);
+      setBannerDismissed(stored === 'true');
+    } catch {
+      // Ignore storage access errors (private mode, etc.)
+    }
+    setBannerHydrated(true);
+  }, [bannerStorageKey]);
+
+  const dismissBanner = () => {
+    setBannerDismissed(true);
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(bannerStorageKey, 'true');
+    } catch {
+      // Ignore storage write errors
+    }
+  };
 
   const baseCurrency = trip?.budgetCurrency || DEFAULT_CURRENCY;
   const { convert } = useExchangeRates(baseCurrency);
@@ -385,7 +413,55 @@ export default function TripRecapPage() {
   const showSavings = stats.totalSavings > 0;
 
   return (
-    <div className="p-3 sm:p-6 pb-32">
+    <div className="p-3 sm:p-6 pb-32 space-y-4 sm:space-y-6">
+      <AnimatePresence>
+        {bannerHydrated && !bannerDismissed && (
+          <motion.div
+            key="tripshistory-banner"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="relative overflow-hidden rounded-3xl border border-fuchsia-400/20 bg-gradient-to-br from-fuchsia-600/25 via-rose-500/20 to-rose-400/15 shadow-xl shadow-fuchsia-900/20"
+          >
+            <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full blur-3xl bg-fuchsia-500/30 pointer-events-none" />
+            <div className="absolute -bottom-20 -left-12 w-56 h-56 rounded-full blur-3xl bg-rose-500/25 pointer-events-none" />
+
+            <button
+              type="button"
+              onClick={dismissBanner}
+              aria-label="Cerrar"
+              className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="relative z-[1] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
+              <div className="flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-fuchsia-400 to-rose-500 flex items-center justify-center shadow-lg shadow-fuchsia-500/30">
+                <BookHeart className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+              </div>
+              <div className="flex-1 min-w-0 pr-8 sm:pr-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-fuchsia-100/90">
+                  Nuevo
+                </p>
+                <p className="mt-1 text-sm sm:text-base font-semibold text-white leading-snug">
+                  Tenés una nueva forma de revivir este viaje: armá la historia
+                  con tus fotos.
+                </p>
+              </div>
+              <Link
+                href={`/trips/${tripId}/tripshistory`}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-rose-500 hover:from-fuchsia-400 hover:to-rose-400 text-white font-bold text-sm shadow-lg shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 transition-shadow whitespace-nowrap"
+              >
+                <Sparkles className="w-4 h-4" />
+                Crear historia
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}

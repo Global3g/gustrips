@@ -130,6 +130,30 @@ export const storyService = {
     return serializeStory(snap.id, data);
   },
 
+  /**
+   * List stories owned by `userId`, optionally filtered by `tripId`
+   * and/or `status`. Ordered by updatedAt desc and capped at 50 results
+   * (no pagination for MVP — see plan).
+   */
+  async list(
+    userId: string,
+    filters: { tripId?: string; status?: StoryStatus } = {},
+  ): Promise<Story[]> {
+    let q: FirebaseFirestore.Query = db.collection(
+      paths.storiesCollection(userId),
+    );
+    if (filters.tripId) {
+      q = q.where('tripId', '==', filters.tripId);
+    }
+    if (filters.status) {
+      q = q.where('status', '==', filters.status);
+    }
+    q = q.orderBy('updatedAt', 'desc').limit(50);
+
+    const snap = await q.get();
+    return snap.docs.map((d) => serializeStory(d.id, d.data() as StoredStory));
+  },
+
   async delete(userId: string, storyId: string): Promise<void> {
     if (!storyId) {
       throw HttpError.notFound('Story not found');

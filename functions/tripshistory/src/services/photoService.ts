@@ -237,11 +237,40 @@ export const photoService = {
     if (newPhotoCount > 0) {
       storyUpdate.photoCount = admin.firestore.FieldValue.increment(newPhotoCount);
     }
-    if (storyData?.status === 'draft' && valid.length > 0) {
+    const transitioningToAnalyzing =
+      storyData?.status === 'draft' && valid.length > 0;
+    if (transitioningToAnalyzing) {
       storyUpdate.status = 'analyzing';
     }
     if (Object.keys(storyUpdate).length > 1 || newPhotoCount > 0) {
       await storyRef.update(storyUpdate);
+    }
+
+    // Auto-trigger analysis when we added at least one new photo AND
+    // the story is in (or has just entered) the 'analyzing' status —
+    // otherwise the client gets stuck on "analyzing..." forever.
+    //
+    // TODO(v2): move this to a Pub/Sub topic or Cloud Tasks queue so
+    // the HTTP response isn't held by the (potentially >30s) analysis.
+    // For MVP we accept the wait so the client sees a consistent state.
+    const effectiveStatus = transitioningToAnalyzing
+      ? 'analyzing'
+      : storyData?.status;
+    if (newPhotoCount > 0 && effectiveStatus === 'analyzing') {
+      try {
+        // Dynamic import to avoid a static cycle with analysisService
+        // (analysisService → questionService → ... could grow to depend
+        // on photoService in the future).
+        const { analysisService } = await import('./analysisService');
+        await analysisService.enqueueReanalysis(userId, storyId);
+      } catch (err) {
+        // Don't fail the ingest if analysis throws — the client can
+        // retry via POST /stories/{id}/analysis.
+        console.error(
+          '[tripshistory] auto-analysis after batch ingest failed',
+          { userId, storyId, error: err instanceof Error ? err.message : err },
+        );
+      }
     }
 
     return {

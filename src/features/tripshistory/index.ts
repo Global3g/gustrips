@@ -17,6 +17,7 @@ export * as tripshistoryApi from '@/features/tripshistory/api/endpoints';
 
 // Hooks
 export { useStory } from '@/features/tripshistory/hooks/useStory';
+export { useStoriesByTrip } from '@/features/tripshistory/hooks/useStoriesByTrip';
 export { useStoryboard } from '@/features/tripshistory/hooks/useStoryboard';
 export { useNextQuestion } from '@/features/tripshistory/hooks/useNextQuestion';
 export { useAnswerQuestion } from '@/features/tripshistory/hooks/useAnswerQuestion';

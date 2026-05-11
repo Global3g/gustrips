@@ -33,6 +33,15 @@ export interface CreateStoryRequest {
   approximateDates?: ApproximateDates;
 }
 
+export interface ListStoriesParams {
+  tripId?: string;
+  status?: StoryStatus;
+}
+
+export interface ListStoriesResponse {
+  stories: Story[];
+}
+
 export interface Story {
   id: string;
   userId: string;

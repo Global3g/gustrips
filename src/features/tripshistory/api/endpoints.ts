@@ -17,6 +17,8 @@ import type {
   DayPatch,
   Event,
   EventPatch,
+  ListStoriesParams,
+  ListStoriesResponse,
   PhotoBatch,
   PhotoBatchResponse,
   PhotoListParams,
@@ -31,6 +33,14 @@ import type {
 
 export function createStory(input: CreateStoryRequest): Promise<Story> {
   return tripshistoryClient.post<Story>('/stories', input);
+}
+
+export function listStories(
+  filters: ListStoriesParams = {},
+): Promise<ListStoriesResponse> {
+  return tripshistoryClient.get<ListStoriesResponse>('/stories', {
+    query: filters as Record<string, string | undefined>,
+  });
 }
 
 export function getStory(storyId: string): Promise<Story> {

@@ -62,6 +62,36 @@ paths:
                 $ref: '#/components/schemas/Story'
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+    get:
+      tags: [stories]
+      summary: Listar historias del usuario
+      description: |
+        Devuelve hasta 50 historias del usuario autenticado, ordenadas por
+        `updatedAt` descendente. Se puede filtrar por `tripId` (útil para
+        saber si un Trip ya tiene una historia) y por `status`.
+      parameters:
+        - in: query
+          name: tripId
+          schema: { type: string }
+          description: Filtrar por Trip asociado
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/StoryStatus' }
+          description: Filtrar por estado del ciclo de vida
+      responses:
+        '200':
+          description: Lista de historias
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stories]
+                properties:
+                  stories:
+                    type: array
+                    items: { $ref: '#/components/schemas/Story' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /stories/{storyId}:
     parameters:
