@@ -46,6 +46,7 @@ import Particles from '@/components/ui/Particles';
 import TripInsights from '@/components/trips/TripInsights';
 const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
 const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePhoto'), { ssr: false });
+import LazySection from '@/components/trips/photos/LazySection';
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
@@ -1017,7 +1018,7 @@ export default function PhotosPage() {
             </div>
           ) : (
             <div className="space-y-7">
-              {photoGroups.map((group) => {
+              {photoGroups.map((group, groupIdx) => {
                 const dayNum = tripDays[group.date];
                 let dayLabel: string;
                 try {
@@ -1032,8 +1033,27 @@ export default function PhotosPage() {
 
                 const accent = group.eventColor || '#f59e0b';
 
+                // Reserve roughly the right amount of vertical space while
+                // the section is off-screen so the scrollbar doesn't jump
+                // when it mounts. The estimate is intentionally a bit tall
+                // (assumes 4-col layout averaged across breakpoints) — being
+                // slightly too tall is fine, the section just absorbs the
+                // slack when it mounts.
+                const estimatedRows = Math.max(1, Math.ceil(group.photos.length / 4));
+                const placeholderHeight = 110 + estimatedRows * 168;
+
+                // Render the first two sections eagerly so they paint without
+                // waiting for the IntersectionObserver tick (avoids a flash
+                // of empty placeholders on initial load).
+                const eager = groupIdx < 2;
+
                 return (
-                  <div key={group.key}>
+                  <LazySection
+                    key={group.key}
+                    placeholderHeight={placeholderHeight}
+                    forceRender={eager}
+                  >
+                  <div>
                     {/* Group header */}
                     <div className="mb-3 flex items-start gap-3">
                       <div
@@ -1113,10 +1133,18 @@ export default function PhotosPage() {
                                 else openLightbox(photo);
                               }}
                             >
+                              {/* width/height hint the browser to reserve a
+                                  square box for the thumbnail before the bytes
+                                  arrive. Combined with the aspect-square
+                                  container above, layout shift is ~0. The
+                                  600 figure mirrors the optimized thumbnail
+                                  size produced by useAlbum.migrateThumbnails. */}
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={photo.url}
                                 alt={photo.caption || 'Foto del viaje'}
+                                width={600}
+                                height={600}
                                 className={classNames(
                                   'w-full h-full object-cover transition-transform duration-500',
                                   selectionMode && isSelected
@@ -1254,6 +1282,7 @@ export default function PhotosPage() {
                       );
                     })()}
                   </div>
+                  </LazySection>
                 );
               })}
             </div>
@@ -1635,7 +1664,14 @@ export default function PhotosPage() {
 
                 <div className="mb-4 rounded-2xl overflow-hidden border border-white/10">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={editingPhoto.url} alt="Preview" className="w-full h-48 object-cover" />
+                  <img
+                    src={editingPhoto.url}
+                    alt="Preview"
+                    width={600}
+                    height={192}
+                    className="w-full h-48 object-cover"
+                    decoding="async"
+                  />
                 </div>
 
                 <div className="space-y-3.5">

@@ -36,6 +36,25 @@ interface PhotoLightboxProps {
   deleting?: string | null;
 }
 
+/** Progressive load: shows the thumbnail (photo.url) instantly so the
+ *  lightbox opens with zero delay, then upgrades to the full-quality
+ *  3000px JPEG (photo.fullUrl) once it has finished downloading in the
+ *  background. Neighbors are prefetched so arrow-key nav feels instant.
+ *
+ *  Caches loaded full-URLs in a module-scoped Set so re-opening a recently
+ *  viewed photo skips the upgrade flicker. */
+const loadedFullUrls = new Set<string>();
+
+function prefetchFullUrl(url: string | undefined) {
+  if (!url || loadedFullUrls.has(url)) return;
+  if (typeof window === 'undefined') return;
+  const img = new Image();
+  img.onload = () => loadedFullUrls.add(url);
+  // No onerror handling — failed prefetch will just retry naturally if
+  // the user navigates to that photo.
+  img.src = url;
+}
+
 export default function PhotoLightbox({
   open,
   photos,
@@ -50,6 +69,10 @@ export default function PhotoLightbox({
   const [rotation, setRotation] = useState(0);
   const [canShare, setCanShare] = useState(false);
   const [sharing, setSharing] = useState(false);
+  // Tracks whether the full-quality URL for the CURRENT photo is loaded.
+  // Until true, we display the thumbnail (photo.url) so the lightbox
+  // opens instantly; once true we swap to photo.fullUrl.
+  const [fullLoaded, setFullLoaded] = useState(false);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const prevIndex = useRef(index);
 
@@ -68,6 +91,46 @@ export default function PhotoLightbox({
     transformRef.current?.resetTransform(180);
   }, [index]);
 
+  // Reset / re-evaluate the progressive load whenever we land on a new photo.
+  // If the full URL was already fetched (cache hit) skip the swap state.
+  useEffect(() => {
+    if (!photo) return;
+    const fullUrl = photo.fullUrl;
+    if (!fullUrl || fullUrl === photo.url) {
+      // No separate full-quality version — the thumbnail IS the source.
+      setFullLoaded(true);
+      return;
+    }
+    if (loadedFullUrls.has(fullUrl)) {
+      setFullLoaded(true);
+      return;
+    }
+    setFullLoaded(false);
+    const img = new Image();
+    let cancelled = false;
+    img.onload = () => {
+      if (cancelled) return;
+      loadedFullUrls.add(fullUrl);
+      setFullLoaded(true);
+    };
+    img.onerror = () => {
+      if (cancelled) return;
+      // Full failed — stick with the thumbnail rather than show a broken state.
+      setFullLoaded(false);
+    };
+    img.src = fullUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [photo]);
+
+  // Prefetch the neighbors' full-quality versions so arrow-key nav is instant.
+  useEffect(() => {
+    if (!open) return;
+    prefetchFullUrl(photos[index + 1]?.fullUrl);
+    prefetchFullUrl(photos[index - 1]?.fullUrl);
+  }, [open, index, photos]);
+
   // Keyboard navigation
   useEffect(() => {
     if (!open) return;
@@ -83,7 +146,10 @@ export default function PhotoLightbox({
 
   if (!open || !photo) return null;
 
-  const fullSrc = photo.fullUrl || photo.url;
+  // Render whichever source is currently best: full quality once ready,
+  // otherwise the thumbnail so the user sees something immediately.
+  const displaySrc = fullLoaded && photo.fullUrl ? photo.fullUrl : photo.url;
+  const upgrading = !!photo.fullUrl && photo.fullUrl !== photo.url && !fullLoaded;
 
   const rotateRight = () => setRotation((r) => (r + 90) % 360);
   const rotateLeft = () => setRotation((r) => (r + 270) % 360);
@@ -139,7 +205,7 @@ export default function PhotoLightbox({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 key={photo.url}
-                src={fullSrc}
+                src={displaySrc}
                 alt={photo.caption || 'Foto'}
                 draggable={false}
                 style={{
@@ -154,6 +220,15 @@ export default function PhotoLightbox({
               />
             </TransformComponent>
           </TransformWrapper>
+
+          {/* Subtle "loading full quality" indicator while the 3000px JPEG
+              streams in behind the displayed thumbnail. */}
+          {upgrading && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/65 backdrop-blur-md border border-white/15 text-white/85 text-[11px] font-semibold pointer-events-none">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Cargando calidad completa…
+            </div>
+          )}
 
           {/* Caption */}
           {photo.caption && (
