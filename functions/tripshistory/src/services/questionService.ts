@@ -885,7 +885,37 @@ export const questionService = {
       .orderBy('priority', 'desc')
       .limit(1)
       .get();
-    if (snap.empty) return null;
+    if (snap.empty) {
+      // Self-heal: ensure the story status reflects "no pending questions".
+      // This covers cases where pendingQuestionCount drifted (e.g. status was
+      // still 'questioning' even though every question was answered/skipped).
+      try {
+        const storyRef = db.doc(paths.story(userId, storyId));
+        const storySnap = await storyRef.get();
+        if (storySnap.exists) {
+          const data = storySnap.data() as StoredStoryFull;
+          if (data.status === 'questioning' || data.status === 'analyzing') {
+            await storyRef.update({
+              status: 'ready',
+              pendingQuestionCount: 0,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          } else if (
+            data.pendingQuestionCount !== undefined &&
+            data.pendingQuestionCount !== 0
+          ) {
+            await storyRef.update({
+              pendingQuestionCount: 0,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } catch (err) {
+        // Self-heal is best-effort; never break the read path.
+        console.error('[getNext] self-heal failed', err);
+      }
+      return null;
+    }
     const doc = snap.docs[0];
     return serializeQuestion(doc.id, doc.data() as StoredQuestion);
   },

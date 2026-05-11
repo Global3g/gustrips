@@ -221,12 +221,17 @@ export default function StoryWizard({
                   Contestaste todas las preguntas.
                 </p>
                 <p className="text-white/65 text-sm mt-1 max-w-sm">
-                  El estado tarda unos segundos en refrescar. Si seguís acá
-                  más de 10 segundos, tocá el botón para forzar el avance.
+                  Tocá para avanzar al storyboard.
                 </p>
                 <button
                   type="button"
-                  onClick={() => refetchStory()}
+                  onClick={async () => {
+                    // Hitting /questions/next triggers the engine's self-heal
+                    // path which flips status to 'ready' when there's nothing
+                    // pending. Then refetch the story to render the storyboard.
+                    await refetchQuestion();
+                    await refetchStory();
+                  }}
                   className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-br from-amber-400 to-rose-500 text-white text-sm font-bold shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-shadow"
                 >
                   Ir al storyboard
