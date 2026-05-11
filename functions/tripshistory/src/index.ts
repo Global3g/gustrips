@@ -12,6 +12,7 @@
  */
 import express from 'express';
 import type { Request, Response } from 'express';
+import cors from 'cors';
 
 import { storiesRouter } from './routes/stories';
 import { photosRouter } from './routes/photos';
@@ -24,6 +25,39 @@ import { errorHandler, notFoundHandler } from './middleware/errors';
 export const app = express();
 
 app.disable('x-powered-by');
+
+// CORS — allow GusTrips web clients (prod + Vercel previews + localhost dev).
+// Authorization header carries the Firebase ID token, so it must be explicit
+// in allowedHeaders; preflight is short-circuited at 204.
+const allowedOriginExact = new Set<string>([
+  'https://gustrips.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+]);
+const allowedOriginPatterns: RegExp[] = [
+  // Vercel preview deployments: gustrips-<hash>-<owner>.vercel.app
+  /^https:\/\/gustrips-[a-z0-9-]+\.vercel\.app$/,
+];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // No origin header (server-to-server, curl, healthcheck) — allow.
+      if (!origin) return callback(null, true);
+      if (allowedOriginExact.has(origin)) return callback(null, true);
+      if (allowedOriginPatterns.some((re) => re.test(origin))) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: origin not allowed: ${origin}`));
+    },
+    credentials: false,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 3600,
+    optionsSuccessStatus: 204,
+  }),
+);
+
 app.use(express.json({ limit: '2mb' }));
 
 // Liveness — useful for sanity checks during deploy.
