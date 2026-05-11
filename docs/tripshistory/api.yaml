@@ -1,0 +1,727 @@
+openapi: 3.1.0
+info:
+  title: Tripshistory Engine API
+  version: 0.1.0
+  description: |
+    Motor de reconstrucción colaborativa de viajes desde fotos.
+    Consumido hoy por GusTrips, mañana por la app Tripshistory standalone.
+  contact:
+    name: Gus
+servers:
+  - url: https://us-central1-{project}.cloudfunctions.net/tripshistory
+    description: Firebase Functions (producción)
+    variables:
+      project:
+        default: gustrips
+  - url: http://localhost:5001/{project}/us-central1/tripshistory
+    description: Emulador local
+    variables:
+      project:
+        default: gustrips
+
+security:
+  - firebaseAuth: []
+
+tags:
+  - name: stories
+    description: Ciclo de vida de una historia
+  - name: photos
+    description: Ingesta y consulta de fotos de una historia
+  - name: analysis
+    description: Análisis automático de fotos
+  - name: questions
+    description: Flujo conversacional de preguntas y respuestas
+  - name: storyboard
+    description: Resultado final navegable
+  - name: trips
+    description: Integración con GusTrips Trips
+
+paths:
+  # ─────────────────────────────────────────────────────────────────
+  # STORIES — ciclo de vida
+  # ─────────────────────────────────────────────────────────────────
+  /stories:
+    post:
+      tags: [stories]
+      summary: Crear una nueva historia
+      description: |
+        Crea una historia vacía. Puede atarse a un `tripId` existente
+        (Caso B) o crearse suelta para construir un viaje desde fotos (Caso A).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoryRequest'
+      responses:
+        '201':
+          description: Historia creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Story'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /stories/{storyId}:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+    get:
+      tags: [stories]
+      summary: Obtener estado de una historia
+      responses:
+        '200':
+          description: Estado actual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Story'
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [stories]
+      summary: Borrar historia
+      description: Borra historia y todas sus fotos. Irreversible.
+      responses:
+        '204':
+          description: Borrada
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ─────────────────────────────────────────────────────────────────
+  # PHOTOS — ingesta
+  # ─────────────────────────────────────────────────────────────────
+  /stories/{storyId}/photos:batch:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+    post:
+      tags: [photos]
+      summary: Subir batch de metadata de fotos
+      description: |
+        El cliente extrae metadata local (fecha, GPS, dimensiones, pHash)
+        y sube en batches. Las fotos reales (thumbnails) viven en Storage,
+        este endpoint solo registra la metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoBatch'
+      responses:
+        '202':
+          description: Batch aceptado, análisis en cola
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  storyId: { type: string }
+                  photosReceived: { type: integer }
+                  photosRejected: { type: integer }
+                  rejectionReasons:
+                    type: array
+                    items: { type: string }
+
+  /stories/{storyId}/photos:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+      - in: query
+        name: dayId
+        schema: { type: string }
+        description: Filtrar por día
+      - in: query
+        name: eventId
+        schema: { type: string }
+        description: Filtrar por evento
+      - in: query
+        name: limit
+        schema: { type: integer, default: 50, maximum: 200 }
+      - in: query
+        name: cursor
+        schema: { type: string }
+        description: Cursor de paginación
+    get:
+      tags: [photos]
+      summary: Listar fotos de la historia (paginado)
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoListResponse'
+
+  # ─────────────────────────────────────────────────────────────────
+  # ANALYSIS — automático
+  # ─────────────────────────────────────────────────────────────────
+  /stories/{storyId}/analysis:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+    get:
+      tags: [analysis]
+      summary: Obtener estado de análisis automático
+      description: |
+        Devuelve qué pudo detectar el motor sin ayuda del usuario:
+        días, clusters temporales, duplicados, GPS clusters.
+      responses:
+        '200':
+          description: Estado de análisis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisState'
+    post:
+      tags: [analysis]
+      summary: Forzar re-análisis
+      description: Útil cuando se agregaron más fotos o respuestas que cambian la inferencia.
+      responses:
+        '202':
+          description: Re-análisis encolado
+
+  # ─────────────────────────────────────────────────────────────────
+  # QUESTIONS — flujo conversacional
+  # ─────────────────────────────────────────────────────────────────
+  /stories/{storyId}/questions/next:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+    get:
+      tags: [questions]
+      summary: Obtener la siguiente pregunta
+      description: |
+        Devuelve la pregunta más prioritaria pendiente.
+        Si no hay más, devuelve `204 No Content` y la historia pasa a `ready`.
+      responses:
+        '200':
+          description: Pregunta lista
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Question'
+        '204':
+          description: No hay más preguntas
+
+  /stories/{storyId}/questions:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum: [pending, answered, skipped, all]
+          default: pending
+    get:
+      tags: [questions]
+      summary: Listar todas las preguntas
+      responses:
+        '200':
+          description: Lista
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Question'
+
+  /stories/{storyId}/questions/{questionId}/answer:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+      - in: path
+        name: questionId
+        required: true
+        schema: { type: string }
+    post:
+      tags: [questions]
+      summary: Contestar pregunta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerRequest'
+      responses:
+        '200':
+          description: Respuesta aceptada, posible siguiente pregunta sugerida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question:
+                    $ref: '#/components/schemas/Question'
+                  nextQuestion:
+                    oneOf:
+                      - $ref: '#/components/schemas/Question'
+                      - { type: 'null' }
+
+  /stories/{storyId}/questions/{questionId}/skip:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+      - in: path
+        name: questionId
+        required: true
+        schema: { type: string }
+    post:
+      tags: [questions]
+      summary: Saltar pregunta
+      description: El usuario no recuerda o no quiere contestar. La pregunta queda como `skipped`.
+      responses:
+        '204':
+          description: Saltada
+
+  # ─────────────────────────────────────────────────────────────────
+  # STORYBOARD — resultado final
+  # ─────────────────────────────────────────────────────────────────
+  /stories/{storyId}/storyboard:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+    get:
+      tags: [storyboard]
+      summary: Obtener storyboard estructurado
+      description: |
+        Estructura jerárquica: historia → días → eventos → fotos.
+        Solo incluye referencias a thumbnails; las fotos full se cargan a demanda.
+      responses:
+        '200':
+          description: Storyboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Storyboard'
+
+  /stories/{storyId}/days/{dayId}:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+      - in: path
+        name: dayId
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [storyboard]
+      summary: Editar día (título, resumen, portada)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DayPatch'
+      responses:
+        '200':
+          description: Día actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Day'
+
+  /stories/{storyId}/events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+      - in: path
+        name: eventId
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [storyboard]
+      summary: Editar evento (título, ubicación, mover fotos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventPatch'
+      responses:
+        '200':
+          description: Evento actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+    delete:
+      tags: [storyboard]
+      summary: Borrar evento (sus fotos quedan sin asignar)
+      responses:
+        '204':
+          description: Borrado
+
+  # ─────────────────────────────────────────────────────────────────
+  # TRIPS — integración con GusTrips
+  # ─────────────────────────────────────────────────────────────────
+  /stories/{storyId}:convert-to-trip:
+    parameters:
+      - $ref: '#/components/parameters/StoryId'
+    post:
+      tags: [trips]
+      summary: Convertir historia en Trip de GusTrips
+      description: |
+        Aplica solo a historias creadas sin `tripId` (Caso A).
+        Crea un Trip con itinerario derivado del storyboard.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                destination: { type: string }
+      responses:
+        '201':
+          description: Trip creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tripId: { type: string }
+                  storyId: { type: string }
+
+# ════════════════════════════════════════════════════════════════════
+# COMPONENTS
+# ════════════════════════════════════════════════════════════════════
+components:
+  securitySchemes:
+    firebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token
+
+  parameters:
+    StoryId:
+      in: path
+      name: storyId
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Request inválido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Auth faltante o inválida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Recurso no existe o no pertenece al usuario
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: 'invalid_request' }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+
+    StoryStatus:
+      type: string
+      enum: [draft, analyzing, questioning, ready, finalized]
+
+    CreateStoryRequest:
+      type: object
+      properties:
+        tripId:
+          type: string
+          description: Si se provee, ata la historia al Trip existente (Caso B)
+        title:
+          type: string
+          description: Opcional, para historias sin Trip (Caso A)
+        approximateDates:
+          type: object
+          properties:
+            start: { type: string, format: date }
+            end: { type: string, format: date }
+          description: Pista inicial si el usuario la sabe
+
+    Story:
+      type: object
+      required: [id, userId, status, createdAt]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        tripId:
+          oneOf:
+            - { type: string }
+            - { type: 'null' }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/StoryStatus' }
+        photoCount: { type: integer }
+        dayCount: { type: integer }
+        eventCount: { type: integer }
+        pendingQuestionCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    PhotoMetadata:
+      type: object
+      required: [clientId, capturedAt]
+      properties:
+        clientId:
+          type: string
+          description: ID único generado por el cliente para deduplicar
+        thumbnailUrl:
+          type: string
+          format: uri
+          description: URL de Firebase Storage (thumb 200px)
+        mediumUrl:
+          type: string
+          format: uri
+          description: URL de Firebase Storage (medium 800px)
+        fullUrl:
+          type: string
+          format: uri
+          description: URL de Firebase Storage (full 2400px)
+        capturedAt:
+          type: string
+          format: date-time
+          description: Fecha y hora de captura (EXIF DateTimeOriginal)
+        timezone:
+          type: string
+          description: IANA timezone si se conoce
+        location:
+          type: object
+          properties:
+            lat: { type: number }
+            lng: { type: number }
+            altitude: { type: number }
+            accuracy: { type: number }
+        dimensions:
+          type: object
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+        perceptualHash:
+          type: string
+          description: pHash de 64 bits en hex, para detectar duplicados
+        blurScore:
+          type: number
+          description: 0-1, mayor = más nítida (Laplacian variance normalizada)
+        sizeBytes: { type: integer }
+        mimeType: { type: string, example: 'image/jpeg' }
+
+    PhotoBatch:
+      type: object
+      required: [photos]
+      properties:
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/PhotoMetadata' }
+          minItems: 1
+          maxItems: 100
+
+    Photo:
+      allOf:
+        - $ref: '#/components/schemas/PhotoMetadata'
+        - type: object
+          required: [id, storyId]
+          properties:
+            id: { type: string }
+            storyId: { type: string }
+            dayId:
+              oneOf:
+                - { type: string }
+                - { type: 'null' }
+            eventId:
+              oneOf:
+                - { type: string }
+                - { type: 'null' }
+            isDuplicate: { type: boolean }
+            isHighlight: { type: boolean }
+            uploadedAt: { type: string, format: date-time }
+
+    PhotoListResponse:
+      type: object
+      properties:
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/Photo' }
+        nextCursor:
+          oneOf:
+            - { type: string }
+            - { type: 'null' }
+        total: { type: integer }
+
+    AnalysisState:
+      type: object
+      properties:
+        status: { $ref: '#/components/schemas/StoryStatus' }
+        photoCount: { type: integer }
+        photosWithGps: { type: integer }
+        photosWithDates: { type: integer }
+        detectedDays:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              photoCount: { type: integer }
+        detectedClusters:
+          type: array
+          description: Clusters temporales (eventos candidatos)
+          items:
+            type: object
+            properties:
+              clusterId: { type: string }
+              startTime: { type: string, format: date-time }
+              endTime: { type: string, format: date-time }
+              photoCount: { type: integer }
+              hasLocation: { type: boolean }
+        duplicateGroups:
+          type: integer
+        lastAnalyzedAt: { type: string, format: date-time }
+
+    QuestionType:
+      type: string
+      enum:
+        - location          # ¿Dónde estaban?
+        - event_name        # ¿Qué fue esto?
+        - companions        # ¿Con quién?
+        - day_gap           # No tengo fotos del día X, ¿qué hicieron?
+        - transition        # Cambio de ciudad detectado, ¿cómo se movieron?
+        - trip_dates        # ¿Estas son las fechas correctas?
+        - trip_title        # ¿Cómo nombrarías este viaje?
+
+    Question:
+      type: object
+      required: [id, storyId, type, prompt, status]
+      properties:
+        id: { type: string }
+        storyId: { type: string }
+        type: { $ref: '#/components/schemas/QuestionType' }
+        prompt:
+          type: string
+          description: Texto natural para mostrar al usuario
+        context:
+          type: object
+          description: Datos para que el cliente renderice (fotos sample, fechas, ubicaciones)
+          properties:
+            photoSampleIds:
+              type: array
+              items: { type: string }
+            photoCount: { type: integer }
+            dateRange:
+              type: object
+              properties:
+                start: { type: string, format: date-time }
+                end: { type: string, format: date-time }
+            relatedDayId: { type: string }
+            relatedEventId: { type: string }
+        suggestedAnswers:
+          type: array
+          description: Opciones sugeridas (por GPS, contexto de otros viajes, etc.)
+          items: { type: string }
+        priority:
+          type: integer
+          description: Mayor = más importante. Motor ordena preguntas por prioridad.
+        status:
+          type: string
+          enum: [pending, answered, skipped]
+        answer:
+          oneOf:
+            - $ref: '#/components/schemas/Answer'
+            - { type: 'null' }
+        createdAt: { type: string, format: date-time }
+        answeredAt:
+          oneOf:
+            - { type: string, format: date-time }
+            - { type: 'null' }
+
+    Answer:
+      type: object
+      properties:
+        value:
+          type: string
+          description: Respuesta libre del usuario
+        structuredValue:
+          type: object
+          description: Si la pregunta tiene tipo (location, date), aquí va estructurado
+          additionalProperties: true
+
+    AnswerRequest:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+        structuredValue:
+          type: object
+          additionalProperties: true
+
+    Day:
+      type: object
+      required: [id, storyId, date]
+      properties:
+        id: { type: string }
+        storyId: { type: string }
+        date: { type: string, format: date }
+        title: { type: string, description: 'Sugerido por motor, editable' }
+        summary: { type: string }
+        coverPhotoId: { type: string }
+        eventIds:
+          type: array
+          items: { type: string }
+        photoCount: { type: integer }
+        primaryLocation: { type: string }
+
+    DayPatch:
+      type: object
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        coverPhotoId: { type: string }
+
+    Event:
+      type: object
+      required: [id, storyId, dayId]
+      properties:
+        id: { type: string }
+        storyId: { type: string }
+        dayId: { type: string }
+        title: { type: string }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        location: { type: string }
+        coordinates:
+          type: object
+          properties:
+            lat: { type: number }
+            lng: { type: number }
+        photoIds:
+          type: array
+          items: { type: string }
+        highlightPhotoIds:
+          type: array
+          items: { type: string }
+        photoCount: { type: integer }
+
+    EventPatch:
+      type: object
+      properties:
+        title: { type: string }
+        location: { type: string }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time }
+        addPhotoIds:
+          type: array
+          items: { type: string }
+        removePhotoIds:
+          type: array
+          items: { type: string }
+
+    Storyboard:
+      type: object
+      properties:
+        story: { $ref: '#/components/schemas/Story' }
+        days:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Day'
+              - type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+        unassignedPhotoCount: { type: integer }

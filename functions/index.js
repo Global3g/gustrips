@@ -1,9 +1,37 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const webpush = require('web-push');
 
 admin.initializeApp();
 const db = admin.firestore();
+
+/* ── Tripshistory Engine (TypeScript subproject) ──
+   Mounts the Express app compiled from functions/tripshistory/src to
+   functions/tripshistory/dist. Build with:
+     cd functions/tripshistory && npm install && npm run build
+   The require below is wrapped so that if `dist/` is missing the rest
+   of this file (notably checkEventReminders) still loads. */
+let tripshistoryApp = null;
+try {
+  // eslint-disable-next-line global-require
+  tripshistoryApp = require('./tripshistory/dist/index').default;
+} catch (e) {
+  console.warn(
+    '[tripshistory] dist/ not found — run `cd functions/tripshistory && npm run build` before deploy.',
+    e && e.message ? e.message : e,
+  );
+}
+
+if (tripshistoryApp) {
+  exports.tripshistory = onRequest(
+    {
+      region: 'us-central1',
+      // Express handles its own body parsing; let onRequest pass the raw body through.
+    },
+    tripshistoryApp,
+  );
+}
 
 /* ── Scheduled function: every 5 min, blocked 10pm-5:30am (Mexico City) ── */
 exports.checkEventReminders = onSchedule(

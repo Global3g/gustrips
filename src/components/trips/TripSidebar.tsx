@@ -22,6 +22,7 @@ import {
   Loader2,
   Sparkles,
   Clock,
+  BookHeart,
 } from 'lucide-react';
 import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
@@ -45,6 +46,7 @@ const NAV_COLORS = {
   checklist:    { icon: 'text-cyan-400',     activeBg: 'bg-cyan-500/15',    activeText: 'text-cyan-300',    glow: 'shadow-cyan-500/20',    bar: 'from-cyan-400 to-cyan-500' },
   links:        { icon: 'text-rose-400',     activeBg: 'bg-rose-500/15',    activeText: 'text-rose-300',    glow: 'shadow-rose-500/20',    bar: 'from-rose-400 to-rose-500' },
   photos:       { icon: 'text-amber-400',    activeBg: 'bg-amber-500/15',   activeText: 'text-amber-300',   glow: 'shadow-amber-500/20',   bar: 'from-amber-400 to-amber-500' },
+  tripshistory: { icon: 'text-fuchsia-400',  activeBg: 'bg-fuchsia-500/15', activeText: 'text-fuchsia-300', glow: 'shadow-fuchsia-500/20', bar: 'from-fuchsia-400 to-rose-500' },
   map:          { icon: 'text-sky-400',      activeBg: 'bg-sky-500/15',     activeText: 'text-sky-300',     glow: 'shadow-sky-500/20',     bar: 'from-sky-400 to-sky-500' },
 } as const;
 
@@ -346,7 +348,8 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
 
   const isActive = (subpath: string) => {
     if (subpath === '') return currentPath === basePath;
-    return currentPath === basePath + subpath;
+    const fullPath = basePath + subpath;
+    return currentPath === fullPath || currentPath.startsWith(fullPath + '/');
   };
 
   /* ---- Itinerary days ---- */
@@ -749,6 +752,13 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
                 {photoCount}
               </span>
             ) : undefined}
+          />
+          <NavItem
+            href={basePath + '/tripshistory'}
+            label="Historia"
+            icon={<BookHeart className="w-4 h-4" />}
+            isActive={isActive('/tripshistory')}
+            color="tripshistory"
           />
           <NavItem
             href={basePath + '/recap'}
