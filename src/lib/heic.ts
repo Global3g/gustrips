@@ -67,12 +67,45 @@ async function isActuallyHeif(file: Blob): Promise<boolean> {
   }
 }
 
+/**
+ * Suppress the noisy "Could not parse HEIF file" / "libheif: ..." messages
+ * that libheif-js (inside heic2any) writes straight to console.{log,error}
+ * from the WASM module, bypassing any try/catch. We only filter that exact
+ * family of messages; everything else flows through normally. The wrapper is
+ * scoped per-call so it auto-restores even if the conversion throws.
+ */
+const HEIF_NOISE_RE = /(could not parse heif file|libheif|^heif:)/i;
+async function runQuietly<T>(fn: () => Promise<T>): Promise<T> {
+  if (typeof console === 'undefined') return fn();
+  const originalLog = console.log;
+  const originalErr = console.error;
+  const originalWarn = console.warn;
+  const filter = (orig: (...a: unknown[]) => void) =>
+    (...args: unknown[]): void => {
+      const first = args[0];
+      if (typeof first === 'string' && HEIF_NOISE_RE.test(first)) return;
+      orig(...args);
+    };
+  console.log = filter(originalLog) as typeof console.log;
+  console.error = filter(originalErr) as typeof console.error;
+  console.warn = filter(originalWarn) as typeof console.warn;
+  try {
+    return await fn();
+  } finally {
+    console.log = originalLog;
+    console.error = originalErr;
+    console.warn = originalWarn;
+  }
+}
+
 async function convertHeicToJpeg(file: File): Promise<File> {
   const mod = (await import('heic2any')) as unknown as {
     default?: (opts: { blob: Blob; toType?: string; quality?: number }) => Promise<Blob | Blob[]>;
   } & ((opts: { blob: Blob; toType?: string; quality?: number }) => Promise<Blob | Blob[]>);
   const heic2any = mod.default ?? mod;
-  const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+  const out = await runQuietly(() =>
+    heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 }),
+  );
   const blob = Array.isArray(out) ? out[0] : out;
   if (!blob) throw new Error('HEIC conversion produced no output');
   const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg') || 'photo.jpg';
