@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import { ImagePlus, Loader2, UploadCloud, X } from 'lucide-react';
 import { useAuthContext } from '@/context/AuthContext';
 import { extractPhotoMetadata } from '@/features/tripshistory/utils/photoMetadata';
@@ -54,8 +53,6 @@ export default function PhotoSelector({
 }: PhotoSelectorProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  // dragenter/dragleave fire on every descendant — count depth to avoid flicker.
-  const [dragDepth, setDragDepth] = useState(0);
   const [items, setItems] = useState<SelectedItem[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -156,9 +153,7 @@ export default function PhotoSelector({
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragging(false);
-    setDragDepth(0);
     if (disabled || processing) return;
     const files = collectFromDataTransfer(e.dataTransfer);
     if (process.env.NODE_ENV !== 'production') {
@@ -291,45 +286,31 @@ export default function PhotoSelector({
   const isBusy = disabled || processing;
   const canSubmit = items.length >= minPhotos && !processing;
 
+  // Mirror the exact handler shape used by /trips/[tripId]/photos which works
+  // reliably across Chrome / Safari / Firefox. The drop zone has to be a plain
+  // <div> — wrapping it in <motion.div> with whileHover/whileTap intercepts
+  // pointer events on some browsers and the drag never fires.
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!isBusy) setIsDragging(true);
+  };
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
   return (
     <div className="space-y-3">
-      <motion.div
-        whileHover={isBusy ? undefined : { scale: 1.005 }}
-        onDragEnter={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (isBusy) return;
-          setDragDepth((d) => {
-            const next = d + 1;
-            if (next > 0) setIsDragging(true);
-            return next;
-          });
-        }}
-        onDragOver={(e) => {
-          // Required for onDrop to fire. Also set dropEffect for nicer cursor.
-          e.preventDefault();
-          e.stopPropagation();
-          if (!isBusy) {
-            e.dataTransfer.dropEffect = 'copy';
-            if (!isDragging) setIsDragging(true);
-          }
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setDragDepth((d) => {
-            const next = Math.max(0, d - 1);
-            if (next === 0) setIsDragging(false);
-            return next;
-          });
-        }}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !isBusy && inputRef.current?.click()}
         className={`relative rounded-3xl border-2 border-dashed p-8 cursor-pointer transition-all duration-200 ${
           isBusy
             ? 'border-white/10 bg-white/[0.02] cursor-not-allowed opacity-60'
             : isDragging
-              ? 'border-amber-400/60 bg-amber-500/10'
+              ? 'border-amber-400/60 bg-amber-500/10 scale-[1.005] shadow-[0_0_32px_rgba(245,158,11,0.25)]'
               : 'border-white/15 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.05]'
         }`}
       >
@@ -372,7 +353,7 @@ export default function PhotoSelector({
             Elegir fotos de la galería
           </button>
         </div>
-      </motion.div>
+      </div>
 
       {items.length > 0 && (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
