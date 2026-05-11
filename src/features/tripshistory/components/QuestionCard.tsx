@@ -9,6 +9,18 @@ import {
   ArrowRightLeft,
   Tag,
   Sparkles,
+  BookHeart,
+  Plane,
+  BedDouble,
+  Wallet,
+  Star,
+  Smile,
+  Sun,
+  UtensilsCrossed,
+  Wand2,
+  Lightbulb,
+  ThumbsUp,
+  RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -21,6 +33,7 @@ import type {
 } from '@/features/tripshistory/types';
 
 const QUESTION_ICONS: Record<QuestionType, LucideIcon> = {
+  // existing
   location: MapPin,
   event_name: Tag,
   companions: Users,
@@ -28,6 +41,26 @@ const QUESTION_ICONS: Record<QuestionType, LucideIcon> = {
   transition: ArrowRightLeft,
   trip_dates: Calendar,
   trip_title: Sparkles,
+  // trip-level
+  trip_companions: Users,
+  trip_purpose: BookHeart,
+  trip_highlight: Sparkles,
+  trip_anecdote: Smile,
+  trip_transport: Plane,
+  trip_accommodation: BedDouble,
+  trip_budget_approx: Wallet,
+  trip_learnings: Lightbulb,
+  trip_recommend: ThumbsUp,
+  trip_would_return: RotateCcw,
+  // day-level
+  day_phrase: Wand2,
+  day_weather: Sun,
+  day_food: UtensilsCrossed,
+  day_surprise: Sparkles,
+  // event-level
+  event_companions: Users,
+  event_rating: Star,
+  event_cost_approx: Wallet,
 };
 
 const QUESTION_LABELS: Record<QuestionType, string> = {
@@ -38,6 +71,23 @@ const QUESTION_LABELS: Record<QuestionType, string> = {
   transition: 'Transición',
   trip_dates: 'Fechas',
   trip_title: 'Título del viaje',
+  trip_companions: 'Con quién viajaron',
+  trip_purpose: 'Motivo del viaje',
+  trip_highlight: 'Mejor momento',
+  trip_anecdote: 'Anécdota',
+  trip_transport: 'Transporte',
+  trip_accommodation: 'Hospedaje',
+  trip_budget_approx: 'Presupuesto',
+  trip_learnings: 'Aprendizajes',
+  trip_recommend: '¿Lo recomendarías?',
+  trip_would_return: '¿Volverías?',
+  day_phrase: 'Frase del día',
+  day_weather: 'Clima',
+  day_food: 'Comida memorable',
+  day_surprise: 'Algo sorprendió',
+  event_companions: '¿Quiénes estaban?',
+  event_rating: 'Recomendación',
+  event_cost_approx: 'Costo aprox',
 };
 
 interface QuestionCardProps {
@@ -69,6 +119,11 @@ export default function QuestionCard({
     }
   })();
 
+  const skippable = question.context?.skippable === true;
+  const multiline = question.context?.multiline === true;
+  const placeholder = question.context?.placeholder;
+  const helperText = question.context?.helperText;
+
   return (
     <motion.article
       initial={{ opacity: 0, y: 12 }}
@@ -94,14 +149,29 @@ export default function QuestionCard({
             {question.context.photoCount} fotos
           </span>
         )}
+        {skippable && (
+          <span className="text-[10px] font-bold text-white/55 bg-white/[0.03] rounded-full px-2.5 py-1 border border-white/[0.06] uppercase tracking-wide">
+            Opcional
+          </span>
+        )}
       </header>
 
-      <h2 className="text-xl sm:text-2xl font-bold text-white leading-snug mb-5">
+      <h2 className="text-xl sm:text-2xl font-bold text-white leading-snug mb-2">
         {question.prompt}
       </h2>
 
+      {skippable && (
+        <p className="text-xs text-white/55 mb-4">
+          Esta es opcional — si no te acordás, saltala con el botón de la derecha.
+        </p>
+      )}
+
       <AnswerInput
         suggestedAnswers={question.suggestedAnswers}
+        placeholder={placeholder}
+        helperText={helperText}
+        multiline={multiline}
+        skippable={skippable}
         disabled={loading}
         onSubmit={(value) => onAnswer({ value })}
         onSkip={onSkip}

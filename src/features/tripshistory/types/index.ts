@@ -52,6 +52,7 @@ export interface Story {
   dayCount?: number;
   eventCount?: number;
   pendingQuestionCount?: number;
+  metadata?: Record<string, unknown>;
   createdAt: string; // ISO date-time
   updatedAt?: string;
 }
@@ -148,13 +149,34 @@ export interface AnalysisState {
 /* ─── Questions ────────────────────────────────────── */
 
 export type QuestionType =
+  // existing
   | 'location'
   | 'event_name'
   | 'companions'
   | 'day_gap'
   | 'transition'
   | 'trip_dates'
-  | 'trip_title';
+  | 'trip_title'
+  // trip-level expansion
+  | 'trip_companions'
+  | 'trip_purpose'
+  | 'trip_highlight'
+  | 'trip_anecdote'
+  | 'trip_transport'
+  | 'trip_accommodation'
+  | 'trip_budget_approx'
+  | 'trip_learnings'
+  | 'trip_recommend'
+  | 'trip_would_return'
+  // day-level expansion
+  | 'day_phrase'
+  | 'day_weather'
+  | 'day_food'
+  | 'day_surprise'
+  // event-level expansion
+  | 'event_companions'
+  | 'event_rating'
+  | 'event_cost_approx';
 
 export type QuestionStatus = 'pending' | 'answered' | 'skipped';
 
@@ -167,6 +189,11 @@ export interface QuestionContext {
   };
   relatedDayId?: string;
   relatedEventId?: string;
+  /** UI hints set by the engine. */
+  skippable?: boolean;
+  multiline?: boolean;
+  placeholder?: string;
+  helperText?: string;
 }
 
 export interface Answer {
@@ -212,6 +239,7 @@ export interface Day {
   eventIds?: string[];
   photoCount?: number;
   primaryLocation?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface DayPatch {
@@ -237,6 +265,7 @@ export interface Event {
   photoIds?: string[];
   highlightPhotoIds?: string[];
   photoCount?: number;
+  metadata?: Record<string, unknown>;
 }
 
 export interface EventPatch {

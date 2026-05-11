@@ -606,13 +606,34 @@ components:
     QuestionType:
       type: string
       enum:
-        - location          # ¿Dónde estaban?
-        - event_name        # ¿Qué fue esto?
-        - companions        # ¿Con quién?
-        - day_gap           # No tengo fotos del día X, ¿qué hicieron?
-        - transition        # Cambio de ciudad detectado, ¿cómo se movieron?
-        - trip_dates        # ¿Estas son las fechas correctas?
-        - trip_title        # ¿Cómo nombrarías este viaje?
+        # existing
+        - location              # ¿Dónde estaban?
+        - event_name            # ¿Qué fue esto?
+        - companions            # ¿Con quién? (legacy)
+        - day_gap               # No tengo fotos del día X, ¿qué hicieron?
+        - transition            # Cambio de ciudad detectado, ¿cómo se movieron?
+        - trip_dates            # ¿Estas son las fechas correctas?
+        - trip_title            # ¿Cómo nombrarías este viaje?
+        # trip-level expansion
+        - trip_companions       # ¿Con quién viajaron?
+        - trip_purpose          # ¿Cuál fue la razón del viaje?
+        - trip_highlight        # ¿Mejor momento del viaje?
+        - trip_anecdote         # Anécdota / algo gracioso / algo salió mal
+        - trip_transport        # ¿Cómo llegaron al destino?
+        - trip_accommodation    # ¿Dónde se hospedaron?
+        - trip_budget_approx    # Presupuesto aprox (opcional)
+        - trip_learnings        # Algo que aprendieron
+        - trip_recommend        # ¿Lo recomendarías?
+        - trip_would_return     # ¿Volverías?
+        # day-level expansion
+        - day_phrase            # Resumen del día en una frase
+        - day_weather           # ¿Cómo estuvo el clima?
+        - day_food              # ¿Comieron algo memorable?
+        - day_surprise          # ¿Algo les sorprendió ese día?
+        # event-level expansion
+        - event_companions      # ¿Quiénes estaban en estas fotos?
+        - event_rating          # ¿Lo recomendarías como experiencia?
+        - event_cost_approx     # ¿Cuánto les costó? (opcional)
 
     Question:
       type: object

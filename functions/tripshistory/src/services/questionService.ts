@@ -29,14 +29,43 @@ const EVENT_NAME_PHOTO_THRESHOLD = 15;
 
 // Priority offsets per question type (higher = ask sooner).
 const TYPE_BASE_PRIORITY: Record<QuestionType, number> = {
-  trip_title: 95,
+  // critical: shape of the story
+  trip_dates: 95,
+  trip_title: 92,
   location: 80,
   transition: 70,
-  event_name: 60,
+  // identity + emotion
+  trip_companions: 88,
+  trip_purpose: 85,
+  trip_highlight: 80,
+  event_name: 75,
+  // logistics
+  trip_transport: 70,
+  trip_accommodation: 65,
+  // per day
+  day_phrase: 60,
+  event_companions: 55,
+  day_food: 50,
   day_gap: 50,
-  trip_dates: 40,
+  event_rating: 45,
+  // longer-tail emotional
+  trip_anecdote: 40,
+  trip_learnings: 35,
+  day_weather: 30,
+  day_surprise: 30,
   companions: 30,
+  // optional / closing
+  event_cost_approx: 25,
+  trip_budget_approx: 20,
+  trip_would_return: 15,
+  trip_recommend: 10,
 };
+
+// Caps to keep the wizard from feeling like a survey.
+const MAX_DAY_LEVEL_QUESTIONS_PER_DAY = 2;
+const LONG_TRIP_DAY_THRESHOLD = 7;
+const HIGH_PHOTO_DAY_THRESHOLD = 30;
+const EVENT_LEVEL_MIN_PHOTOS = 8;
 
 // ─────────────────────────────────────────────────────────────────
 // Internal shapes
@@ -434,6 +463,372 @@ export const questionService = {
       }
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // Trip-level expansion
+    // ═══════════════════════════════════════════════════════════════
+
+    const pushTripQ = (
+      id: string,
+      type: QuestionType,
+      prompt: string,
+      opts: {
+        suggested?: string[];
+        skippable?: boolean;
+        multiline?: boolean;
+        placeholder?: string;
+        helperText?: string;
+        priorityOverride?: number;
+      } = {},
+    ): void => {
+      const ctx: Record<string, unknown> = {};
+      if (opts.skippable) ctx.skippable = true;
+      if (opts.multiline) ctx.multiline = true;
+      if (opts.placeholder) ctx.placeholder = opts.placeholder;
+      if (opts.helperText) ctx.helperText = opts.helperText;
+      proposed.push({
+        id,
+        data: {
+          storyId,
+          type,
+          prompt,
+          context: Object.keys(ctx).length > 0 ? ctx : undefined,
+          suggestedAnswers: opts.suggested,
+          priority: opts.priorityOverride ?? TYPE_BASE_PRIORITY[type],
+          status: 'pending',
+          answer: null,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          answeredAt: null,
+        },
+      });
+    };
+
+    // Compañeros — clave para casi todo viaje.
+    pushTripQ(
+      'trip_companions-story',
+      'trip_companions',
+      '¿Con quién viajaron?',
+      {
+        suggested: ['Solo', 'En pareja', 'Familia', 'Con amigos', 'Grupo grande'],
+        placeholder: 'Ej: Con María y los niños',
+      },
+    );
+
+    // Propósito / motivo del viaje.
+    pushTripQ(
+      'trip_purpose-story',
+      'trip_purpose',
+      '¿Cuál fue la razón del viaje?',
+      {
+        suggested: [
+          'Vacaciones',
+          'Aniversario',
+          'Luna de miel',
+          'Cumpleaños',
+          'Escape de fin de semana',
+          'Trabajo',
+          'Evento familiar',
+        ],
+        placeholder: 'Una razón simple alcanza',
+      },
+    );
+
+    // Mejor momento de todo el viaje.
+    pushTripQ(
+      'trip_highlight-story',
+      'trip_highlight',
+      '¿Cuál fue el mejor momento de todo el viaje?',
+      {
+        multiline: true,
+        placeholder: 'Cuéntame ese momento que se te quedó grabado',
+      },
+    );
+
+    // Anécdota — algo gracioso/raro/que salió mal.
+    pushTripQ(
+      'trip_anecdote-story',
+      'trip_anecdote',
+      '¿Algo gracioso, raro o que salió mal y se acuerdan siempre?',
+      {
+        skippable: true,
+        multiline: true,
+        placeholder: 'Esa historia que siempre cuentan...',
+        helperText: 'Opcional — si no se te ocurre, saltala',
+      },
+    );
+
+    // Transporte para llegar.
+    pushTripQ(
+      'trip_transport-story',
+      'trip_transport',
+      '¿Cómo llegaron al destino?',
+      {
+        suggested: ['Avión', 'Auto', 'Tren', 'Bus', 'Ferry', 'Mix de varios'],
+      },
+    );
+
+    // Hospedaje.
+    pushTripQ(
+      'trip_accommodation-story',
+      'trip_accommodation',
+      '¿Dónde se hospedaron?',
+      {
+        suggested: [
+          'Hotel',
+          'Airbnb',
+          'Hostel',
+          'Casa de familia',
+          'Camping',
+          'Cambiamos varias veces',
+        ],
+        placeholder: 'Nombre del hotel/zona si lo recuerdan',
+      },
+    );
+
+    // Presupuesto aproximado (opcional).
+    pushTripQ(
+      'trip_budget_approx-story',
+      'trip_budget_approx',
+      'Más o menos, ¿cuánto gastaron en total?',
+      {
+        skippable: true,
+        placeholder: 'Ej: $50.000 MXN — opcional',
+        helperText: 'Ayuda a estimar viajes parecidos a futuro',
+      },
+    );
+
+    // Aprendizajes.
+    pushTripQ(
+      'trip_learnings-story',
+      'trip_learnings',
+      '¿Aprendieron algo en este viaje? Una palabra, una comida nueva, una costumbre.',
+      {
+        skippable: true,
+        multiline: true,
+        placeholder: 'Lo primero que se te venga',
+      },
+    );
+
+    // Recomendación.
+    pushTripQ(
+      'trip_recommend-story',
+      'trip_recommend',
+      '¿Le recomendarías este viaje a alguien?',
+      {
+        suggested: [
+          'Sí, mil veces',
+          'Sí',
+          'Depende a quién',
+          'No mucho',
+          'No',
+        ],
+      },
+    );
+
+    // Volverían.
+    pushTripQ(
+      'trip_would_return-story',
+      'trip_would_return',
+      '¿Volverías a este destino?',
+      {
+        suggested: ['Mañana mismo', 'Sí', 'Tal vez', 'No creo'],
+      },
+    );
+
+    // ═══════════════════════════════════════════════════════════════
+    // Day-level expansion (cap 2 per day)
+    // ═══════════════════════════════════════════════════════════════
+
+    const longTrip = days.length > LONG_TRIP_DAY_THRESHOLD;
+    type DayProposal = {
+      id: string;
+      type: QuestionType;
+      prompt: string;
+      ctx: Record<string, unknown>;
+      suggested?: string[];
+      priority: number;
+    };
+
+    for (const day of days) {
+      const dayProposals: DayProposal[] = [];
+      const friendly = spanishLongDate(day.date);
+      const photoCount = day.photoCount ?? 0;
+
+      // day_phrase — only for high-photo days when the trip is long.
+      if (!longTrip || photoCount >= HIGH_PHOTO_DAY_THRESHOLD) {
+        dayProposals.push({
+          id: `day_phrase-${day.date}`,
+          type: 'day_phrase',
+          prompt: `Si tuvieras que resumir el ${friendly} en una frase, ¿cuál sería?`,
+          ctx: {
+            relatedDayId: day.id,
+            skippable: true,
+            multiline: true,
+            placeholder: 'Una frase corta basta',
+          },
+          priority: TYPE_BASE_PRIORITY.day_phrase,
+        });
+      }
+
+      // day_weather — siempre, conversacional.
+      dayProposals.push({
+        id: `day_weather-${day.date}`,
+        type: 'day_weather',
+        prompt: `¿Cómo estuvo el clima el ${friendly}?`,
+        ctx: { relatedDayId: day.id, skippable: true },
+        suggested: ['Soleado', 'Nublado', 'Lluvioso', 'Frío', 'Caluroso', 'Mezcla'],
+        priority: TYPE_BASE_PRIORITY.day_weather,
+      });
+
+      // day_food — solo si hay buen rastro de comida (cluster en horario o muchas fotos).
+      const dayEvents = events.filter((e) => e.dayId === day.id);
+      const mealHinted = dayEvents.some((e) => {
+        const startIso = e.startTime;
+        if (!startIso) return false;
+        const h = new Date(startIso).getUTCHours();
+        const c = e.photoCount ?? e.photoIds?.length ?? 0;
+        const isLunch = h >= 12 && h <= 15;
+        const isDinner = h >= 19 && h <= 22;
+        return c >= 8 && (isLunch || isDinner);
+      });
+      if (mealHinted || photoCount > 20) {
+        dayProposals.push({
+          id: `day_food-${day.date}`,
+          type: 'day_food',
+          prompt: `¿Comieron algo memorable el ${friendly}?`,
+          ctx: {
+            relatedDayId: day.id,
+            skippable: true,
+            multiline: true,
+            placeholder: 'El plato o el lugar que más se acuerdan',
+          },
+          priority: TYPE_BASE_PRIORITY.day_food,
+        });
+      }
+
+      // day_surprise — heurística simple: si el día tiene >=15 fotos.
+      if (photoCount >= 15) {
+        dayProposals.push({
+          id: `day_surprise-${day.date}`,
+          type: 'day_surprise',
+          prompt: `¿Algo de ese día les sorprendió?`,
+          ctx: {
+            relatedDayId: day.id,
+            skippable: true,
+            multiline: true,
+            placeholder: 'Algo inesperado, bueno o malo',
+          },
+          priority: TYPE_BASE_PRIORITY.day_surprise,
+        });
+      }
+
+      // Cap a top-N por prioridad para no inundar.
+      dayProposals
+        .sort((a, b) => b.priority - a.priority)
+        .slice(0, MAX_DAY_LEVEL_QUESTIONS_PER_DAY)
+        .forEach((p) => {
+          proposed.push({
+            id: p.id,
+            data: {
+              storyId,
+              type: p.type,
+              prompt: p.prompt,
+              context: p.ctx,
+              suggestedAnswers: p.suggested,
+              priority: p.priority,
+              status: 'pending',
+              answer: null,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              answeredAt: null,
+            },
+          });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Event-level expansion (only events with >=8 photos)
+    // ═══════════════════════════════════════════════════════════════
+
+    for (const ev of events) {
+      const photoCount = ev.photoCount ?? ev.photoIds?.length ?? 0;
+      if (photoCount < EVENT_LEVEL_MIN_PHOTOS) continue;
+
+      const evLabel = ev.title ?? 'ese momento';
+
+      // event_companions
+      proposed.push({
+        id: `event_companions-${ev.id}`,
+        data: {
+          storyId,
+          type: 'event_companions',
+          prompt: `¿Quiénes estaban en ${evLabel}? ¿Todo el grupo o solo algunos?`,
+          context: {
+            relatedEventId: ev.id,
+            relatedDayId: ev.dayId,
+            photoCount,
+            skippable: true,
+          },
+          suggestedAnswers: ['Todo el grupo', 'Solo yo', 'En pareja', 'Subgrupo'],
+          priority: TYPE_BASE_PRIORITY.event_companions,
+          status: 'pending',
+          answer: null,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          answeredAt: null,
+        },
+      });
+
+      // event_rating
+      proposed.push({
+        id: `event_rating-${ev.id}`,
+        data: {
+          storyId,
+          type: 'event_rating',
+          prompt: `¿Cómo describirías ${evLabel} como experiencia?`,
+          context: {
+            relatedEventId: ev.id,
+            relatedDayId: ev.dayId,
+            skippable: true,
+          },
+          suggestedAnswers: [
+            'Imperdible',
+            'Está muy bueno',
+            'Bien',
+            'Nada del otro mundo',
+            'Salteable',
+          ],
+          priority: TYPE_BASE_PRIORITY.event_rating,
+          status: 'pending',
+          answer: null,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          answeredAt: null,
+        },
+      });
+
+      // event_cost_approx — solo si tiene location y el día tiene varios eventos
+      const sameDayEvents = events.filter((e) => e.dayId === ev.dayId).length;
+      if (ev.location && sameDayEvents > 1) {
+        proposed.push({
+          id: `event_cost_approx-${ev.id}`,
+          data: {
+            storyId,
+            type: 'event_cost_approx',
+            prompt: `¿Cuánto les costó ${evLabel}?`,
+            context: {
+              relatedEventId: ev.id,
+              relatedDayId: ev.dayId,
+              skippable: true,
+              placeholder: 'Aprox, opcional',
+              helperText: 'Suma al presupuesto del viaje',
+            },
+            priority: TYPE_BASE_PRIORITY.event_cost_approx,
+            status: 'pending',
+            answer: null,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            answeredAt: null,
+          },
+        });
+      }
+    }
+
     // ─── Persist: upsert each proposed question. Skip if existing doc
     //     is already answered/skipped (don't re-pend it).
     const qCol = db.collection(paths.questionsCollection(userId, storyId));
@@ -546,25 +941,31 @@ export const questionService = {
     const ctx = stored.context as
       | { relatedEventId?: string; relatedDayId?: string }
       | undefined;
+
+    // For trip_*, day_*, event_* metadata questions, the metadata key is
+    // derived from the type (e.g. trip_companions → companions).
+    const stripPrefix = (t: string): string =>
+      t.replace(/^(trip|day|event)_/, '');
+    const structured =
+      body.structuredValue && Object.keys(body.structuredValue).length > 0
+        ? body.structuredValue
+        : null;
+    const valueForMetadata: unknown = structured ?? body.value;
+
     switch (stored.type) {
+      // ─── Direct field writes (existing) ───────────────────────────
       case 'location':
         if (ctx?.relatedEventId) {
           await db
             .doc(paths.event(userId, storyId, ctx.relatedEventId))
-            .update({
-              location: body.value,
-              updatedAt: now,
-            });
+            .update({ location: body.value, updatedAt: now });
         }
         break;
       case 'event_name':
         if (ctx?.relatedEventId) {
           await db
             .doc(paths.event(userId, storyId, ctx.relatedEventId))
-            .update({
-              title: body.value,
-              updatedAt: now,
-            });
+            .update({ title: body.value, updatedAt: now });
         }
         break;
       case 'trip_title':
@@ -593,9 +994,67 @@ export const questionService = {
             );
         }
         break;
+
+      // ─── Trip-level metadata ──────────────────────────────────────
+      case 'trip_companions':
+      case 'trip_purpose':
+      case 'trip_highlight':
+      case 'trip_anecdote':
+      case 'trip_transport':
+      case 'trip_accommodation':
+      case 'trip_budget_approx':
+      case 'trip_learnings':
+      case 'trip_recommend':
+      case 'trip_would_return':
+      case 'trip_dates':
+      case 'companions': {
+        const key = stripPrefix(stored.type);
+        await db.doc(paths.story(userId, storyId)).set(
+          {
+            metadata: { [key]: valueForMetadata },
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+        break;
+      }
+
+      // ─── Day-level metadata ───────────────────────────────────────
+      case 'day_phrase':
+      case 'day_weather':
+      case 'day_food':
+      case 'day_surprise': {
+        if (ctx?.relatedDayId) {
+          const key = stripPrefix(stored.type);
+          await db.doc(paths.day(userId, storyId, ctx.relatedDayId)).set(
+            {
+              metadata: { [key]: valueForMetadata },
+              updatedAt: now,
+            },
+            { merge: true },
+          );
+        }
+        break;
+      }
+
+      // ─── Event-level metadata ─────────────────────────────────────
+      case 'event_companions':
+      case 'event_rating':
+      case 'event_cost_approx': {
+        if (ctx?.relatedEventId) {
+          const key = stripPrefix(stored.type);
+          await db.doc(paths.event(userId, storyId, ctx.relatedEventId)).set(
+            {
+              metadata: { [key]: valueForMetadata },
+              updatedAt: now,
+            },
+            { merge: true },
+          );
+        }
+        break;
+      }
+
       default:
-        // trip_dates / companions: store on question only; storyboard treats
-        // these as soft metadata for now.
         break;
     }
 
