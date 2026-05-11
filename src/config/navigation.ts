@@ -1,6 +1,7 @@
 export const APP_NAV_ITEMS = [
   { href: '/dashboard', label: 'Mis Viajes', icon: 'LayoutDashboard' },
   { href: '/travelers', label: 'Viajeros', icon: 'Users' },
+  { href: '/tripshistory', label: 'Historias', icon: 'BookHeart' },
   { href: '/trips/new', label: 'Nuevo Viaje', icon: 'PlaneTakeoff' },
 ] as const;
 

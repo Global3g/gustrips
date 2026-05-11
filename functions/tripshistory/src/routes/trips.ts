@@ -9,10 +9,8 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errors';
-import type {
-  ConvertToTripRequest,
-  ConvertToTripResponse,
-} from '../models/types';
+import { tripsService } from '../services/tripsService';
+import type { ConvertToTripRequest } from '../models/types';
 
 export const tripsRouter = Router();
 
@@ -24,15 +22,7 @@ tripsRouter.post(
     const { storyId } = req.params;
     const body = (req.body ?? {}) as ConvertToTripRequest;
 
-    // STUB: real impl will build a Trip from the storyboard, write to
-    // /trips/{tripId} in Firestore, and set { tripId } back on the story doc.
-    void userId;
-    void body;
-
-    const response: ConvertToTripResponse = {
-      tripId: `trip_${Math.random().toString(36).slice(2, 10)}`,
-      storyId,
-    };
-    res.status(201).json(response);
+    const result = await tripsService.convertToTrip(userId, storyId, body);
+    res.status(201).json(result);
   }),
 );

@@ -173,3 +173,10 @@ export function convertStoryToTrip(
     body,
   );
 }
+
+/**
+ * Alias matching the spec wording `convert-to-trip`. Kept so callers can
+ * use either `convertStoryToTrip` (legacy) or `convertToTrip` (matches
+ * the OpenAPI operationId).
+ */
+export const convertToTrip = convertStoryToTrip;

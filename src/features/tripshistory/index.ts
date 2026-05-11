@@ -18,6 +18,7 @@ export * as tripshistoryApi from '@/features/tripshistory/api/endpoints';
 // Hooks
 export { useStory } from '@/features/tripshistory/hooks/useStory';
 export { useStoriesByTrip } from '@/features/tripshistory/hooks/useStoriesByTrip';
+export { useStoriesList } from '@/features/tripshistory/hooks/useStoriesList';
 export { useStoryboard } from '@/features/tripshistory/hooks/useStoryboard';
 export { useNextQuestion } from '@/features/tripshistory/hooks/useNextQuestion';
 export { useAnswerQuestion } from '@/features/tripshistory/hooks/useAnswerQuestion';
@@ -34,6 +35,7 @@ export { default as StoryboardView } from '@/features/tripshistory/components/St
 export { default as DayCard } from '@/features/tripshistory/components/DayCard';
 export { default as EventCard } from '@/features/tripshistory/components/EventCard';
 export { default as UnassignedPhotos } from '@/features/tripshistory/components/UnassignedPhotos';
+export { default as ConvertToTripBanner } from '@/features/tripshistory/components/ConvertToTripBanner';
 
 // Utils
 export {

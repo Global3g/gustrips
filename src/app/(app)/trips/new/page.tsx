@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, ArrowRight, BookHeart, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useTrips } from '@/hooks/useTrips';
 import { useToast } from '@/context/ToastContext';
@@ -89,6 +90,41 @@ export default function NewTripPage() {
           <h1 className="text-gray-900 text-2xl font-bold">Nuevo Viaje</h1>
           <p className="text-gray-500 text-sm">Completa los datos para crear tu viaje</p>
         </div>
+      </motion.div>
+
+      {/* Alternate path: reconstruct past trip from photos */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.05 }}
+      >
+        <Link
+          href="/tripshistory/new"
+          className="group block rounded-2xl p-4 sm:p-5 border border-fuchsia-300/50 bg-gradient-to-br from-fuchsia-100 via-rose-50 to-amber-50 hover:from-fuchsia-200 hover:via-rose-100 hover:to-amber-100 transition-all"
+        >
+          <div className="flex items-center gap-4">
+            <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-fuchsia-500 to-rose-500 flex items-center justify-center shadow-md shadow-fuchsia-500/20">
+              <BookHeart className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-fuchsia-700">
+                Tripshistory
+              </p>
+              <h3 className="text-gray-900 font-bold text-base sm:text-lg leading-tight">
+                ¿Tenés fotos de un viaje que ya pasó?
+              </h3>
+              <p className="text-gray-600 text-xs sm:text-sm mt-0.5">
+                Reconstruí el viaje desde tu galería en lugar de cargarlo a mano.
+              </p>
+            </div>
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-fuchsia-700 text-sm font-bold whitespace-nowrap">
+              <Sparkles className="w-4 h-4" />
+              Reconstruir
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </span>
+            <ArrowRight className="sm:hidden w-5 h-5 text-fuchsia-700 transition-transform group-hover:translate-x-0.5" />
+          </div>
+        </Link>
       </motion.div>
 
       {/* Form */}

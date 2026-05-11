@@ -12,6 +12,7 @@ import {
   Loader2,
   Globe,
   Compass,
+  BookHeart,
 } from 'lucide-react';
 import { APP_NAV_ITEMS } from '@/config/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -39,12 +40,19 @@ const NAV_COLORS: Record<string, { active: string; icon: string; bg: string; glo
     bg: 'bg-amber-500/10',
     glow: 'shadow-amber-500/20',
   },
+  '/tripshistory': {
+    active: 'text-fuchsia-400',
+    icon: 'text-fuchsia-400',
+    bg: 'bg-fuchsia-500/10',
+    glow: 'shadow-fuchsia-500/20',
+  },
 };
 
 const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   LayoutDashboard,
   Users,
   PlaneTakeoff,
+  BookHeart,
 };
 
 export default function AppSidebar() {

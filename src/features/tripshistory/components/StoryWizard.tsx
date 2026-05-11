@@ -30,6 +30,12 @@ interface StoryWizardProps {
   storyId: string;
   /** Optional thumbnail map for storyboard rendering (photoId -> url). */
   thumbnailById?: Record<string, string>;
+  /**
+   * Optional banner injected at the top of the storyboard view. Allows
+   * callers to surface contextual actions (e.g. convert-to-trip) without
+   * touching wizard internals.
+   */
+  storyboardBanner?: React.ReactNode;
 }
 
 /**
@@ -43,6 +49,7 @@ interface StoryWizardProps {
 export default function StoryWizard({
   storyId,
   thumbnailById,
+  storyboardBanner,
 }: StoryWizardProps) {
   const {
     data: story,
@@ -229,6 +236,7 @@ export default function StoryWizard({
             <StoryboardView
               storyboard={storyboard}
               thumbnailById={thumbnailById}
+              banner={storyboardBanner}
             />
           </motion.div>
         )}

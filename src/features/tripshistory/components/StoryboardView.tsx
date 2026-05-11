@@ -10,6 +10,12 @@ import type { Storyboard } from '@/features/tripshistory/types';
 interface StoryboardViewProps {
   storyboard: Storyboard;
   thumbnailById?: Record<string, string>;
+  /**
+   * Optional content rendered at the very top of the storyboard, above
+   * the hero header. Used by callers to surface story-level actions
+   * (e.g. "Convertir en viaje" when a standalone story is ready).
+   */
+  banner?: React.ReactNode;
 }
 
 /**
@@ -18,6 +24,7 @@ interface StoryboardViewProps {
 export default function StoryboardView({
   storyboard,
   thumbnailById,
+  banner,
 }: StoryboardViewProps) {
   const { story, days, unassignedPhotoCount } = storyboard;
 
@@ -34,6 +41,9 @@ export default function StoryboardView({
 
   return (
     <div className="space-y-6">
+      {/* Optional top banner (e.g. convert-to-trip CTA) */}
+      {banner}
+
       {/* Hero header */}
       <motion.header
         initial={{ opacity: 0, y: 12 }}
