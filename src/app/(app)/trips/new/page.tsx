@@ -129,19 +129,16 @@ export default function NewTripPage() {
         />
       </motion.div>
 
-      {/* Body */}
-      <motion.div
-        key={mode}
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-      >
+      {/* Body — plain <div>, not <motion.div>. framer-motion wrappers
+          swallow drag pointer events on descendants, which kills the
+          drop zone inside PhotoSelector. */}
+      <div key={mode}>
         {mode === 'photos' ? (
           <TripFromPhotosFlow onSwitchToManual={() => setMode('manual')} />
         ) : (
           <TripForm onSubmit={handleSubmit} loading={loading} />
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }
