@@ -10,6 +10,7 @@ import { useNextQuestion } from '@/features/tripshistory/hooks/useNextQuestion';
 import { useStoryboard } from '@/features/tripshistory/hooks/useStoryboard';
 import { useAnswerQuestion } from '@/features/tripshistory/hooks/useAnswerQuestion';
 import { usePhotoBatch } from '@/features/tripshistory/hooks/usePhotoBatch';
+import { useStoryThumbnails } from '@/features/tripshistory/hooks/useStoryThumbnails';
 import PhotoSelector from '@/features/tripshistory/components/PhotoSelector';
 import type { PhotoMetadata, Story } from '@/features/tripshistory/types';
 
@@ -82,6 +83,15 @@ export default function StoryWizard({
   const { data: storyboard, refetch: refetchStoryboard } = useStoryboard(
     status === 'ready' || status === 'finalized' ? storyId : null,
   );
+
+  // Resolve photoIds -> thumbnail URLs. Skipped until we actually render the
+  // storyboard (avoids a useless full-photo fetch during analyzing/questioning).
+  const { thumbnailById: fetchedThumbs } = useStoryThumbnails(
+    status === 'ready' || status === 'finalized' ? storyId : null,
+  );
+
+  // Prefer caller-provided map; otherwise use what we fetched ourselves.
+  const effectiveThumbs = thumbnailById ?? fetchedThumbs;
 
   // Mutations.
   const { mutate: submitAnswer, skip: skipQ, loading: answering } = useAnswerQuestion();
@@ -267,7 +277,7 @@ export default function StoryWizard({
           >
             <StoryboardView
               storyboard={storyboard}
-              thumbnailById={thumbnailById}
+              thumbnailById={effectiveThumbs}
               banner={storyboardBanner}
             />
           </motion.div>

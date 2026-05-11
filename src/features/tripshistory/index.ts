@@ -24,6 +24,7 @@ export { useNextQuestion } from '@/features/tripshistory/hooks/useNextQuestion';
 export { useAnswerQuestion } from '@/features/tripshistory/hooks/useAnswerQuestion';
 export { usePhotoBatch } from '@/features/tripshistory/hooks/usePhotoBatch';
 export { useAnalysisState } from '@/features/tripshistory/hooks/useAnalysisState';
+export { useStoryThumbnails } from '@/features/tripshistory/hooks/useStoryThumbnails';
 
 // Components
 export { default as StoryWizard } from '@/features/tripshistory/components/StoryWizard';
