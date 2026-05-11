@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   MapPin,
@@ -73,6 +73,8 @@ import SmartSuggestionsBanner from '@/components/trips/SmartSuggestionsBanner';
 import NotificationsBanner from '@/components/trips/NotificationsBanner';
 import CompanionBanner from '@/components/trips/CompanionBanner';
 import QuickActionsRow from '@/components/trips/QuickActionsRow';
+import TripQuestionsBanner from '@/features/tripshistory/components/TripQuestionsBanner';
+import { useStoryFromTrip } from '@/features/tripshistory/hooks/useStoryFromTrip';
 import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
 
 /* ─── Countdown Badge ─────────────────────────────── */
@@ -463,9 +465,18 @@ function TripDetailSkeleton() {
 export default function TripDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const tripId = params.tripId as string;
   const { trip, loading, updateTrip, generateShareToken } = useTrip(tripId);
   useMilestones(tripId);
+
+  // Tripshistory: surface inline questions if this trip was seeded from a Story.
+  const fromPhotos = searchParams.get('fromPhotos') === '1';
+  const {
+    story: photoStory,
+    pendingQuestions: photoQuestions,
+    refetch: refetchStory,
+  } = useStoryFromTrip(tripId);
 
   // One-time cleanup: legacy done notes (from before the toggle-deletes
   // change) are filtered silently when the trip loads.
@@ -686,6 +697,18 @@ export default function TripDetailPage() {
               isInTripRange={isInTripRange}
               onMoreMenuToggle={() => setShowMoreMenu(!showMoreMenu)}
             />
+
+            {/* ── Tripshistory questions banner ── */}
+            {photoStory && photoQuestions.length > 0 && (
+              <TripQuestionsBanner
+                tripId={tripId}
+                story={photoStory}
+                questions={photoQuestions}
+                fromPhotos={fromPhotos}
+                onChanged={() => { void refetchStory(); }}
+                onStart={() => router.push(`/trips/${tripId}/itinerary`)}
+              />
+            )}
 
             {/* ── Companion Banner (live during trip) ── */}
             <CompanionBanner tripId={tripId} />

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plane, Plus, Search, MapPin, Calendar, Users, CalendarClock, ArrowRight, Globe, ListChecks, CalendarDays, Receipt, FileText, BookHeart, Sparkles } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Plane, Plus, Search, MapPin, Calendar, Globe, ListChecks, CalendarDays, Receipt, FileText } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuth } from '@/hooks/useAuth';
@@ -295,43 +295,6 @@ export default function DashboardPage() {
           <StatPill icon={Plane} value={stats.total} label="Viajes" color="#3b82f6" />
           <StatPill icon={Globe} value={stats.destinations} label="Destinos" color="#8b5cf6" />
           <StatPill icon={ListChecks} value={stats.completed} label="Completados" color="#22c55e" />
-        </motion.div>
-      )}
-
-      {/* ── Quick actions: Tripshistory entry ── */}
-      {!loading && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.12 }}
-        >
-          <Link
-            href="/tripshistory/new"
-            className="group block rounded-2xl p-4 sm:p-5 border border-fuchsia-400/20 bg-gradient-to-br from-fuchsia-500/15 via-rose-500/10 to-amber-500/15 hover:from-fuchsia-500/20 hover:via-rose-500/15 hover:to-amber-500/20 transition-all"
-          >
-            <div className="flex items-center gap-4">
-              <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-fuchsia-400/30 to-rose-500/30 border border-white/[0.08] flex items-center justify-center">
-                <BookHeart className="w-5 h-5 text-amber-200" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-200/80">
-                  Tripshistory
-                </p>
-                <h3 className="text-white font-bold text-base sm:text-lg leading-tight">
-                  Reconstruir viaje pasado
-                </h3>
-                <p className="text-white/60 text-xs sm:text-sm mt-0.5">
-                  ¿Tenés fotos de un viaje sin cargar? Armá la historia desde tu galería.
-                </p>
-              </div>
-              <span className="hidden sm:inline-flex items-center gap-1.5 text-amber-200 text-sm font-bold whitespace-nowrap">
-                <Sparkles className="w-4 h-4" />
-                Empezar
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-              </span>
-              <ArrowRight className="sm:hidden w-5 h-5 text-amber-200 transition-transform group-hover:translate-x-0.5" />
-            </div>
-          </Link>
         </motion.div>
       )}
 

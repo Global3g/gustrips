@@ -172,6 +172,13 @@ interface EventCardProps {
   tripCompleted?: boolean;
   /** Trip ID — required for the "Agregar gasto" button to work */
   tripId?: string;
+  /**
+   * Optional slot rendered at the bottom of the card, after all the
+   * built-in content. Used today to inject the Tripshistory inline
+   * question block when this event was generated from a Story.
+   * The slot decides whether to render anything (returning null is fine).
+   */
+  questionsSlot?: React.ReactNode;
 }
 
 export default function EventCard({
@@ -187,6 +194,7 @@ export default function EventCard({
   onDeletePhoto,
   tripCompleted = false,
   tripId,
+  questionsSlot,
 }: EventCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showDocUpload, setShowDocUpload] = useState(false);
@@ -1011,6 +1019,9 @@ export default function EventCard({
         )}
       </AnimatePresence>
     </motion.div>
+
+    {/* External slot — used today for Tripshistory inline questions. */}
+    {questionsSlot}
 
     {tripId && (
       <QuickExpenseModal

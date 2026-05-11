@@ -10,6 +10,7 @@ import { useEvents } from '@/hooks/useEvents';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useTrip } from '@/hooks/useTrip';
 import { useToast } from '@/context/ToastContext';
+import { useStoryFromTrip } from '@/features/tripshistory/hooks/useStoryFromTrip';
 import { EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
 import type { ScannedEvent } from '@/lib/utils/aiScanner';
 import type { DocumentCategory } from '@/types';
@@ -23,6 +24,9 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
   const { events, createEvent } = useEvents(tripId);
   const { uploadDocument } = useDocuments(tripId);
   const { toast } = useToast();
+
+  // Tripshistory: drive the sidebar's "Completar viaje (N preguntas)" entry.
+  const { story: photoStory, pendingQuestions: photoQuestions } = useStoryFromTrip(tripId);
   const [showSidebarScan, setShowSidebarScan] = useState(false);
 
   const handleBack = () => {
@@ -100,6 +104,8 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
           onScanDocument={() => setShowSidebarScan(true)}
           travelerCount={trip?.travelerIds?.length}
           updateTrip={updateTrip}
+          hasStory={!!photoStory}
+          pendingQuestionCount={photoQuestions.length}
         />
       </div>
 
