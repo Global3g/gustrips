@@ -1,18 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useStory } from '@/features/tripshistory/hooks/useStory';
 import { useAnalysisState } from '@/features/tripshistory/hooks/useAnalysisState';
 import { useNextQuestion } from '@/features/tripshistory/hooks/useNextQuestion';
 import { useStoryboard } from '@/features/tripshistory/hooks/useStoryboard';
 import { useAnswerQuestion } from '@/features/tripshistory/hooks/useAnswerQuestion';
 import { usePhotoBatch } from '@/features/tripshistory/hooks/usePhotoBatch';
-import { extractPhotoMetadataBatch } from '@/features/tripshistory/utils/photoMetadata';
 import PhotoSelector from '@/features/tripshistory/components/PhotoSelector';
-import type { Story } from '@/features/tripshistory/types';
+import type { PhotoMetadata, Story } from '@/features/tripshistory/types';
 
 const AnalysisProgress = dynamic(
   () => import('@/features/tripshistory/components/AnalysisProgress'),
@@ -81,7 +80,6 @@ export default function StoryWizard({
   const { mutate: submitAnswer, skip: skipQ, loading: answering } = useAnswerQuestion();
   const { mutate: uploadBatch, loading: uploading } = usePhotoBatch();
 
-  const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Once we run out of questions, nudge story status forward.
@@ -91,13 +89,17 @@ export default function StoryWizard({
     }
   }, [status, noMoreQuestions, refetchStory]);
 
-  const handleUpload = async () => {
-    if (pickedFiles.length === 0 || !storyId) return;
+  /**
+   * Called by PhotoSelector once EXIF + pHash + Firebase Storage upload
+   * are done for every picked file. We then forward the metadata array to
+   * the engine via the batch endpoint, which transitions the story from
+   * `draft` -> `analyzing`.
+   */
+  const handlePhotosReady = async (photos: PhotoMetadata[]) => {
+    if (!storyId || photos.length === 0) return;
     setUploadError(null);
     try {
-      const metadata = await extractPhotoMetadataBatch(pickedFiles);
-      await uploadBatch(storyId, metadata);
-      setPickedFiles([]);
+      await uploadBatch(storyId, photos);
       // Refresh story to pick up status transitions (-> analyzing).
       await refetchStory();
     } catch (err) {
@@ -162,26 +164,21 @@ export default function StoryWizard({
             className="space-y-4"
           >
             <PhotoSelector
-              onSelect={setPickedFiles}
+              storyId={storyId}
+              onPhotosReady={handlePhotosReady}
               disabled={uploading}
             />
             {uploadError && (
               <p className="text-sm text-rose-300">{uploadError}</p>
             )}
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={pickedFiles.length === 0 || uploading}
-              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-500 text-white font-bold shadow-lg shadow-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {uploading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              {uploading ? 'Subiendo fotos...' : 'Empezar análisis'}
-              {!uploading && <ArrowRight className="w-4 h-4" />}
-            </button>
+            {uploading && (
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 text-center">
+                <Loader2 className="w-5 h-5 animate-spin text-amber-300 inline-block mr-2" />
+                <span className="text-sm text-white/80">
+                  Enviando metadata al motor...
+                </span>
+              </div>
+            )}
           </motion.div>
         )}
 

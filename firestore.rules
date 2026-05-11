@@ -25,5 +25,13 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Tripshistory: trip stories per user (with subcollections: photos, questions, days, events)
+    match /users/{userId}/tripstories/{storyId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /users/{userId}/tripstories/{storyId}/{subcollection=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
   }
 }

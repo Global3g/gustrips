@@ -2,21 +2,51 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ImagePlus, UploadCloud, X } from 'lucide-react';
+import { ImagePlus, Loader2, UploadCloud, X } from 'lucide-react';
+import { useAuthContext } from '@/context/AuthContext';
+import { extractPhotoMetadata } from '@/features/tripshistory/utils/photoMetadata';
+import { uploadPhotoToStory } from '@/features/tripshistory/utils/photoUpload';
+import type { PhotoMetadata } from '@/features/tripshistory/types';
 
 interface PhotoSelectorProps {
-  onSelect: (files: File[]) => void;
+  /**
+   * Required for upload. The component will upload to:
+   *   users/{userId}/tripstories/{storyId}/photos/...
+   */
+  storyId: string;
+  /**
+   * Called once all selected files have been processed (EXIF + pHash + upload).
+   * The parent is responsible for POSTing the resulting metadata to the engine.
+   */
+  onPhotosReady: (photos: PhotoMetadata[]) => void;
+  /** Optional file-selection callback (raw File objects). */
+  onSelect?: (files: File[]) => void;
   disabled?: boolean;
   minPhotos?: number;
   maxPhotos?: number;
 }
 
+interface SelectedItem {
+  file: File;
+  status: 'pending' | 'processing' | 'done' | 'error';
+  error?: string;
+}
+
+const PROCESSING_CONCURRENCY = 4;
+
 /**
- * File picker + drag-drop surface for picking photos to feed into a story.
- * Stub: it surfaces selected files via `onSelect`. Real upload (Storage,
- * EXIF, pHash) is handled downstream.
+ * File picker + drag-drop surface. When the user hits "Procesar fotos" we:
+ *   1. extract EXIF + dimensions
+ *   2. compute perceptual hash + blur score
+ *   3. upload thumb/medium/full to Firebase Storage
+ *   4. emit the resulting PhotoMetadata[] via `onPhotosReady`
+ *
+ * Items are processed in parallel batches of {@link PROCESSING_CONCURRENCY}
+ * to avoid melting the device on a 500-photo drop.
  */
 export default function PhotoSelector({
+  storyId,
+  onPhotosReady,
   onSelect,
   disabled = false,
   minPhotos = 10,
@@ -24,22 +54,30 @@ export default function PhotoSelector({
 }: PhotoSelectorProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [picked, setPicked] = useState<File[]>([]);
+  const [items, setItems] = useState<SelectedItem[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  const { firebaseUser } = useAuthContext();
 
   const handleFiles = useCallback(
     (files: FileList | File[]) => {
-      const arr = Array.from(files).filter((f) => f.type.startsWith('image/'));
-      const next = [...picked, ...arr].slice(0, maxPhotos);
-      setPicked(next);
-      onSelect(next);
+      const arr = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name));
+      setItems((prev) => {
+        const merged = [...prev, ...arr.map<SelectedItem>((file) => ({ file, status: 'pending' }))]
+          .slice(0, maxPhotos);
+        onSelect?.(merged.map((m) => m.file));
+        return merged;
+      });
     },
-    [picked, maxPhotos, onSelect],
+    [maxPhotos, onSelect],
   );
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    if (disabled) return;
+    if (disabled || processing) return;
     if (e.dataTransfer.files.length === 0) return;
     handleFiles(e.dataTransfer.files);
   };
@@ -47,29 +85,120 @@ export default function PhotoSelector({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     handleFiles(e.target.files);
-    // Reset so the same file can be re-picked.
     e.target.value = '';
   };
 
   const removeOne = (idx: number) => {
-    const next = picked.filter((_, i) => i !== idx);
-    setPicked(next);
-    onSelect(next);
+    setItems((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      onSelect?.(next.map((m) => m.file));
+      return next;
+    });
   };
+
+  const clearAll = () => {
+    setItems([]);
+    setProgress({ done: 0, total: 0 });
+    setGlobalError(null);
+    onSelect?.([]);
+  };
+
+  const processAll = useCallback(async () => {
+    if (!firebaseUser) {
+      setGlobalError('Necesitás iniciar sesión para subir fotos.');
+      return;
+    }
+    if (!storyId) {
+      setGlobalError('Falta el ID de la historia.');
+      return;
+    }
+    if (items.length === 0) return;
+
+    setProcessing(true);
+    setGlobalError(null);
+    setProgress({ done: 0, total: items.length });
+    setItems((prev) => prev.map((it) => ({ ...it, status: 'pending', error: undefined })));
+
+    const userId = firebaseUser.uid;
+    const photos: PhotoMetadata[] = new Array(items.length);
+    let cursor = 0;
+
+    const updateStatus = (
+      idx: number,
+      status: SelectedItem['status'],
+      error?: string,
+    ) => {
+      setItems((prev) => {
+        const next = prev.slice();
+        if (next[idx]) next[idx] = { ...next[idx], status, error };
+        return next;
+      });
+    };
+
+    const worker = async () => {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= items.length) return;
+        const { file } = items[idx];
+        updateStatus(idx, 'processing');
+        try {
+          const metadata = await extractPhotoMetadata(file);
+          const urls = await uploadPhotoToStory(
+            file,
+            storyId,
+            userId,
+            metadata.clientId,
+          );
+          photos[idx] = {
+            ...metadata,
+            thumbnailUrl: urls.thumbnailUrl,
+            mediumUrl: urls.mediumUrl,
+            fullUrl: urls.fullUrl,
+            sizeBytes: urls.sizeBytes || metadata.sizeBytes,
+          };
+          updateStatus(idx, 'done');
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Falló el procesamiento';
+          updateStatus(idx, 'error', msg);
+        } finally {
+          setProgress((p) => ({ done: p.done + 1, total: p.total }));
+        }
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(PROCESSING_CONCURRENCY, items.length) },
+      () => worker(),
+    );
+    await Promise.all(workers);
+
+    const successful = photos.filter((p): p is PhotoMetadata => Boolean(p));
+    setProcessing(false);
+
+    if (successful.length === 0) {
+      setGlobalError('No pudimos procesar ninguna foto. Revisá los archivos y volvé a intentar.');
+      return;
+    }
+
+    onPhotosReady(successful);
+  }, [firebaseUser, storyId, items, onPhotosReady]);
+
+  const isBusy = disabled || processing;
+  const canSubmit = items.length >= minPhotos && !processing;
 
   return (
     <div className="space-y-3">
       <motion.div
-        whileHover={disabled ? undefined : { scale: 1.005 }}
+        whileHover={isBusy ? undefined : { scale: 1.005 }}
         onDragOver={(e) => {
           e.preventDefault();
-          if (!disabled) setIsDragging(true);
+          if (!isBusy) setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        onClick={() => !disabled && inputRef.current?.click()}
+        onClick={() => !isBusy && inputRef.current?.click()}
         className={`relative rounded-3xl border-2 border-dashed p-8 cursor-pointer transition-all duration-200 ${
-          disabled
+          isBusy
             ? 'border-white/10 bg-white/[0.02] cursor-not-allowed opacity-60'
             : isDragging
               ? 'border-amber-400/60 bg-amber-500/10'
@@ -79,11 +208,11 @@ export default function PhotoSelector({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           multiple
           className="hidden"
           onChange={handleChange}
-          disabled={disabled}
+          disabled={isBusy}
         />
         <div className="flex flex-col items-center text-center gap-3">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400/30 to-rose-500/20 flex items-center justify-center">
@@ -100,46 +229,101 @@ export default function PhotoSelector({
         </div>
       </motion.div>
 
-      {picked.length > 0 && (
+      {items.length > 0 && (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 gap-2">
             <p className="text-xs font-bold uppercase tracking-widest text-white/70">
-              {picked.length} {picked.length === 1 ? 'foto seleccionada' : 'fotos seleccionadas'}
+              {items.length} {items.length === 1 ? 'foto seleccionada' : 'fotos seleccionadas'}
+              {processing && progress.total > 0 && (
+                <span className="ml-2 text-amber-200 normal-case tracking-normal">
+                  · Procesando {progress.done}/{progress.total}
+                </span>
+              )}
             </p>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200"
-            >
-              <ImagePlus className="w-3.5 h-3.5" />
-              Agregar más
-            </button>
-          </div>
-          <ul className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-            {picked.slice(0, 24).map((f, i) => (
-              <li
-                key={`${f.name}-${i}`}
-                className="group inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/[0.05] border border-white/[0.08] text-xs text-white/85"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                disabled={isBusy}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200 disabled:opacity-40"
               >
-                <span className="truncate max-w-[140px]">{f.name}</span>
+                <ImagePlus className="w-3.5 h-3.5" />
+                Agregar más
+              </button>
+              {!processing && (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeOne(i);
-                  }}
-                  className="opacity-60 hover:opacity-100 hover:text-rose-300"
+                  onClick={clearAll}
+                  className="text-xs font-semibold text-white/50 hover:text-white/80"
                 >
-                  <X className="w-3 h-3" />
+                  Limpiar
                 </button>
+              )}
+            </div>
+          </div>
+
+          <ul className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+            {items.slice(0, 24).map((it, i) => (
+              <li
+                key={`${it.file.name}-${i}`}
+                className={`group inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs ${
+                  it.status === 'error'
+                    ? 'bg-rose-500/10 border-rose-400/30 text-rose-200'
+                    : it.status === 'done'
+                      ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
+                      : it.status === 'processing'
+                        ? 'bg-amber-500/10 border-amber-400/30 text-amber-100'
+                        : 'bg-white/[0.05] border-white/[0.08] text-white/85'
+                }`}
+                title={it.error || it.file.name}
+              >
+                {it.status === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}
+                <span className="truncate max-w-[140px]">{it.file.name}</span>
+                {!processing && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeOne(i);
+                    }}
+                    className="opacity-60 hover:opacity-100 hover:text-rose-300"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </li>
             ))}
-            {picked.length > 24 && (
+            {items.length > 24 && (
               <li className="text-xs text-white/50 self-center">
-                + {picked.length - 24} más
+                + {items.length - 24} más
               </li>
             )}
           </ul>
+
+          {globalError && (
+            <p className="mt-2 text-xs text-rose-300">{globalError}</p>
+          )}
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={processAll}
+              disabled={!canSubmit}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-br from-amber-400 to-rose-500 text-white text-sm font-bold shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {processing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Procesando {progress.done}/{progress.total}...
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-4 h-4" />
+                  Procesar {items.length} {items.length === 1 ? 'foto' : 'fotos'}
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>
