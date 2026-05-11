@@ -8,6 +8,7 @@ import {
   TripshistoryError,
   tripshistoryApi,
 } from '@/features/tripshistory';
+import { useToast } from '@/context/ToastContext';
 import type { Story } from '@/features/tripshistory/types';
 
 interface ConvertToTripBannerProps {
@@ -21,6 +22,7 @@ interface ConvertToTripBannerProps {
  */
 export default function ConvertToTripBanner({ story }: ConvertToTripBannerProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState<string>(story.title ?? '');
   const [destination, setDestination] = useState<string>('');
@@ -28,6 +30,12 @@ export default function ConvertToTripBanner({ story }: ConvertToTripBannerProps)
   const [error, setError] = useState<string | null>(null);
 
   const handleConfirm = async () => {
+    // If the story is already attached to a trip (shouldn't usually be the
+    // case because the page hides this banner then, but defensive), just go.
+    if (story.tripId) {
+      router.push(`/trips/${story.tripId}`);
+      return;
+    }
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError('Necesitamos un título para el viaje.');
@@ -35,18 +43,28 @@ export default function ConvertToTripBanner({ story }: ConvertToTripBannerProps)
     }
     setLoading(true);
     setError(null);
+    console.info('[Tripshistory] convertToTrip start', {
+      storyId: story.id,
+      title: trimmedTitle,
+    });
     try {
       const result = await tripshistoryApi.convertToTrip(story.id, {
         title: trimmedTitle,
         destination: destination.trim() || undefined,
       });
+      console.info('[Tripshistory] convertToTrip ok', result);
+      toast('Viaje creado. Te llevamos a la ficha.', 'success');
       router.push(`/trips/${result.tripId}`);
     } catch (err) {
+      console.error('[Tripshistory] convertToTrip failed', err);
       const msg =
         err instanceof TripshistoryError
-          ? err.message
-          : 'No pudimos convertir la historia. Probá de nuevo.';
+          ? `${err.message} (${err.code || 'error'} ${err.status || ''})`.trim()
+          : err instanceof Error
+            ? err.message
+            : 'No pudimos convertir la historia. Probá de nuevo.';
       setError(msg);
+      toast(msg, 'error');
       setLoading(false);
     }
   };
@@ -76,15 +94,28 @@ export default function ConvertToTripBanner({ story }: ConvertToTripBannerProps)
           </div>
           <button
             type="button"
-            onClick={() => {
+            disabled={loading}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
               setError(null);
               setTitle(story.title ?? '');
               setOpen(true);
+              console.info('[Tripshistory] convert banner clicked');
             }}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-500 text-white font-bold shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-shadow whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-br from-amber-400 to-rose-500 text-white font-bold shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-shadow whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Plane className="w-4 h-4" />
-            Convertir en viaje
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Convirtiendo...
+              </>
+            ) : (
+              <>
+                <Plane className="w-4 h-4" />
+                Convertir en viaje
+              </>
+            )}
           </button>
         </div>
       </motion.div>
