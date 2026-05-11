@@ -92,7 +92,10 @@ async function parseExif(file: File): Promise<Partial<ExifPayload>> {
         'OffsetTimeDigitized',
         'GPSLatitude',
         'GPSLongitude',
+        'GPSLatitudeRef',
+        'GPSLongitudeRef',
         'GPSAltitude',
+        'GPSAltitudeRef',
         'GPSHPositioningError',
         'latitude',
         'longitude',
@@ -116,13 +119,56 @@ async function parseExif(file: File): Promise<Partial<ExifPayload>> {
       tags.OffsetTimeOriginal ?? tags.OffsetTime ?? tags.OffsetTimeDigitized,
     );
 
+    // GPS extraction with belt-and-suspenders sign handling.
+    //
+    // exifr usually returns `latitude`/`longitude` as signed decimals (it
+    // applies GPSLatitudeRef/GPSLongitudeRef internally). But on a chunk
+    // of phones — particularly some Samsung/older iPhone HEIC chains and
+    // anything edited by a 3rd-party app — the ref field is sometimes
+    // stripped and exifr returns the unsigned magnitude. That made fotos
+    // de México (lng -99) caer en 99 E (China). We re-apply the ref
+    // manually whenever the ref says S/W but the value is positive.
     let location: ExifPayload['location'] | undefined;
-    const lat = typeof tags.latitude === 'number' ? tags.latitude : undefined;
-    const lng = typeof tags.longitude === 'number' ? tags.longitude : undefined;
+    let lat = typeof tags.latitude === 'number' ? tags.latitude : undefined;
+    let lng = typeof tags.longitude === 'number' ? tags.longitude : undefined;
+
+    const refLat =
+      typeof tags.GPSLatitudeRef === 'string'
+        ? (tags.GPSLatitudeRef as string).trim().toUpperCase()
+        : undefined;
+    const refLng =
+      typeof tags.GPSLongitudeRef === 'string'
+        ? (tags.GPSLongitudeRef as string).trim().toUpperCase()
+        : undefined;
+
+    if (lat !== undefined && refLat === 'S' && lat > 0) {
+      lat = -lat;
+    }
+    if (lng !== undefined && refLng === 'W' && lng > 0) {
+      lng = -lng;
+    }
+
+    // Drop obviously invalid values rather than save them and confuse the map.
+    if (
+      lat !== undefined &&
+      (Number.isNaN(lat) || lat < -90 || lat > 90)
+    ) {
+      lat = undefined;
+    }
+    if (
+      lng !== undefined &&
+      (Number.isNaN(lng) || lng < -180 || lng > 180)
+    ) {
+      lng = undefined;
+    }
+
     if (lat !== undefined && lng !== undefined) {
       location = { lat, lng };
       if (typeof tags.GPSAltitude === 'number') {
-        location.altitude = tags.GPSAltitude as number;
+        let altitude = tags.GPSAltitude as number;
+        // GPSAltitudeRef === 1 means below sea level.
+        if (tags.GPSAltitudeRef === 1 && altitude > 0) altitude = -altitude;
+        location.altitude = altitude;
       }
       if (typeof tags.GPSHPositioningError === 'number') {
         location.accuracy = tags.GPSHPositioningError as number;

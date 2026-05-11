@@ -277,8 +277,21 @@ export const tripsService = {
         createdBy: userId,
         createdAt: nowIso,
       };
-      if (ev.coordinates?.lat !== undefined) tripEvent.latitude = ev.coordinates.lat;
-      if (ev.coordinates?.lng !== undefined) tripEvent.longitude = ev.coordinates.lng;
+      // Defensive: only propagate coords that look like real lat/lng in range.
+      // A bug in some EXIF readers strips GPSLatitudeRef/GPSLongitudeRef and
+      // returns the unsigned magnitude (lng -99 -> 99 = China). The client
+      // re-applies the ref now, but stories converted before that fix may
+      // still hold sign-mangled centroids — drop anything out of bounds.
+      const lat = ev.coordinates?.lat;
+      const lng = ev.coordinates?.lng;
+      const latOk =
+        typeof lat === 'number' && !Number.isNaN(lat) && lat >= -90 && lat <= 90;
+      const lngOk =
+        typeof lng === 'number' && !Number.isNaN(lng) && lng >= -180 && lng <= 180;
+      if (latOk && lngOk) {
+        tripEvent.latitude = lat;
+        tripEvent.longitude = lng;
+      }
       if (photoUrls.length > 0) tripEvent.photos = photoUrls;
 
       tripEventDocs.push({
