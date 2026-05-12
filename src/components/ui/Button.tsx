@@ -1,86 +1,81 @@
-'use client';
+import { Button as ButtonPrimitive } from "@base-ui/react/button"
+import { cva, type VariantProps } from "class-variance-authority"
+import { Loader2, type LucideIcon } from "lucide-react"
 
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
-import { Loader2, type LucideIcon } from 'lucide-react';
-import { classNames } from '@/lib/utils/helpers';
+import { cn } from "@/lib/utils"
 
-type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+const buttonVariants = cva(
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // `primary` is an alias kept around for call sites that haven't been
+        // migrated to `default`. Same styling as default.
+        primary: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        outline:
+          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+        ghost:
+          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+        destructive:
+          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: {
+        default:
+          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        icon: "size-8",
+        "icon-xs":
+          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm":
+          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
+        "icon-lg": "size-9",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  loading?: boolean;
-  icon?: LucideIcon;
-  children?: ReactNode;
+type ButtonExtraProps = {
+  /** When true, disables the button and renders a leading spinner. */
+  loading?: boolean
+  /** Optional leading icon (Lucide). Rendered before children. */
+  icon?: LucideIcon
 }
 
-const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary:
-    'bg-amber-600 text-white hover:bg-amber-700 shadow-sm hover:shadow-lg hover:shadow-amber-600/20 border border-amber-600/20',
-  secondary:
-    'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm hover:shadow-md',
-  outline:
-    'bg-transparent text-gray-700 border border-gray-300 hover:bg-gray-50',
-  ghost:
-    'bg-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-transparent',
-  danger:
-    'bg-white text-red-600 border border-red-300 hover:bg-red-50 shadow-sm',
-};
+function Button({
+  className,
+  variant = "default",
+  size = "default",
+  loading = false,
+  icon: Icon,
+  disabled,
+  children,
+  ...props
+}: ButtonPrimitive.Props &
+  VariantProps<typeof buttonVariants> &
+  ButtonExtraProps) {
+  return (
+    <ButtonPrimitive
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      disabled={disabled || loading}
+      {...props}
+    >
+      {loading ? <Loader2 className="animate-spin" /> : Icon ? <Icon /> : null}
+      {children}
+    </ButtonPrimitive>
+  )
+}
 
-const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-xs rounded-lg gap-1.5',
-  md: 'px-5 py-2.5 text-sm rounded-xl gap-2',
-  lg: 'px-7 py-3.5 text-base rounded-xl gap-2.5',
-};
-
-const ICON_SIZE: Record<ButtonSize, string> = {
-  sm: 'w-3.5 h-3.5',
-  md: 'w-4 h-4',
-  lg: 'w-5 h-5',
-};
-
-const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  (
-    {
-      variant = 'primary',
-      size = 'md',
-      loading = false,
-      icon: Icon,
-      children,
-      className,
-      disabled,
-      ...props
-    },
-    ref
-  ) => {
-    const isDisabled = disabled || loading;
-
-    return (
-      <button
-        ref={ref}
-        disabled={isDisabled}
-        className={classNames(
-          'inline-flex items-center justify-center font-medium transition-all duration-200 cursor-pointer',
-          'hover:translate-y-[-1px] active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0',
-          VARIANT_CLASSES[variant],
-          SIZE_CLASSES[size],
-          className
-        )}
-        {...props}
-      >
-        {loading ? (
-          <Loader2 className={classNames('animate-spin', ICON_SIZE[size])} />
-        ) : Icon ? (
-          <Icon className={ICON_SIZE[size]} />
-        ) : null}
-        {children && <span>{children}</span>}
-      </button>
-    );
-  }
-);
-
-Button.displayName = 'Button';
-
-export { Button };
-export default Button;
+// Default export kept for call sites still doing `import Button from '...'`.
+export default Button
+export { Button, buttonVariants }
