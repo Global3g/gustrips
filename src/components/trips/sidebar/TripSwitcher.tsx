@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { ArrowLeft, ChevronDown, MapPin, Check } from 'lucide-react';
+import { ArrowLeft, ChevronDown, MapPin, Check, Home } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTrips } from '@/hooks/useTrips';
 import { ROUTES } from '@/config/constants';
@@ -104,23 +104,24 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
             role="menu"
-            className="absolute z-50 left-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-[#1a3352]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl shadow-black/40 overflow-hidden"
+            // Solid surface (no translucency over a dark sidebar — that was
+            // making both options nearly invisible).
+            className="absolute z-50 left-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-[#0d1b2e] border border-white/15 rounded-xl shadow-2xl shadow-black/60 overflow-hidden"
           >
+            {/* Primary CTA: go home. Gradient + white text → impossible to miss. */}
             <Link
               href={ROUTES.app.dashboard}
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2 px-4 py-2.5 text-[12.5px] font-semibold text-white/85 hover:text-white hover:bg-white/[0.06] transition-colors"
+              className="flex items-center gap-2.5 px-4 py-3 text-[13px] font-bold text-white bg-gradient-to-br from-amber-500/25 via-rose-500/15 to-amber-400/20 hover:from-amber-500/35 hover:via-rose-500/25 hover:to-amber-400/30 border-b border-white/10 transition-colors"
               role="menuitem"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Mis Viajes</span>
+              <Home className="w-4 h-4 text-amber-200" />
+              <span>Volver a Mis Viajes</span>
             </Link>
-
-            <div className="h-px bg-white/10 mx-2" />
 
             {currentTrip && (
               <div
-                className="flex items-start gap-2.5 px-4 py-2.5 bg-amber-400/[0.08] border-l-2 border-amber-400/70 cursor-default select-none"
+                className="flex items-start gap-2.5 px-4 py-3 bg-amber-400/[0.12] border-l-[3px] border-amber-400 cursor-default select-none"
                 aria-current="page"
               >
                 <Check className="w-3.5 h-3.5 text-amber-300 mt-1 shrink-0" />
@@ -128,18 +129,14 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
                   <div className="text-[13px] font-semibold text-white truncate">
                     {currentTrip.title}
                   </div>
-                  {(currentTrip.destination || formatTripDates(currentTrip)) && (
-                    <div className="flex items-center gap-1 text-[11px] text-white/55 mt-0.5 truncate">
-                      {currentTrip.destination && (
-                        <>
-                          <MapPin className="w-3 h-3 shrink-0" />
-                          <span className="truncate">{currentTrip.destination}</span>
-                        </>
-                      )}
+                  {currentTrip.destination && (
+                    <div className="flex items-center gap-1 text-[11.5px] text-white/75 mt-0.5 truncate">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{currentTrip.destination}</span>
                     </div>
                   )}
                   {formatTripDates(currentTrip) && (
-                    <div className="text-[10.5px] text-white/40 mt-0.5">
+                    <div className="text-[11px] text-white/60 mt-0.5">
                       {formatTripDates(currentTrip)}
                     </div>
                   )}
@@ -149,29 +146,31 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
 
             {otherTrips.length > 0 && (
               <>
-                <div className="h-px bg-white/10 mx-2" />
-                <div className="py-1">
+                <div className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/55">
+                  Otros viajes
+                </div>
+                <div className="pb-1">
                   {otherTrips.map((trip) => (
                     <Link
                       key={trip.id}
                       href={ROUTES.app.trip(trip.id)}
                       onClick={() => setOpen(false)}
                       role="menuitem"
-                      className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-white/[0.05] transition-colors group/item"
+                      className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-white/[0.08] transition-colors group/item"
                     >
                       <span className="w-3.5 h-3.5 mt-1 shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-medium text-white/90 group-hover/item:text-white truncate">
+                        <div className="text-[13px] font-semibold text-white truncate">
                           {trip.title}
                         </div>
                         {trip.destination && (
-                          <div className="flex items-center gap-1 text-[11px] text-white/50 mt-0.5">
+                          <div className="flex items-center gap-1 text-[11.5px] text-white/70 mt-0.5">
                             <MapPin className="w-3 h-3 shrink-0" />
                             <span className="truncate">{trip.destination}</span>
                           </div>
                         )}
                         {formatTripDates(trip) && (
-                          <div className="text-[10.5px] text-white/35 mt-0.5">
+                          <div className="text-[11px] text-white/55 mt-0.5">
                             {formatTripDates(trip)}
                           </div>
                         )}
