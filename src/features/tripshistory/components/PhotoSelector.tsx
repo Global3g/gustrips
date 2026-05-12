@@ -110,19 +110,6 @@ export default function PhotoSelector({
       if (!target || !(target instanceof Element)) return null;
       return target.closest('[data-tripshistory-dropzone="true"]');
     };
-    // Window-level dragenter — fires the *first* time the user drags ANY
-    // payload over the page. Logs every drag the browser sees, even ones
-    // outside our zone. Crucial for diagnosing "no logs at all" reports.
-    const onWindowDragEnter = (e: DragEvent): void => {
-      const target = e.target instanceof Element ? e.target.tagName : 'unknown';
-      const zone = findZone(e.target) ? 'over-zone' : 'elsewhere';
-      // eslint-disable-next-line no-console
-      console.log('[PhotoSelector] window dragenter', {
-        target,
-        zone,
-        types: Array.from(e.dataTransfer?.types || []),
-      });
-    };
     const onWindowDragOver = (e: DragEvent): void => {
       if (!findZone(e.target)) return;
       e.preventDefault();
@@ -130,8 +117,6 @@ export default function PhotoSelector({
     const onWindowDrop = (e: DragEvent): void => {
       if (!findZone(e.target)) return;
       e.preventDefault();
-      // eslint-disable-next-line no-console
-      console.log('[PhotoSelector] window-level drop intercepted');
       const dt = e.dataTransfer;
       if (!dt) return;
       const out: File[] = [];
@@ -152,15 +137,11 @@ export default function PhotoSelector({
           if (item.kind === 'file') pushUnique(item.getAsFile());
         }
       }
-      // eslint-disable-next-line no-console
-      console.log('[PhotoSelector] window-level files:', out.length);
       if (out.length > 0) handleFiles(out);
     };
-    window.addEventListener('dragenter', onWindowDragEnter);
     window.addEventListener('dragover', onWindowDragOver);
     window.addEventListener('drop', onWindowDrop);
     return () => {
-      window.removeEventListener('dragenter', onWindowDragEnter);
       window.removeEventListener('dragover', onWindowDragOver);
       window.removeEventListener('drop', onWindowDrop);
     };
@@ -364,16 +345,6 @@ export default function PhotoSelector({
     setIsDragging(false);
   };
 
-  // Loud render log so we can confirm the right code is mounted.
-  if (typeof window !== 'undefined') {
-    // eslint-disable-next-line no-console
-    console.log('[PhotoSelector] render', {
-      storyId,
-      isBusy,
-      isDragging,
-      itemCount: items.length,
-    });
-  }
 
   return (
     <div className="space-y-3">
@@ -381,14 +352,10 @@ export default function PhotoSelector({
         data-tripshistory-dropzone="true"
         onDragEnter={(e) => {
           e.preventDefault();
-          // eslint-disable-next-line no-console
-          console.log('[PhotoSelector] dragenter');
           if (!isBusy) setIsDragging(true);
         }}
         onDragOver={(e) => {
           e.preventDefault();
-          // eslint-disable-next-line no-console
-          console.log('[PhotoSelector] dragover');
           if (!isBusy) {
             try {
               e.dataTransfer.dropEffect = 'copy';
@@ -400,15 +367,9 @@ export default function PhotoSelector({
         }}
         onDragLeave={(e) => {
           e.preventDefault();
-          // eslint-disable-next-line no-console
-          console.log('[PhotoSelector] dragleave');
           setIsDragging(false);
         }}
-        onDrop={(e) => {
-          // eslint-disable-next-line no-console
-          console.log('[PhotoSelector] drop fired');
-          handleDrop(e);
-        }}
+        onDrop={handleDrop}
         onClick={() => !isBusy && inputRef.current?.click()}
         className={`relative rounded-3xl border-2 border-dashed p-8 cursor-pointer transition-all duration-200 ${
           isBusy
