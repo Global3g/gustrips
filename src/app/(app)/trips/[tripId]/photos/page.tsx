@@ -184,6 +184,15 @@ export default function PhotosPage() {
     });
   }, [albumPhotos, events]);
 
+  // Build a fast O(1) lookup from eventId → event once, instead of doing
+  // events.find() inside every iteration below — that turned a 300-photo /
+  // 50-event trip into ~15k array scans per render and made mobile janky.
+  const eventsById = useMemo(() => {
+    const m = new Map<string, typeof events[number]>();
+    for (const e of events) m.set(e.id, e);
+    return m;
+  }, [events]);
+
   /* ── Group photos by day → event ── */
   const photoGroups = useMemo(() => {
     const groups: Array<{
@@ -218,7 +227,7 @@ export default function PhotosPage() {
         }
       }
       for (const [eventId, eventPhotos] of Object.entries(byEvent)) {
-        const event = events.find((e) => e.id === eventId);
+        const event = eventsById.get(eventId);
         const cfg = event ? EVENT_TYPES[event.type] : undefined;
         // Sort photos by their position in event.photos[] (drag-and-drop ordering source of truth)
         const orderMap = new Map<string, number>();
@@ -260,7 +269,7 @@ export default function PhotosPage() {
       const bTime = b.eventStartTime || '99:99';
       return aTime.localeCompare(bTime);
     });
-  }, [allPhotos, events]);
+  }, [allPhotos, eventsById]);
 
   /* ── Trip days for numbering ── */
   const tripDays = useMemo(() => {
