@@ -511,18 +511,9 @@ export default function TripDetailPage() {
   if (loading) return <TripDetailSkeleton />;
 
   if (!trip) {
+    // Always go straight to the dashboard. router.back() silently no-ops
+    // when the user landed here directly (refresh, share link, PWA install).
     const handleNotFoundBack = () => {
-      if (typeof window !== 'undefined' && document.referrer) {
-        try {
-          const refOrigin = new URL(document.referrer).origin;
-          if (refOrigin === window.location.origin) {
-            router.back();
-            return;
-          }
-        } catch {
-          /* fall through */
-        }
-      }
       router.push(ROUTES.app.dashboard);
     };
     return (

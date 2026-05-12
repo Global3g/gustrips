@@ -23,18 +23,9 @@ export default function NewTripPage() {
   // a worse experience than uploading 30 photos and getting a populated trip.
   const [mode, setMode] = useState<CreationMode>('photos');
 
+  // Same reasoning as /trips/[tripId]/layout — router.back() is unreliable
+  // when there's no usable history. Always go to the dashboard.
   const handleBack = () => {
-    if (typeof window !== 'undefined' && document.referrer) {
-      try {
-        const refOrigin = new URL(document.referrer).origin;
-        if (refOrigin === window.location.origin) {
-          router.back();
-          return;
-        }
-      } catch {
-        /* fall through */
-      }
-    }
     router.push(ROUTES.app.dashboard);
   };
 

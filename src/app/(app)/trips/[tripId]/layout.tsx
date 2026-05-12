@@ -29,16 +29,13 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
   const { story: photoStory, pendingQuestions: photoQuestions } = useStoryFromTrip(tripId);
   const [showSidebarScan, setShowSidebarScan] = useState(false);
 
+  // Always send the user to the trips dashboard. The previous heuristic
+  // (router.back() if same-origin referrer) silently did nothing when the
+  // page was refreshed, opened from a share link, or installed as a PWA —
+  // those cases produce no usable history entry. A predictable "go home"
+  // beats a clever "maybe go back". The browser's native back arrow still
+  // covers the literal previous-page case.
   const handleBack = () => {
-    if (typeof window !== 'undefined' && document.referrer) {
-      try {
-        const refOrigin = new URL(document.referrer).origin;
-        if (refOrigin === window.location.origin) {
-          router.back();
-          return;
-        }
-      } catch { /* fall through */ }
-    }
     router.push('/dashboard');
   };
 
