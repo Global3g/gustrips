@@ -46,6 +46,10 @@ import Particles from '@/components/ui/Particles';
 import TripInsights from '@/components/trips/TripInsights';
 const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
 const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePhoto'), { ssr: false });
+const MobileScrollHelper = dynamic(
+  () => import('@/components/trips/photos/MobileScrollHelper'),
+  { ssr: false },
+);
 import LazySection from '@/components/trips/photos/LazySection';
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
@@ -742,6 +746,7 @@ export default function PhotosPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <PullToRefreshIndicator pullDistance={pullDistance} isRefreshing={isRefreshing} />
+      <MobileScrollHelper />
       {/* ─── Dark glass stage ─── */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
