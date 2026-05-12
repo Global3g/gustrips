@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ArrowLeft, ChevronDown, MapPin, Check, Home } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useTrips } from '@/hooks/useTrips';
 import { ROUTES } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
@@ -31,16 +31,55 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
   const { trips } = useTrips();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Close on outside click and Escape
+  // Portal mount: avoid the parent sidebar's overflow-hidden cropping the
+  // dropdown. We render into document.body and position the panel via
+  // getBoundingClientRect() so it tracks the trigger.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 288,
+  });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = (): void => {
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      setPos({
+        top: r.bottom + 8,
+        left: Math.max(8, r.left),
+        width: 288,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open]);
+
+  // Close on outside click and Escape. The dropdown is portaled to body,
+  // so we have to whitelist both the trigger AND the dropdown when
+  // deciding whether a click is "outside".
   useEffect(() => {
     if (!open) return;
 
     function onPointer(e: MouseEvent | TouchEvent) {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      const insideTrigger = containerRef.current?.contains(target);
+      const insideDropdown = dropdownRef.current?.contains(target);
+      if (insideTrigger || insideDropdown) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -80,6 +119,7 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
   return (
     <div className="relative" ref={containerRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
@@ -96,17 +136,23 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
         />
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
+      {mounted && open && createPortal(
+        (
+          <div
+            ref={dropdownRef}
             role="menu"
-            // Solid surface (no translucency over a dark sidebar — that was
-            // making both options nearly invisible).
-            className="absolute z-50 left-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-[#0d1b2e] border border-white/15 rounded-xl shadow-2xl shadow-black/60 overflow-hidden"
+            style={{
+              position: 'fixed',
+              top: pos.top,
+              left: pos.left,
+              width: Math.min(pos.width, typeof window !== 'undefined' ? window.innerWidth - 16 : pos.width),
+              // Belt-and-suspenders solid color: fixed RGB, no alpha, no
+              // backdrop-filter — guarantees we sit on top of any sidebar
+              // background, particles, or gradient.
+              backgroundColor: '#0d1b2e',
+              zIndex: 9999,
+            }}
+            className="border border-white/20 rounded-xl shadow-2xl shadow-black/70 overflow-hidden"
           >
             {/* Primary CTA: go home. Gradient + white text → impossible to miss. */}
             <Link
@@ -180,9 +226,10 @@ export default function TripSwitcher({ currentTripId, currentTitle }: TripSwitch
                 </div>
               </>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        ),
+        document.body,
+      )}
     </div>
   );
 }
