@@ -5,13 +5,29 @@
  */
 
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
 import { isHeicFile, normalizeImageFile } from '@/lib/heic';
 import type { AlbumPhoto } from '@/types';
 import type { PendingPhoto } from '@/lib/pendingPhotos';
+
+/** Generate a stable docId from a Storage URL so each photo only ever lives
+ *  in one subcollection doc, even after retries. Mirrors useAlbum. */
+function photoIdFromUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/o\/(.+)$/);
+    if (m) {
+      const decoded = decodeURIComponent(m[1]);
+      return decoded.replace(/\//g, '__').slice(0, 1500);
+    }
+  } catch {
+    /* fall through */
+  }
+  return url.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 1500);
+}
 
 async function compressImage(
   fileOrBlob: Blob,
@@ -133,11 +149,31 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
   if (caption) photo.caption = caption;
   if (eventId) photo.eventId = eventId;
 
+  // Write to the photos subcollection (new home). Each photo is its own
+  // small doc — trip docs stay light and the page can paginate later.
+  const photoId = photoIdFromUrl(url);
+  const photoRef = doc(db, 'trips', tripId, 'photos', photoId);
+  await setDoc(
+    photoRef,
+    cleanUndefined({
+      ...photo,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }),
+  );
+
+  // Bump the trip's updatedAt so other listeners know something changed
+  // (without re-writing the trip-wide albumPhotos array — that path is
+  // legacy and the migration banner clears it).
   const tripRef = doc(db, 'trips', tripId);
   await updateDoc(tripRef, {
-    albumPhotos: arrayUnion(cleanUndefined(photo)),
     updatedAt: nowISO(),
+  }).catch((err) => {
+    // Best-effort: if the trip ref update fails, the subcollection write
+    // already succeeded so the photo is safe.
+    console.warn('[uploadPhoto] trip.updatedAt bump failed:', err);
   });
+
   try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
   return photo;

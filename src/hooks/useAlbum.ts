@@ -1,9 +1,19 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
-import { doc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
 import { uploadPhoto, uploadOnePending } from '@/lib/photoUploader';
@@ -15,6 +25,30 @@ import {
   bumpAttempts,
 } from '@/lib/pendingPhotos';
 import type { Trip, AlbumPhoto } from '@/types';
+
+/**
+ * Photo storage model migration (2026-05).
+ *
+ * Before: every Trip doc embedded a `trip.albumPhotos[]` array. With hundreds
+ * of photos that doc grew to >500KB, slow to fetch on mobile and dangerously
+ * close to Firestore's 1MB per-doc limit.
+ *
+ * Now: photos live in a subcollection `/trips/{tripId}/photos/{photoId}`.
+ * Each doc is small, queries scale, the parent Trip doc stays light.
+ *
+ * Reading: subscribes to the subcollection AND falls back to the legacy
+ * array on the trip doc. We merge by URL — the subcollection wins. Until the
+ * backfill runs on a given trip, both sources are visible side by side.
+ *
+ * Writing: every new add/update/delete targets the subcollection. Edits to
+ * legacy photos (still living in the array) are mirrored into the
+ * subcollection at write time so they migrate naturally as the user
+ * interacts with them.
+ *
+ * Backfill: `migrateThumbnails` (already user-facing in the photos page)
+ * doubles as the migration helper — it now also copies each photo into
+ * the subcollection and clears it from the legacy array.
+ */
 
 /* ─── Image compression ─────────────────────────── */
 
@@ -80,6 +114,26 @@ function cleanUndefined<T extends object>(obj: T): T {
   return clean as T;
 }
 
+/** Generate a stable docId from a Storage URL (so a single photo only ever
+ *  lives in one subcollection doc, even if migrated multiple times). */
+function photoIdFromUrl(url: string): string {
+  // Hash-ish: take the storage object path so docId stays deterministic.
+  // Firebase Storage URLs look like .../o/<encoded-path>?token=...
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/o\/(.+)$/);
+    if (m) {
+      const decoded = decodeURIComponent(m[1]);
+      // Firestore docIds disallow `/`. Replace with `__`.
+      return decoded.replace(/\//g, '__').slice(0, 1500);
+    }
+  } catch {
+    /* fall through */
+  }
+  // Fallback: sanitized URL itself.
+  return url.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 1500);
+}
+
 /* ─── Hook ──────────────────────────────────────── */
 
 interface UseAlbumReturn {
@@ -96,28 +150,68 @@ interface UseAlbumReturn {
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
-  // Deduplicate photos by URL (keep the last occurrence)
-  const rawPhotos = trip?.albumPhotos ?? [];
-  const photoMap = new Map<string, AlbumPhoto>();
-  rawPhotos.forEach((photo) => {
-    photoMap.set(photo.url, photo);
-  });
-  const albumPhotos: AlbumPhoto[] = Array.from(photoMap.values());
+  // Live subcollection of photos. This is the new source of truth.
+  const [subPhotos, setSubPhotos] = useState<AlbumPhoto[]>([]);
 
-  // Clean up duplicates in Firestore if detected
   useEffect(() => {
-    if (rawPhotos.length > albumPhotos.length && albumPhotos.length > 0) {
-      const db = getClientDb();
-      const tripRef = doc(db, 'trips', tripId);
-      updateDoc(tripRef, {
-        albumPhotos,
-        updatedAt: nowISO(),
-      }).catch((err) => {
-        console.error('Error cleaning up duplicate photos:', err);
-      });
+    if (!tripId) return;
+    const db = getClientDb();
+    const photosRef = collection(db, 'trips', tripId, 'photos');
+    const unsub = onSnapshot(
+      query(photosRef),
+      (snap) => {
+        const out: AlbumPhoto[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as Partial<AlbumPhoto> & { url?: string };
+          if (!data.url) return;
+          // Firestore can hand us Timestamps for uploadedAt; coerce to ISO
+          // string so consumers never have to think about it.
+          let uploadedAt: string;
+          if (typeof data.uploadedAt === 'string') {
+            uploadedAt = data.uploadedAt;
+          } else if (data.uploadedAt && typeof (data.uploadedAt as { toDate?: () => Date }).toDate === 'function') {
+            uploadedAt = (data.uploadedAt as { toDate: () => Date }).toDate().toISOString();
+          } else {
+            uploadedAt = nowISO();
+          }
+          out.push(
+            cleanUndefined({
+              url: data.url,
+              fullUrl: data.fullUrl,
+              optimized: data.optimized,
+              date: data.date ?? '',
+              caption: data.caption,
+              eventId: data.eventId,
+              uploadedAt,
+            }) as AlbumPhoto,
+          );
+        });
+        setSubPhotos(out);
+      },
+      (err) => {
+        // Don't break the page if the subcollection is unreachable; the
+        // legacy array stays visible.
+        console.error('[useAlbum] photos subcollection error:', err);
+      },
+    );
+    return unsub;
+  }, [tripId]);
+
+  // Legacy: photos still living in the trip.albumPhotos[] array.
+  const legacyPhotos: AlbumPhoto[] = trip?.albumPhotos ?? [];
+
+  // Merge: subcollection wins on conflict (= it's the authoritative source).
+  const albumPhotos: AlbumPhoto[] = (() => {
+    const byUrl = new Map<string, AlbumPhoto>();
+    for (const p of legacyPhotos) {
+      if (!p?.url) continue;
+      byUrl.set(p.url, p);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId, rawPhotos.length]);
+    for (const p of subPhotos) {
+      byUrl.set(p.url, p);
+    }
+    return Array.from(byUrl.values());
+  })();
 
   const addPhoto = useCallback(
     async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {
@@ -192,13 +286,26 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const db = getClientDb();
       const tripRef = doc(db, 'trips', tripId);
 
-      // Remove from Firestore by filtering out the photo by URL
+      // Delete from the subcollection if it lives there. setDoc with merge
+      // is no-op-safe if the doc doesn't exist, but for delete we use
+      // deleteDoc which silently no-ops on a missing doc as well.
+      const photoId = photoIdFromUrl(photo.url);
+      const photoRef = doc(db, 'trips', tripId, 'photos', photoId);
+      try {
+        await deleteDoc(photoRef);
+      } catch (err) {
+        console.warn('[useAlbum] delete subdoc failed (may not exist):', err);
+      }
+
+      // Also strip from the legacy array (if still present there).
       const currentPhotos = trip?.albumPhotos ?? [];
-      const filtered = currentPhotos.filter((p) => p.url !== photo.url);
-      await updateDoc(tripRef, {
-        albumPhotos: filtered,
-        updatedAt: nowISO(),
-      });
+      if (currentPhotos.some((p) => p.url === photo.url)) {
+        const filtered = currentPhotos.filter((p) => p.url !== photo.url);
+        await updateDoc(tripRef, {
+          albumPhotos: filtered,
+          updatedAt: nowISO(),
+        });
+      }
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
       // Try to delete both thumbnail and full-quality versions from storage (best-effort)
@@ -224,47 +331,86 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     [tripId, trip],
   );
 
+  /** Helper: write a photo to the subcollection (idempotent upsert). */
+  const upsertSubPhoto = useCallback(
+    async (photo: AlbumPhoto): Promise<void> => {
+      const db = getClientDb();
+      const photoId = photoIdFromUrl(photo.url);
+      const ref = doc(db, 'trips', tripId, 'photos', photoId);
+      await setDoc(
+        ref,
+        cleanUndefined({
+          ...photo,
+          updatedAt: serverTimestamp(),
+        }),
+        { merge: true },
+      );
+    },
+    [tripId],
+  );
+
   const updateCaption = useCallback(
     async (photo: AlbumPhoto, caption: string): Promise<void> => {
-      const db = getClientDb();
-      const tripRef = doc(db, 'trips', tripId);
+      // Always write through to the subcollection — also migrates legacy
+      // photos out of the array on first edit.
+      await upsertSubPhoto({ ...photo, caption });
 
-      // Get current photos and update the matching one
+      // If the photo still lives in the legacy array, update it there too
+      // until the next backfill clears it.
       const currentPhotos = trip?.albumPhotos ?? [];
-      const updatedPhotos = currentPhotos.map((p) =>
-        p.url === photo.url ? { ...p, caption } : p
-      );
-
-      await updateDoc(tripRef, {
-        albumPhotos: updatedPhotos,
-        updatedAt: nowISO(),
-      });
+      if (currentPhotos.some((p) => p.url === photo.url)) {
+        const db = getClientDb();
+        const tripRef = doc(db, 'trips', tripId);
+        const updatedPhotos = currentPhotos.map((p) =>
+          p.url === photo.url ? { ...p, caption } : p,
+        );
+        await updateDoc(tripRef, {
+          albumPhotos: updatedPhotos,
+          updatedAt: nowISO(),
+        });
+      }
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
-    [tripId, trip],
+    [tripId, trip, upsertSubPhoto],
   );
 
   const updatePhoto = useCallback(
     async (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>): Promise<void> => {
-      const db = getClientDb();
-      const tripRef = doc(db, 'trips', tripId);
+      const merged = cleanUndefined({ ...oldPhoto, ...updates }) as AlbumPhoto;
 
-      // Get current photos and update the matching one
+      // If the URL changed (rare — happens during a migration step), delete
+      // the old subdoc first.
+      if (updates.url && updates.url !== oldPhoto.url) {
+        const db = getClientDb();
+        const oldId = photoIdFromUrl(oldPhoto.url);
+        try {
+          await deleteDoc(doc(db, 'trips', tripId, 'photos', oldId));
+        } catch {
+          /* ignore — doc may not exist yet */
+        }
+      }
+
+      await upsertSubPhoto(merged);
+
+      // Mirror into the legacy array if the photo is still living there.
       const currentPhotos = trip?.albumPhotos ?? [];
-      const updatedPhotos = currentPhotos.map((p) =>
-        p.url === oldPhoto.url ? cleanUndefined({ ...p, ...updates }) : p
-      );
-
-      await updateDoc(tripRef, {
-        albumPhotos: updatedPhotos,
-        updatedAt: nowISO(),
-      });
+      if (currentPhotos.some((p) => p.url === oldPhoto.url)) {
+        const db = getClientDb();
+        const tripRef = doc(db, 'trips', tripId);
+        const updatedPhotos = currentPhotos.map((p) =>
+          p.url === oldPhoto.url ? merged : p,
+        );
+        await updateDoc(tripRef, {
+          albumPhotos: updatedPhotos,
+          updatedAt: nowISO(),
+        });
+      }
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
-    [tripId, trip],
+    [tripId, trip, upsertSubPhoto],
   );
 
-  /* ─── Re-compress legacy thumbnails to 600px to speed up the gallery ─── */
+  /* ─── Re-compress legacy thumbnails AND migrate them to the subcollection ─── */
   const migrateThumbnails = useCallback(
     async (
       onProgress?: (done: number, total: number) => void,
@@ -276,16 +422,13 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const currentPhotos = trip?.albumPhotos ?? [];
       const total = currentPhotos.length;
       const urlMap: Record<string, string> = {};
-      const updated: AlbumPhoto[] = [];
+      const remaining: AlbumPhoto[] = []; // photos that stay in the array
       let migrated = 0;
       let failed = 0;
       let skipped = 0;
       let done = 0;
 
       // Helper: read an image's natural width without re-uploading.
-      // Lets us mark already-small thumbs as optimized=true cheaply.
-      // No crossOrigin — we only need natural dimensions (not pixel data),
-      // and crossOrigin breaks loading on hosts without explicit CORS.
       const measureWidth = (url: string): Promise<number> =>
         new Promise((resolve, reject) => {
           const img = new Image();
@@ -294,74 +437,95 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           img.src = url;
         });
 
+      // Subcollection writes happen in batched chunks of up to 450 to stay
+      // under Firestore's 500-op limit.
+      let batch = writeBatch(db);
+      let opsInBatch = 0;
+      const flushBatch = async (): Promise<void> => {
+        if (opsInBatch === 0) return;
+        await batch.commit();
+        batch = writeBatch(db);
+        opsInBatch = 0;
+      };
+      const queueSubdocWrite = (photo: AlbumPhoto): void => {
+        const photoId = photoIdFromUrl(photo.url);
+        const ref = doc(db, 'trips', tripId, 'photos', photoId);
+        batch.set(
+          ref,
+          cleanUndefined({
+            ...photo,
+            updatedAt: serverTimestamp(),
+          }),
+          { merge: true },
+        );
+        opsInBatch++;
+      };
+
       for (const photo of currentPhotos) {
-        if (photo.optimized) {
-          updated.push(cleanUndefined(photo));
-          skipped++;
-          done++;
-          onProgress?.(done, total);
-          continue;
-        }
         try {
-          // Smart-skip: if the existing thumbnail is already small enough
-          // (likely re-uploaded yesterday), just stamp optimized=true.
-          let alreadySmall = false;
-          try {
-            const w = await measureWidth(photo.url);
-            if (w > 0 && w <= 800) alreadySmall = true;
-          } catch {
-            // ignore — fall back to recompress
-          }
-
-          if (alreadySmall) {
-            updated.push(cleanUndefined({ ...photo, optimized: true }));
+          if (photo.optimized) {
+            // Already optimized — just migrate to the subcollection.
+            queueSubdocWrite(photo);
             skipped++;
-            done++;
-            onProgress?.(done, total);
-            continue;
+          } else {
+            // Smart-skip: if the existing thumbnail is already small enough,
+            // stamp optimized=true and migrate.
+            let alreadySmall = false;
+            try {
+              const w = await measureWidth(photo.url);
+              if (w > 0 && w <= 800) alreadySmall = true;
+            } catch {
+              // ignore — fall back to recompress
+            }
+
+            if (alreadySmall) {
+              queueSubdocWrite({ ...photo, optimized: true });
+              skipped++;
+            } else {
+              // Recompress through the photo-proxy API (Firebase Storage
+              // doesn't expose CORS; this routes through our origin).
+              const source = photo.fullUrl || photo.url;
+              const proxied = `/api/photo-proxy?url=${encodeURIComponent(source)}`;
+              const res = await fetch(proxied);
+              if (!res.ok) throw new Error(`Proxy ${res.status}`);
+              const sourceBlob = await res.blob();
+              const sourceFile = new File([sourceBlob], 'photo.jpg', {
+                type: sourceBlob.type || 'image/jpeg',
+              });
+
+              const newThumb = await compressImage(sourceFile, 600, 0.75);
+
+              const timestamp = Date.now() + done;
+              const newPath = `trips/${tripId}/album/${timestamp}_optimized.jpg`;
+              const newRef = ref(storage, newPath);
+              await uploadBytes(newRef, newThumb, { contentType: 'image/jpeg' });
+              const newUrl = await getDownloadURL(newRef);
+
+              urlMap[photo.url] = newUrl;
+              queueSubdocWrite({ ...photo, url: newUrl, optimized: true });
+              migrated++;
+
+              // Best-effort delete of the old thumbnail to free storage.
+              try {
+                const oldUrlObj = new URL(photo.url);
+                const m = oldUrlObj.pathname.match(/\/o\/(.+?)(\?|$)/);
+                if (m) {
+                  await deleteObject(ref(storage, decodeURIComponent(m[1])));
+                }
+              } catch {
+                // ignore — orphaned blob is not critical
+              }
+            }
           }
 
-          // Prefer the full-quality original; fall back to the thumbnail.
-          // Firebase Storage doesn't expose CORS on the bucket, so both
-          // fetch() and the SDK's getBlob fail in the browser. Route
-          // through our /api/photo-proxy which fetches server-side and
-          // serves the bytes from our own origin.
-          const source = photo.fullUrl || photo.url;
-          const proxied = `/api/photo-proxy?url=${encodeURIComponent(source)}`;
-          const res = await fetch(proxied);
-          if (!res.ok) throw new Error(`Proxy ${res.status}`);
-          const sourceBlob = await res.blob();
-          const sourceFile = new File([sourceBlob], 'photo.jpg', {
-            type: sourceBlob.type || 'image/jpeg',
-          });
-
-          const newThumb = await compressImage(sourceFile, 600, 0.75);
-
-          const timestamp = Date.now() + done;
-          const newPath = `trips/${tripId}/album/${timestamp}_optimized.jpg`;
-          const newRef = ref(storage, newPath);
-          await uploadBytes(newRef, newThumb, { contentType: 'image/jpeg' });
-          const newUrl = await getDownloadURL(newRef);
-
-          urlMap[photo.url] = newUrl;
-          // cleanUndefined strips undefined optional fields (caption,
-          // eventId, fullUrl) that Firestore rejects inside arrays.
-          updated.push(cleanUndefined({ ...photo, url: newUrl, optimized: true }));
-          migrated++;
-
-          // Best-effort delete of the old thumbnail to free storage
-          try {
-            const oldUrlObj = new URL(photo.url);
-            const m = oldUrlObj.pathname.match(/\/o\/(.+?)(\?|$)/);
-            if (m) {
-              await deleteObject(ref(storage, decodeURIComponent(m[1])));
-            }
-          } catch {
-            // ignore — orphaned blob is not critical
+          // Flush mid-loop if the batch is filling up.
+          if (opsInBatch >= 450) {
+            await flushBatch();
           }
         } catch (err) {
           console.error('Failed to migrate photo:', photo.url, err);
-          updated.push(cleanUndefined(photo));
+          // Keep it in the legacy array so the user doesn't lose it.
+          remaining.push(cleanUndefined(photo));
           failed++;
         }
 
@@ -369,8 +533,12 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         onProgress?.(done, total);
       }
 
+      await flushBatch();
+
+      // Clear successfully-migrated photos from the legacy array. Failed
+      // ones stay so the next run can retry them.
       await updateDoc(tripRef, {
-        albumPhotos: updated,
+        albumPhotos: remaining,
         updatedAt: nowISO(),
       });
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
@@ -380,18 +548,40 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     [tripId, trip],
   );
 
-  // Last-resort: just stamp every photo with optimized=true so the
-  // banner stops nagging when re-processing keeps failing.
+  // Last-resort: stamp every photo with optimized=true so the migration
+  // banner stops nagging when re-processing keeps failing. This now also
+  // mirrors the photos into the subcollection.
   const markAllOptimized = useCallback(async (): Promise<number> => {
     const db = getClientDb();
     const tripRef = doc(db, 'trips', tripId);
     const currentPhotos = trip?.albumPhotos ?? [];
     if (currentPhotos.length === 0) return 0;
+
+    let batch = writeBatch(db);
+    let opsInBatch = 0;
+    const flushBatch = async (): Promise<void> => {
+      if (opsInBatch === 0) return;
+      await batch.commit();
+      batch = writeBatch(db);
+      opsInBatch = 0;
+    };
+
     const cleaned = currentPhotos.map((p) =>
       cleanUndefined({ ...p, optimized: true }),
     );
+
+    for (const p of cleaned) {
+      const photoId = photoIdFromUrl(p.url);
+      const ref = doc(db, 'trips', tripId, 'photos', photoId);
+      batch.set(ref, { ...p, updatedAt: serverTimestamp() }, { merge: true });
+      opsInBatch++;
+      if (opsInBatch >= 450) await flushBatch();
+    }
+    await flushBatch();
+
+    // Empty the legacy array — everything now lives in the subcollection.
     await updateDoc(tripRef, {
-      albumPhotos: cleaned,
+      albumPhotos: [],
       updatedAt: nowISO(),
     });
     try { markMutation(); } catch { /* localStorage may be unavailable */ }

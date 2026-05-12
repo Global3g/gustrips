@@ -77,6 +77,23 @@ interface AlbumPhotoOut {
 
 const FIRESTORE_BATCH_LIMIT = 500;
 
+/** Stable doc id derived from a Firebase Storage URL — used so the photos
+ *  subcollection never duplicates a photo even if convertToTrip is retried.
+ *  Mirrors the client helper in src/hooks/useAlbum.ts. */
+function photoIdFromUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/o\/(.+)$/);
+    if (m) {
+      const decoded = decodeURIComponent(m[1]);
+      return decoded.replace(/\//g, '__').slice(0, 1500);
+    }
+  } catch {
+    /* fall through */
+  }
+  return url.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 1500);
+}
+
 /**
  * Format a Firestore Timestamp as a YYYY-MM-DD date string in UTC.
  * We deliberately use UTC so the same photo lands on the same date
@@ -312,7 +329,11 @@ export const tripsService = {
       });
     }
 
-    // 7. Build the Trip doc itself
+    // 7. Build the Trip doc itself.
+    // NOTE: photos are NOT inlined into trip.albumPhotos any more. They
+    // live as individual docs under /trips/{newTripId}/photos/{photoId}
+    // and are written below as part of the same batch. Keeping the trip
+    // doc small is the whole point of the migration.
     const tripDoc: Record<string, unknown> = {
       title,
       destination,
@@ -325,10 +346,8 @@ export const tripsService = {
       updatedAt: nowIso,
       status: 'completed',
       travelerIds: [],
+      photoCount: albumPhotos.length,
     };
-    if (albumPhotos.length > 0) {
-      tripDoc.albumPhotos = albumPhotos;
-    }
 
     // Member doc — matches TripMember (uid, email omitted since service has
     // no access to user profile; client app fills this on demand).
@@ -367,6 +386,21 @@ export const tripsService = {
     // Event docs
     for (const { ref, data } of tripEventDocs) {
       batch.set(ref, data);
+      opCount++;
+      await commitIfFull();
+    }
+
+    // Photo docs — one per AlbumPhotoOut, in the /trips/{id}/photos
+    // subcollection. Doc id is derived from the storage path inside the
+    // url so re-running the conversion is idempotent.
+    const tripPhotosCol = db.collection('trips').doc(newTripId).collection('photos');
+    for (const photo of albumPhotos) {
+      const photoId = photoIdFromUrl(photo.url);
+      batch.set(tripPhotosCol.doc(photoId), {
+        ...photo,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
       opCount++;
       await commitIfFull();
     }
