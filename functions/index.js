@@ -75,24 +75,17 @@ exports.migrateAlbumPhotos = onRequest(
       }
       const uid = decoded.uid;
 
-      // Collect trips the caller can write to: created by them OR they are
-      // a member. We union both, then dedupe.
+      // Collect trips the caller created. (Skipping the collectionGroup
+      // members lookup — that requires a single-field exemption in
+      // Firestore which fails with FAILED_PRECONDITION until enabled.
+      // createdBy covers the common case; shared trips can be migrated
+      // by their owner from their own account.)
       const tripIds = new Set();
       const createdSnap = await db
         .collection('trips')
         .where('createdBy', '==', uid)
         .get();
       createdSnap.forEach((d) => tripIds.add(d.id));
-
-      // Subcollection group query for /trips/{id}/members/{uid}
-      const memberSnap = await db
-        .collectionGroup('members')
-        .where('uid', '==', uid)
-        .get();
-      memberSnap.forEach((d) => {
-        const tripId = d.ref.parent.parent && d.ref.parent.parent.id;
-        if (tripId) tripIds.add(tripId);
-      });
 
       const FIRESTORE_BATCH_LIMIT = 500;
       const perTrip = [];
