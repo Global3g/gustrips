@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { format, parseISO, eachDayOfInterval, isToday, isBefore, isAfter, getISOWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -27,45 +26,22 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  MoreHorizontal,
 } from 'lucide-react';
 import { useTrips } from '@/hooks/useTrips';
 import { useToast } from '@/context/ToastContext';
 import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { ROUTES } from '@/config/constants';
-import Particles from '@/components/ui/Particles';
 import StatusChangeMenu from '@/components/trips/sidebar/StatusChangeMenu';
 import JumpToTodayButton from '@/components/trips/sidebar/JumpToTodayButton';
 import TripSwitcher from '@/components/trips/sidebar/TripSwitcher';
 import type { Trip, TripEvent, TripStatus } from '@/types';
 
 /* ------------------------------------------------------------------ */
-/*  Nav color map — each nav item gets its own unique accent color     */
+/*  Unified palette — single amber accent for active state.
+ *  9-color palette was visually chaotic; one accent reads as one app.   */
 /* ------------------------------------------------------------------ */
-
-const NAV_COLORS = {
-  general:      { icon: 'text-blue-400',    activeBg: 'bg-blue-500/15',    activeText: 'text-blue-300',    glow: 'shadow-blue-500/20',    bar: 'from-blue-400 to-blue-500' },
-  documents:    { icon: 'text-violet-400',   activeBg: 'bg-violet-500/15',  activeText: 'text-violet-300',  glow: 'shadow-violet-500/20',  bar: 'from-violet-400 to-violet-500' },
-  budget:       { icon: 'text-emerald-400',  activeBg: 'bg-emerald-500/15', activeText: 'text-emerald-300', glow: 'shadow-emerald-500/20', bar: 'from-emerald-400 to-emerald-500' },
-  expenses:     { icon: 'text-orange-400',  activeBg: 'bg-orange-500/15',  activeText: 'text-orange-300',  glow: 'shadow-orange-500/20',  bar: 'from-orange-400 to-orange-500' },
-  travelers:    { icon: 'text-amber-400',    activeBg: 'bg-amber-500/15',   activeText: 'text-amber-300',   glow: 'shadow-amber-500/20',   bar: 'from-amber-400 to-amber-500' },
-  checklist:    { icon: 'text-cyan-400',     activeBg: 'bg-cyan-500/15',    activeText: 'text-cyan-300',    glow: 'shadow-cyan-500/20',    bar: 'from-cyan-400 to-cyan-500' },
-  links:        { icon: 'text-rose-400',     activeBg: 'bg-rose-500/15',    activeText: 'text-rose-300',    glow: 'shadow-rose-500/20',    bar: 'from-rose-400 to-rose-500' },
-  photos:       { icon: 'text-amber-400',    activeBg: 'bg-amber-500/15',   activeText: 'text-amber-300',   glow: 'shadow-amber-500/20',   bar: 'from-amber-400 to-amber-500' },
-  tripshistory: { icon: 'text-fuchsia-400',  activeBg: 'bg-fuchsia-500/15', activeText: 'text-fuchsia-300', glow: 'shadow-fuchsia-500/20', bar: 'from-fuchsia-400 to-rose-500' },
-  map:          { icon: 'text-sky-400',      activeBg: 'bg-sky-500/15',     activeText: 'text-sky-300',     glow: 'shadow-sky-500/20',     bar: 'from-sky-400 to-sky-500' },
-} as const;
-
-/* ------------------------------------------------------------------ */
-/*  Status orb color (reactive ambient)                                */
-/* ------------------------------------------------------------------ */
-
-const STATUS_ORB: Record<string, string> = {
-  planning: 'rgba(245,158,11,0.18)',
-  active: 'rgba(52,211,153,0.20)',
-  completed: 'rgba(96,165,250,0.18)',
-  cancelled: 'rgba(248,113,113,0.16)',
-};
 
 /* ------------------------------------------------------------------ */
 /*  Collapsible Section                                                */
@@ -113,10 +89,10 @@ function CollapsibleSection({ title, defaultOpen = true, children, count }: {
 }
 
 /* ------------------------------------------------------------------ */
-/*  NavItem — colored per section                                      */
+/*  NavItem — single accent, no motion, no glow.                       */
 /* ------------------------------------------------------------------ */
 
-function NavItem({ href, label, icon, isActive, badge, sublabel, muted, color }: {
+function NavItem({ href, label, icon, isActive, badge, sublabel, muted }: {
   href: string;
   label: string;
   icon: React.ReactNode;
@@ -124,70 +100,41 @@ function NavItem({ href, label, icon, isActive, badge, sublabel, muted, color }:
   badge?: React.ReactNode;
   sublabel?: string;
   muted?: boolean;
-  color: keyof typeof NAV_COLORS;
+  /** Unused — kept for backwards compatibility with old call sites. */
+  color?: string;
 }) {
-  const c = NAV_COLORS[color];
-
   return (
     <Link
       href={href}
+      aria-current={isActive ? 'page' : undefined}
       className={classNames(
-        'flex items-center gap-3 mx-3 px-3 py-2.5 text-[13px] rounded-xl transition-all duration-200 group relative',
+        'relative flex items-center gap-3 mx-2 px-3 py-2 text-[13px] rounded-lg transition-colors duration-150 group',
         isActive
-          ? `${c.activeText} font-semibold backdrop-blur-sm`
+          ? 'bg-amber-400/10 text-amber-200 font-semibold'
           : muted
-            ? 'text-white/80 hover:text-white/95 hover:bg-white/[0.03]'
-            : 'text-white hover:text-white',
+            ? 'text-white/65 hover:text-white hover:bg-white/[0.04]'
+            : 'text-white/90 hover:text-white hover:bg-white/[0.04]',
       )}
     >
-      {/* Sliding active background — animates between items via layoutId */}
+      {/* Static left bar for the active item. No layoutId, no spring. */}
       {isActive && (
-        <motion.div
-          layoutId="sidebar-nav-active"
-          className={classNames(
-            'absolute inset-0 rounded-xl shadow-lg backdrop-blur-sm border border-white/[0.06]',
-            c.activeBg,
-            c.glow,
-          )}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        />
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-amber-400" />
       )}
-      {/* Sliding active left bar */}
-      {isActive && (
-        <motion.div
-          layoutId="sidebar-nav-active-bar"
-          className={classNames(
-            'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b',
-            c.bar,
-          )}
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        />
-      )}
-      {/* Hover glow that matches the section color (no movement) */}
-      {!isActive && !muted && (
-        <span
-          className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))',
-            boxShadow: 'inset 0 0 12px rgba(255,255,255,0.04)',
-          }}
-        />
-      )}
-      <span className={classNames(
-        'relative z-10 flex-shrink-0 transition-all duration-200 group-hover:scale-110',
-        isActive ? c.icon : muted ? 'text-white/70' : `${c.icon} opacity-40 group-hover:opacity-90`
-      )}>
+      <span
+        className={classNames(
+          'flex-shrink-0',
+          isActive ? 'text-amber-300' : 'text-white/55 group-hover:text-white/80',
+        )}
+      >
         {icon}
       </span>
-      <div className="relative z-10 flex-1 min-w-0">
+      <div className="flex-1 min-w-0">
         <span className="truncate block leading-tight">{label}</span>
         {sublabel && (
-          <span className="text-[10px] text-white/80 block leading-tight mt-0.5">{sublabel}</span>
+          <span className="text-[10px] text-white/55 block leading-tight mt-0.5">{sublabel}</span>
         )}
       </div>
-      {badge && (
-        <span className="relative z-10 flex-shrink-0">{badge}</span>
-      )}
+      {badge && <span className="flex-shrink-0">{badge}</span>}
     </Link>
   );
 }
@@ -242,20 +189,10 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
           isActive ? 'text-white font-semibold' : isPast ? 'text-white/70' : 'text-white'
         )}>
           {weekday} {dayLabel}
-          {isTodayDay && (
-            <motion.span
-              animate={{ rotate: [0, 12, -8, 0], scale: [1, 1.15, 1] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-              className="inline-block ml-0.5"
-              aria-hidden
-            >
-              ✨
-            </motion.span>
-          )}
         </span>
         {isTodayDay && (
-          <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-300 font-bold uppercase tracking-wider mt-0.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shadow-[0_0_6px_rgba(96,165,250,0.85)]" />
+          <span className="inline-flex items-center gap-1 text-[9px] text-amber-300 font-bold uppercase tracking-wider mt-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
             Hoy
           </span>
         )}
@@ -330,11 +267,11 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   const [backingUp, setBackingUp] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
   const activeDayRef = useRef<HTMLAnchorElement>(null);
   const itineraryScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollFade, setShowScrollFade] = useState(false);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
   // Auto-cancel the delete confirmation after 6s so the button doesn't sit
   // primed indefinitely.
@@ -359,13 +296,25 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
     }
   };
 
-  // Stripe-style mouse-follow spotlight
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = sidebarRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
-  const handleMouseLeave = () => setCursor(null);
+  // Close the "..." menu on outside click / Escape.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onPointer = (e: MouseEvent | TouchEvent): void => {
+      if (!moreRef.current) return;
+      if (!moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('touchstart', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('touchstart', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
 
   const handleSidebarBackup = async () => {
     if (!trip) return;
@@ -495,7 +444,6 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   /* ---- Status ---- */
 
   const tripStatus: TripStatus = (trip?.status as TripStatus) || 'planning';
-  const orbColor = STATUS_ORB[tripStatus] || STATUS_ORB.planning;
 
   const handleStatusChange = async (newStatus: TripStatus) => {
     if (!updateTrip) return;
@@ -572,137 +520,50 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
 
   return (
     <div
-      ref={sidebarRef}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
       className="flex flex-col h-full relative overflow-hidden"
-      style={{ background: 'linear-gradient(180deg, #0a1628 0%, #14243f 35%, #1a3352 70%, #162d48 100%)' }}
+      style={{ background: 'linear-gradient(180deg, #0a1628 0%, #14243f 50%, #162d48 100%)' }}
     >
-      {/* ====== AURORA BLOBS — slow drift animation ====== */}
-      <motion.div
-        className="absolute -top-16 -left-12 w-56 h-56 rounded-full blur-[60px] pointer-events-none transition-colors duration-700"
-        style={{ background: orbColor }}
-        animate={{ x: [0, 18, -10, 0], y: [0, 14, -6, 0] }}
-        transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="absolute top-1/3 -right-16 w-56 h-56 rounded-full blur-[60px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.18), transparent 70%)' }}
-        animate={{ x: [0, -16, 8, 0], y: [0, -12, 8, 0] }}
-        transition={{ duration: 19, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="absolute bottom-20 -left-12 w-44 h-44 rounded-full blur-[50px] pointer-events-none"
-        style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.14), transparent 70%)' }}
-        animate={{ x: [0, 14, -8, 0], y: [0, -10, 6, 0] }}
-        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
-      />
-
-      {/* ====== PARTICLES — sutiles ====== */}
-      <div className="absolute inset-0 opacity-40 pointer-events-none">
-        <Particles count={18} />
-      </div>
-
-      {/* ====== CURSOR SPOTLIGHT (Stripe-style) ====== */}
-      {cursor && (
-        <div
-          className="absolute pointer-events-none transition-opacity duration-200"
-          style={{
-            left: cursor.x - 200,
-            top: cursor.y - 200,
-            width: 400,
-            height: 400,
-            background: 'radial-gradient(circle, rgba(99,102,241,0.10), rgba(99,102,241,0.04) 35%, transparent 70%)',
-            filter: 'blur(12px)',
-          }}
-        />
-      )}
-
-      {/* Subtle noise texture */}
-      <div className="absolute inset-0 opacity-[0.02] pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'1\'/%3E%3C/svg%3E")' }} />
-
       {/* ====== TOP — Trip Switcher ====== */}
-      <div className="px-4 pt-4 pb-2 relative z-10">
+      <div className="px-4 pt-4 pb-2">
         <TripSwitcher currentTripId={tripId} currentTitle={trip?.title} />
       </div>
 
       {/* ====== Trip Identity ====== */}
-      <div className="relative z-10">
-        <div className="px-5 pt-2 pb-3">
-          <h2
-            className="font-extrabold text-lg leading-tight tracking-tight bg-clip-text text-transparent"
-            style={{
-              backgroundImage: 'linear-gradient(135deg, #ffffff 0%, #cfe1ff 60%, #93c5fd 100%)',
-              filter: 'drop-shadow(0 1px 8px rgba(147,197,253,0.18))',
-            }}
-          >
-            {trip?.title || 'Cargando...'}
-          </h2>
-          {trip?.destination && (
-            <p className="text-white/85 text-[11px] mt-1 flex items-center gap-1 truncate">
-              <motion.span
-                animate={{ y: [0, -1.5, 0] }}
-                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                className="flex-shrink-0"
-              >
-                <MapPin className="w-3 h-3 text-rose-300" />
-              </motion.span>
-              {trip.destination}
-            </p>
+      <div className="px-5 pt-2 pb-3">
+        <h2 className="font-bold text-lg leading-tight tracking-tight text-white">
+          {trip?.title || 'Cargando...'}
+        </h2>
+        {trip?.destination && (
+          <p className="text-white/70 text-[11px] mt-1 flex items-center gap-1 truncate">
+            <MapPin className="w-3 h-3 shrink-0 text-white/55" />
+            {trip.destination}
+          </p>
+        )}
+      </div>
+
+      {/* Meta row — dates, duration pill, status menu */}
+      <div className="px-4 pb-3">
+        <div className="flex items-center flex-wrap gap-2 text-[11px]">
+          {dateRange && (
+            <div className="flex items-center gap-1 text-white/70">
+              <CalendarDays className="w-3 h-3" />
+              <span>{dateRange}</span>
+            </div>
+          )}
+          {tripDays > 0 && (
+            <span className="inline-flex items-center text-[10px] font-semibold text-white/80 bg-white/[0.05] rounded-full px-2.5 py-0.5 border border-white/[0.08]">
+              <Clock className="w-2.5 h-2.5 mr-1" />
+              {tripDays} días
+            </span>
+          )}
+          {updateTrip && (
+            <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
           )}
         </div>
-
-        {/* Meta row — dates, duration pill, status menu */}
-        <div className="px-4 pt-3 pb-2 space-y-3">
-          {/* Date + Duration + Status */}
-          <div className="flex items-center flex-wrap gap-2 text-[11px]">
-            {dateRange && (
-              <div className="flex items-center gap-1 text-white/80">
-                <CalendarDays className="w-3 h-3" />
-                <span>{dateRange}</span>
-              </div>
-            )}
-            {tripDays > 0 && (
-              <span className="inline-flex items-center text-[10px] font-bold text-white bg-white/[0.06] backdrop-blur-sm rounded-full px-2.5 py-0.5 border border-white/[0.08]">
-                <Clock className="w-2.5 h-2.5 mr-1 text-white/80" />
-                {tripDays} días
-              </span>
-            )}
-            {updateTrip ? (
-              tripStatus === 'active' ? (
-                <motion.span
-                  animate={{
-                    filter: [
-                      'drop-shadow(0 0 0px rgba(52,211,153,0))',
-                      'drop-shadow(0 0 6px rgba(52,211,153,0.55))',
-                      'drop-shadow(0 0 0px rgba(52,211,153,0))',
-                    ],
-                  }}
-                  transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-                >
-                  <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
-                </motion.span>
-              ) : (
-                <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
-              )
-            ) : null}
-          </div>
-
-        </div>
       </div>
 
-      {/* Animated shimmer divider */}
-      <div className="mx-4 h-px relative z-10 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
-        <motion.div
-          className="absolute inset-y-0 w-1/3"
-          style={{
-            background: 'linear-gradient(90deg, transparent, rgba(147,197,253,0.45), transparent)',
-          }}
-          animate={{ x: ['-100%', '300%'] }}
-          transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
-        />
-      </div>
+      {/* Static divider */}
+      <div className="mx-4 h-px bg-white/[0.08]" />
 
       {/* ====== NAVIGATION — scrollable ====== */}
       <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 relative z-10 sidebar-nav-scroll">
@@ -793,25 +654,17 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
           {hasStory && pendingQuestionCount > 0 && (
             <NavItem
               href={basePath}
-              label={`Completar viaje`}
+              label="Completar viaje"
               sublabel={`${pendingQuestionCount} pregunta${pendingQuestionCount === 1 ? '' : 's'} pendiente${pendingQuestionCount === 1 ? '' : 's'}`}
               icon={<BookHeart className="w-4 h-4" />}
               isActive={false}
-              color="tripshistory"
               badge={(
-                <span className="text-[10px] font-bold bg-fuchsia-500/15 text-fuchsia-300 w-5 h-5 rounded-full flex items-center justify-center border border-fuchsia-500/20">
+                <span className="text-[10px] font-bold bg-amber-400/15 text-amber-200 w-5 h-5 rounded-full flex items-center justify-center border border-amber-400/30">
                   {pendingQuestionCount}
                 </span>
               )}
             />
           )}
-          <NavItem
-            href={basePath + '/recap'}
-            label="Recap"
-            icon={<Sparkles className="w-4 h-4" />}
-            isActive={isActive('/recap')}
-            color="travelers"
-          />
         </CollapsibleSection>
 
         {/* Lugar */}
@@ -832,108 +685,126 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
           />
         </CollapsibleSection>
 
-        {/* ====== SCAN BUTTON — prominent ====== */}
+        {/* Scan with AI — sobrio, no gradiente */}
         {onScanDocument && (
-          <div className="px-3 pt-2 pb-1">
+          <div className="px-3 pt-2">
             <button
               onClick={onScanDocument}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-bold bg-gradient-to-r from-violet-600/20 via-purple-600/20 to-fuchsia-600/20 hover:from-violet-600/30 hover:via-purple-600/30 hover:to-fuchsia-600/30 text-violet-300 hover:text-violet-200 border border-violet-500/15 hover:border-violet-500/25 shadow-lg shadow-violet-500/5 hover:shadow-violet-500/10 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[12px] font-semibold text-white/85 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] transition-colors"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
               <span>Escanear con IA</span>
             </button>
           </div>
         )}
       </nav>
 
-      {/* ====== BOTTOM — Actions + Backup + Brand ====== */}
-      <div className="relative z-10">
-        {/* Gradient divider */}
-        <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
-
-        <div className="px-4 py-3 space-y-2">
-          {/* Mis Viajes — siempre visible para volver al dashboard */}
+      {/* ====== FOOTER — Mis Viajes (primary) + "..." menu ====== */}
+      <div className="border-t border-white/[0.06] px-4 py-3">
+        <div className="flex items-center gap-2">
+          {/* Primary: back to dashboard */}
           <Link
             href={ROUTES.app.dashboard}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11.5px] font-semibold text-white/85 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/[0.12] transition-all duration-200"
+            className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold text-white bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] hover:border-white/[0.15] transition-colors"
           >
             <Home className="w-3.5 h-3.5" />
             <span>Mis Viajes</span>
           </Link>
 
-          {/* Editar viaje */}
-          <Link
-            href={`${basePath}/edit`}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-white/75 hover:text-white bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] transition-all duration-200"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            <span>Editar viaje</span>
-          </Link>
-
-          {/* Borrar viaje — confirmación inline */}
-          {!confirmDelete ? (
+          {/* Secondary actions live behind a "..." menu */}
+          <div className="relative" ref={moreRef}>
             <button
               type="button"
-              onClick={() => setConfirmDelete(true)}
-              disabled={!trip || deleting}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-rose-300/85 hover:text-rose-200 bg-rose-500/[0.04] hover:bg-rose-500/[0.10] border border-rose-500/[0.10] hover:border-rose-400/30 transition-all duration-200 disabled:opacity-40"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="Más acciones"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-white/75 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] transition-colors"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Borrar viaje</span>
+              <MoreHorizontal className="w-4 h-4" />
             </button>
-          ) : (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/[0.08] p-2.5 space-y-2">
-              <div className="flex items-start gap-1.5 text-[11px] text-rose-100/95">
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-rose-300" />
-                <span>Esta acción no se puede deshacer.</span>
-              </div>
-              <div className="flex gap-1.5">
+            {moreOpen && (
+              <div
+                role="menu"
+                className="absolute z-30 right-0 bottom-full mb-2 w-56 rounded-xl border border-white/15 bg-[#0d1b2e] shadow-2xl shadow-black/60 overflow-hidden"
+              >
+                <Link
+                  href={`${basePath}/edit`}
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-white/90 hover:text-white hover:bg-white/[0.06] transition-colors"
+                  role="menuitem"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-white/55" />
+                  Editar viaje
+                </Link>
                 <button
                   type="button"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-white bg-gradient-to-br from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 shadow-lg shadow-rose-500/30 transition-all disabled:opacity-60"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    handleSidebarBackup();
+                  }}
+                  disabled={backingUp || !trip}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-white/90 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-40"
+                  role="menuitem"
                 >
-                  {deleting ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
+                  {backingUp ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white/55" />
                   ) : (
-                    <Trash2 className="w-3 h-3" />
+                    <HardDriveDownload className="w-3.5 h-3.5 text-white/55" />
                   )}
-                  Confirmar
+                  {backingUp ? 'Exportando...' : 'Descargar backup'}
                 </button>
+                <div className="h-px bg-white/[0.08]" />
                 <button
                   type="button"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={deleting}
-                  className="flex-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white/85 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setConfirmDelete(true);
+                  }}
+                  disabled={!trip || deleting}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 transition-colors disabled:opacity-40"
+                  role="menuitem"
                 >
-                  Cancelar
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Borrar viaje
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Backup button */}
-          <button
-            onClick={handleSidebarBackup}
-            disabled={backingUp || !trip}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-medium text-white/80 hover:text-white/95 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] transition-all duration-200 disabled:opacity-40"
-          >
-            {backingUp ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <HardDriveDownload className="w-3.5 h-3.5" />
             )}
-            <span>{backingUp ? 'Exportando...' : 'Descargar backup'}</span>
-          </button>
-
-          {/* Bottom brand */}
-          <div className="flex items-center justify-center gap-1.5 py-1">
-            <div className="w-3 h-px bg-gradient-to-r from-transparent to-white/10" />
-            <p className="text-[9px] text-white/15 font-bold tracking-[0.2em] uppercase">GusTrips</p>
-            <div className="w-3 h-px bg-gradient-to-l from-transparent to-white/10" />
           </div>
         </div>
+
+        {/* Delete confirmation appears below the row when primed */}
+        {confirmDelete && (
+          <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 space-y-2">
+            <div className="flex items-start gap-1.5 text-[11px] text-rose-100">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-rose-300" />
+              <span>Borrar este viaje no se puede deshacer.</span>
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-bold text-white bg-rose-500 hover:bg-rose-400 transition-colors disabled:opacity-60"
+              >
+                {deleting ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3 h-3" />
+                )}
+                Confirmar
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-white/85 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ====== SCROLLBAR STYLES ====== */}
