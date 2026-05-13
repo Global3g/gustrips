@@ -120,31 +120,39 @@ const HEIC_SERVER_URL =
   'https://us-central1-gustrips-a317e.cloudfunctions.net/heicToJpeg';
 
 async function convertHeicViaServer(file: File): Promise<File> {
-  // Auth: we need a Firebase ID token. Import lazily so this helper stays
-  // usable in non-auth contexts too.
   const { getClientAuth } = await import('@/lib/firebase/client');
   const user = getClientAuth().currentUser;
   if (!user) throw new Error('Not signed in — cannot reach server HEIC converter');
   const token = await user.getIdToken();
 
-  const res = await fetch(HEIC_SERVER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/octet-stream',
-    },
-    body: file,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Server HEIC conversion failed: ${res.status} ${text}`);
+  // Hard cap so a single stuck request doesn't freeze the whole batch.
+  // Cloud Function timeout is 120s; we add 5s of grace and abort here too.
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 125_000);
+
+  try {
+    const res = await fetch(HEIC_SERVER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: file,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Server HEIC conversion failed: ${res.status} ${text}`);
+    }
+    const jpegBlob = await res.blob();
+    const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg') || 'photo.jpg';
+    return new File([jpegBlob], newName, {
+      type: 'image/jpeg',
+      lastModified: file.lastModified,
+    });
+  } finally {
+    clearTimeout(abortTimer);
   }
-  const jpegBlob = await res.blob();
-  const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg') || 'photo.jpg';
-  return new File([jpegBlob], newName, {
-    type: 'image/jpeg',
-    lastModified: file.lastModified,
-  });
 }
 
 /**

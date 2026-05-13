@@ -31,7 +31,10 @@ interface SelectedItem {
   error?: string;
 }
 
-const PROCESSING_CONCURRENCY = 4;
+// Server-side HEIC conversion can be slow on cold start (a few seconds per
+// photo). Keep parallelism low so we don't queue 4 long-running requests
+// against the same Cloud Run instance.
+const PROCESSING_CONCURRENCY = 2;
 
 /**
  * File picker + drag-drop surface. When the user hits "Procesar fotos" we:
@@ -431,6 +434,9 @@ export default function PhotoSelector({
               {processing && progress.total > 0 && (
                 <span className="ml-2 text-amber-200 normal-case tracking-normal">
                   · Procesando {progress.done}/{progress.total}
+                  {/^.*\.(heic|heif)$/i.test(items[0]?.file.name ?? '') && (
+                    <span className="text-white/55"> (HEIC tarda más)</span>
+                  )}
                 </span>
               )}
             </p>

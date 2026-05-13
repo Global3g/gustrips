@@ -44,8 +44,12 @@ if (tripshistoryApp) {
 exports.heicToJpeg = onRequest(
   {
     region: 'us-central1',
-    timeoutSeconds: 60,
-    memory: '512MiB',
+    timeoutSeconds: 120,
+    memory: '1GiB',
+    // Avoid request pile-up: each instance handles 1 conversion at a time.
+    // Cloud Run autoscales by creating more instances when traffic spikes,
+    // which is what we want for parallel uploads.
+    concurrency: 1,
     cors: [
       'https://gustrips.vercel.app',
       /^https:\/\/gustrips-[a-z0-9-]+\.vercel\.app$/,
