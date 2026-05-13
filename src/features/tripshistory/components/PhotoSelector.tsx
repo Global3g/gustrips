@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ImagePlus, Loader2, UploadCloud, X } from 'lucide-react';
 import { useAuthContext } from '@/context/AuthContext';
 import { extractPhotoMetadata } from '@/features/tripshistory/utils/photoMetadata';
@@ -48,7 +48,7 @@ export default function PhotoSelector({
   onPhotosReady,
   onSelect,
   disabled = false,
-  minPhotos = 10,
+  minPhotos = 1,
   maxPhotos = 500,
 }: PhotoSelectorProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,12 +76,17 @@ export default function PhotoSelector({
     return false;
   }, []);
 
+  // Stable identity for a File — used to dedup across drop paths AND
+  // against items already in the list. Apple Photos can ship the same
+  // photo through `.files` AND `.items`, so we have to fold both.
+  const fileKey = (f: File): string => `${f.name}|${f.size}|${f.lastModified}`;
+
   const handleFiles = useCallback(
     (files: FileList | File[]) => {
       const incoming = Array.from(files);
-      const arr = incoming.filter(isImageFile);
-      const rejected = incoming.length - arr.length;
-      if (incoming.length > 0 && arr.length === 0) {
+      const onlyImages = incoming.filter(isImageFile);
+      const rejected = incoming.length - onlyImages.length;
+      if (incoming.length > 0 && onlyImages.length === 0) {
         setGlobalError(
           `No reconocimos ninguno de los ${incoming.length} archivos como imagen. ` +
             'Si los arrastraste desde una galería, probá usar el botón para elegirlas.',
@@ -92,8 +97,17 @@ export default function PhotoSelector({
         setGlobalError(null);
       }
       setItems((prev) => {
-        const merged = [...prev, ...arr.map<SelectedItem>((file) => ({ file, status: 'pending' }))]
-          .slice(0, maxPhotos);
+        // Dedup against items already in the list AND within the incoming
+        // batch itself. Same fingerprint twice → one item.
+        const seen = new Set<string>(prev.map((it) => fileKey(it.file)));
+        const additions: SelectedItem[] = [];
+        for (const file of onlyImages) {
+          const key = fileKey(file);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          additions.push({ file, status: 'pending' });
+        }
+        const merged = [...prev, ...additions].slice(0, maxPhotos);
         onSelect?.(merged.map((m) => m.file));
         return merged;
       });
@@ -101,51 +115,12 @@ export default function PhotoSelector({
     [maxPhotos, onSelect, isImageFile],
   );
 
-  // Belt-and-suspenders: also listen at the window level. If something in
-  // a parent component swallows the drop event before it reaches our <div>,
-  // this catches it as long as the drop happens visually over our zone
-  // (identified by the data attribute below).
-  useEffect(() => {
-    const findZone = (target: EventTarget | null): Element | null => {
-      if (!target || !(target instanceof Element)) return null;
-      return target.closest('[data-tripshistory-dropzone="true"]');
-    };
-    const onWindowDragOver = (e: DragEvent): void => {
-      if (!findZone(e.target)) return;
-      e.preventDefault();
-    };
-    const onWindowDrop = (e: DragEvent): void => {
-      if (!findZone(e.target)) return;
-      e.preventDefault();
-      const dt = e.dataTransfer;
-      if (!dt) return;
-      const out: File[] = [];
-      const seen = new Set<string>();
-      const pushUnique = (f: File | null | undefined): void => {
-        if (!f) return;
-        const key = `${f.name}|${f.size}|${f.lastModified}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        out.push(f);
-      };
-      if (dt.files && dt.files.length > 0) {
-        for (let i = 0; i < dt.files.length; i++) pushUnique(dt.files.item(i));
-      }
-      if (dt.items && dt.items.length > 0) {
-        for (let i = 0; i < dt.items.length; i++) {
-          const item = dt.items[i];
-          if (item.kind === 'file') pushUnique(item.getAsFile());
-        }
-      }
-      if (out.length > 0) handleFiles(out);
-    };
-    window.addEventListener('dragover', onWindowDragOver);
-    window.addEventListener('drop', onWindowDrop);
-    return () => {
-      window.removeEventListener('dragover', onWindowDragOver);
-      window.removeEventListener('drop', onWindowDrop);
-    };
-  }, [handleFiles]);
+  // NOTE: previously had a window-level drop listener as a fallback. It
+  // caused double-processing on Apple Photos drags (both the div handler
+  // AND the window handler fired). The div-level handler is sufficient
+  // on every browser we support; if a parent component ever swallows
+  // drop events again we'll rediscover it through a missing-callback bug,
+  // which is far less harmful than silent duplicates.
 
   /**
    * Extract files from a DataTransfer. Reads both `.files` and `.items`
@@ -397,7 +372,7 @@ export default function PhotoSelector({
               Arrastrá tus fotos o tocá acá para elegir
             </p>
             <p className="text-sm text-white/60 mt-1">
-              Subí al menos {minPhotos} fotos del viaje. Cuantas más, mejor.
+              Subí las fotos del viaje. Cuantas más, mejor agrupamos los eventos.
             </p>
             <p className="text-[11px] text-white/45 mt-2 max-w-md mx-auto">
               ¿Mac con app Photos? Tocá el área y, en el selector, elegí
