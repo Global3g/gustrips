@@ -304,7 +304,22 @@ export default function PhotoSelector({
     setProcessing(false);
 
     if (successful.length === 0) {
-      // Show the first concrete failure so the user has a real lead.
+      // If most failures look like HEIC decoding errors, point the user at
+      // the iPhone setting that fixes it permanently. libheif-js in the
+      // browser doesn't decode HEVC 10-bit HEIC (the default since iPhone 12).
+      const allHeic = items.every((it) => /\.(heic|heif)$/i.test(it.file.name));
+      const looksLikeDecode = errors.some((e) =>
+        /failed to decode|could not parse heif/i.test(e),
+      );
+      if (allHeic && looksLikeDecode) {
+        setGlobalError(
+          'Tus fotos son HEIC del iPhone y el navegador no puede decodificarlas. ' +
+            'Solución (una sola vez): en tu iPhone → Ajustes → Cámara → Formatos → ' +
+            'elegí "Más compatible". Las fotos nuevas saldrán como JPEG y van a subir bien. ' +
+            'Para las HEIC viejas: en Mac, Photos.app → File → Export → Export Photos → JPEG.',
+        );
+        return;
+      }
       const firstError = errors[0];
       setGlobalError(
         firstError
