@@ -14,6 +14,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@types/leaflet": "^1.9.21",
     "@types/react-window": "^1.8.8",
+    "border-beam": "^1.0.1",
     "canvas-confetti": "^1.9.4",
     "date-fns": "^4.1.0",
     "exifr": "^7.1.3",
