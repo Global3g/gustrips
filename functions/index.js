@@ -33,6 +33,80 @@ if (tripshistoryApp) {
   );
 }
 
+/* ── HEIC → JPEG converter (server-side fallback) ──
+   iPhone 12+ shoots HEIC with HEVC 10-bit; the libheif-js bundled inside
+   heic2any can't decode that variant in the browser. This endpoint accepts
+   a HEIC binary, runs it through node-heic-convert (which uses the full
+   libheif build) and returns a JPEG. Client calls it only as a fallback
+   when in-browser conversion fails.
+
+   Auth: Firebase ID token. Size cap: 30 MB. CORS open to our origins. */
+exports.heicToJpeg = onRequest(
+  {
+    region: 'us-central1',
+    timeoutSeconds: 60,
+    memory: '512MiB',
+    cors: [
+      'https://gustrips.vercel.app',
+      /^https:\/\/gustrips-[a-z0-9-]+\.vercel\.app$/,
+      'http://localhost:3000',
+      'http://localhost:3001',
+    ],
+  },
+  async (req, res) => {
+    try {
+      if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+      }
+      if (req.method !== 'POST') {
+        res.status(405).json({ error: 'method-not-allowed' });
+        return;
+      }
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'missing-authorization' });
+        return;
+      }
+      try {
+        await admin.auth().verifyIdToken(authHeader.slice('Bearer '.length).trim());
+      } catch {
+        res.status(401).json({ error: 'invalid-token' });
+        return;
+      }
+
+      // Body is the raw HEIC bytes. onRequest exposes rawBody for binary uploads.
+      const inputBuffer = req.rawBody;
+      if (!inputBuffer || !inputBuffer.length) {
+        res.status(400).json({ error: 'empty-body' });
+        return;
+      }
+      if (inputBuffer.length > 30 * 1024 * 1024) {
+        res.status(413).json({ error: 'too-large', limit: 30 * 1024 * 1024 });
+        return;
+      }
+
+      // eslint-disable-next-line global-require
+      const heicConvert = require('heic-convert');
+      const jpegBuffer = await heicConvert({
+        buffer: inputBuffer,
+        format: 'JPEG',
+        quality: 0.9,
+      });
+
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).send(jpegBuffer);
+    } catch (err) {
+      console.error('[heicToJpeg] failure', err);
+      res.status(500).json({
+        error: 'conversion-failed',
+        message: err && err.message ? err.message : 'unknown',
+      });
+    }
+  },
+);
+
 /* ── Admin: backfill trip.albumPhotos[] → /trips/{id}/photos/{photoId} ──
    Migrates the legacy embedded array to its subcollection home.
    Idempotent: re-runs are safe. Only touches trips the caller can access

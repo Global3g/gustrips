@@ -113,14 +113,51 @@ async function convertHeicToJpeg(file: File): Promise<File> {
 }
 
 /**
+ * Server-side HEIC → JPEG converter used as a fallback when the in-browser
+ * libheif can't handle the file (HEVC 10-bit, common on iPhone 12+).
+ */
+const HEIC_SERVER_URL =
+  'https://us-central1-gustrips-a317e.cloudfunctions.net/heicToJpeg';
+
+async function convertHeicViaServer(file: File): Promise<File> {
+  // Auth: we need a Firebase ID token. Import lazily so this helper stays
+  // usable in non-auth contexts too.
+  const { getClientAuth } = await import('@/lib/firebase/client');
+  const user = getClientAuth().currentUser;
+  if (!user) throw new Error('Not signed in — cannot reach server HEIC converter');
+  const token = await user.getIdToken();
+
+  const res = await fetch(HEIC_SERVER_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Server HEIC conversion failed: ${res.status} ${text}`);
+  }
+  const jpegBlob = await res.blob();
+  const newName = file.name.replace(/\.(heic|heif)$/i, '.jpg') || 'photo.jpg';
+  return new File([jpegBlob], newName, {
+    type: 'image/jpeg',
+    lastModified: file.lastModified,
+  });
+}
+
+/**
  * Convert HEIF/HEIC → JPEG when applicable. Otherwise returns the file as-is.
  *
- * Robust against false-positive hints: we trust magic bytes over the
- * filename/mime. If hint says HEIC but bytes disagree, we skip conversion.
- * If the bytes look HEIF but heic2any fails for any reason (truncated,
- * unsupported codec, libheif transient error), we log once at debug level
- * and return the original file — downstream canvas decode will either
- * succeed (if it was actually a JPEG) or fail loudly there.
+ * Strategy:
+ *   1. If the hint says HEIC but the bytes aren't actually HEIF, skip work.
+ *   2. Try in-browser conversion via heic2any (fast, no round-trip).
+ *   3. If heic2any throws (HEVC 10-bit is the usual cause), fall back to a
+ *      Firebase Function that runs the full libheif on the server. Slower
+ *      but handles every iPhone codec we've seen.
+ *   4. If the server conversion also fails, return the original file and
+ *      let the downstream canvas decode produce the visible error.
  */
 export async function normalizeImageFile(file: File): Promise<File> {
   if (!isHeicFile(file)) return file;
@@ -128,10 +165,17 @@ export async function normalizeImageFile(file: File): Promise<File> {
   if (!reallyHeif) return file;
   try {
     return await convertHeicToJpeg(file);
-  } catch (err) {
-    if (typeof console !== 'undefined' && typeof console.debug === 'function') {
-      console.debug('[heic] conversion failed, falling back to original', err);
+  } catch (clientErr) {
+    if (typeof console !== 'undefined' && typeof console.info === 'function') {
+      console.info('[heic] browser conversion failed, trying server', clientErr);
     }
-    return file;
+    try {
+      return await convertHeicViaServer(file);
+    } catch (serverErr) {
+      if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+        console.warn('[heic] server conversion also failed', serverErr);
+      }
+      return file;
+    }
   }
 }
