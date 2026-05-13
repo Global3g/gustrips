@@ -1,12 +1,29 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plane, Plus, Search, MapPin, Calendar, Globe, ListChecks, CalendarDays, Receipt, FileText } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
+import {
+  Plane,
+  Plus,
+  Search,
+  MapPin,
+  Calendar,
+  Globe,
+  ListChecks,
+  CalendarDays,
+  Receipt,
+  FileText,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  Loader2,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/context/ToastContext';
 import OnboardingModal from '@/components/onboarding/OnboardingModal';
 import { ROUTES } from '@/config/constants';
 import { classNames, formatDateShortES } from '@/lib/utils/helpers';
@@ -45,6 +62,20 @@ const glassHover = 'hover:bg-white/[0.08] transition-all duration-200';
 /* ─── Trip Card (glass style) ────────────────────── */
 
 function GlassTripCard({ trip, featured = false }: { trip: Trip; featured?: boolean }) {
+  const router = useRouter();
+  const { deleteTrip } = useTrips();
+  const { toast } = useToast();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Auto-cancel the primed delete state after 6s so the button doesn't sit
+  // armed indefinitely.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 6000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -72,17 +103,50 @@ function GlassTripCard({ trip, featured = false }: { trip: Trip; featured?: bool
     // ignore
   }
 
+  const handleEdit = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    router.push(`${ROUTES.app.trip(trip.id)}/edit`);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmDelete(true);
+  };
+
+  const handleConfirmDelete = async (e: React.MouseEvent): Promise<void> => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      setDeleting(true);
+      await deleteTrip(trip.id);
+      toast('Viaje borrado', 'success');
+    } catch (err) {
+      console.error('Error deleting trip:', err);
+      toast('No pudimos borrar el viaje', 'error');
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  const handleCancelDelete = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmDelete(false);
+  };
+
   return (
-    <Link href={ROUTES.app.trip(trip.id)} className="block group">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={classNames(
-          'rounded-2xl overflow-hidden cursor-pointer',
-          featured ? 'col-span-2' : '',
-        )}
-        style={glass}
-      >
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={classNames(
+        'relative rounded-2xl overflow-hidden',
+        featured ? 'col-span-2' : '',
+      )}
+      style={glass}
+    >
+      <Link href={ROUTES.app.trip(trip.id)} className="block group">
         {/* Cover */}
         <div className={classNames('relative overflow-hidden', featured ? 'h-44' : 'h-32')}>
           {trip.coverImage ? (
@@ -106,7 +170,7 @@ function GlassTripCard({ trip, featured = false }: { trip: Trip; featured?: bool
           )}
 
           {/* Info */}
-          <div className="absolute bottom-0 left-0 right-0 p-4">
+          <div className="absolute bottom-0 left-0 right-0 p-4 pr-20">
             <h3 className={classNames('text-white font-bold drop-shadow-lg', featured ? 'text-xl' : 'text-base')}>
               {trip.title}
             </h3>
@@ -120,8 +184,76 @@ function GlassTripCard({ trip, featured = false }: { trip: Trip; featured?: bool
             </div>
           </div>
         </div>
-      </motion.div>
-    </Link>
+      </Link>
+
+      {/* Action buttons (overlay on top of the cover, top-right corner). */}
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+        <button
+          type="button"
+          onClick={handleEdit}
+          aria-label="Editar viaje"
+          title="Editar viaje"
+          className="w-8 h-8 rounded-full bg-black/55 backdrop-blur-md text-white/90 hover:bg-black/75 hover:text-white flex items-center justify-center transition-colors"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={handleDeleteClick}
+          aria-label="Borrar viaje"
+          title="Borrar viaje"
+          className="w-8 h-8 rounded-full bg-black/55 backdrop-blur-md text-rose-300 hover:bg-rose-500/75 hover:text-white flex items-center justify-center transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Delete confirmation overlay. Sits on top of the whole card. */}
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="absolute inset-0 z-20 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center"
+            onClick={(e) => e.preventDefault()}
+          >
+            <div className="w-10 h-10 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mb-2">
+              <AlertTriangle className="w-5 h-5 text-rose-300" />
+            </div>
+            <p className="text-white text-sm font-bold mb-1">¿Borrar este viaje?</p>
+            <p className="text-white/70 text-xs leading-snug max-w-xs mb-3">
+              Se eliminará el viaje completo: itinerario, eventos, gastos, documentos y fotos.
+              No se puede deshacer.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold transition-colors disabled:opacity-60"
+              >
+                {deleting ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3 h-3" />
+                )}
+                Borrar
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelDelete}
+                disabled={deleting}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/85 text-xs font-semibold transition-colors disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
