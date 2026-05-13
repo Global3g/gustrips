@@ -10,8 +10,6 @@ import type {
   AnalysisState,
   AnswerRequest,
   AnswerResponse,
-  ConvertToTripRequest,
-  ConvertToTripResponse,
   CreateStoryRequest,
   Day,
   DayPatch,
@@ -161,22 +159,3 @@ export function deleteEvent(
     `/stories/${storyId}/events/${eventId}`,
   );
 }
-
-/* ─── Trips integration ────────────────────────────── */
-
-export function convertStoryToTrip(
-  storyId: string,
-  body: ConvertToTripRequest = {},
-): Promise<ConvertToTripResponse> {
-  return tripshistoryClient.post<ConvertToTripResponse>(
-    `/stories/${storyId}:convert-to-trip`,
-    body,
-  );
-}
-
-/**
- * Alias matching the spec wording `convert-to-trip`. Kept so callers can
- * use either `convertStoryToTrip` (legacy) or `convertToTrip` (matches
- * the OpenAPI operationId).
- */
-export const convertToTrip = convertStoryToTrip;

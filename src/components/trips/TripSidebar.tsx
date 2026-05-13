@@ -21,7 +21,6 @@ import {
   Loader2,
   Sparkles,
   Clock,
-  BookHeart,
   Home,
   Pencil,
   Trash2,
@@ -248,17 +247,13 @@ interface TripSidebarProps {
   onScanDocument?: () => void;
   travelerCount?: number;
   updateTrip?: (data: Partial<Omit<Trip, 'id' | 'createdBy' | 'createdAt'>>) => Promise<void>;
-  /** True when a Tripshistory Story is attached to this trip. */
-  hasStory?: boolean;
-  /** Number of pending questions on the attached Story (0 hides the entry). */
-  pendingQuestionCount?: number;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function TripSidebar({ tripId, trip, events, currentPath, onScanDocument, travelerCount, updateTrip, hasStory = false, pendingQuestionCount = 0 }: TripSidebarProps) {
+export default function TripSidebar({ tripId, trip, events, currentPath, onScanDocument, travelerCount, updateTrip }: TripSidebarProps) {
   const basePath = ROUTES.app.trip(tripId);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -651,20 +646,6 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
               </span>
             ) : undefined}
           />
-          {hasStory && pendingQuestionCount > 0 && (
-            <NavItem
-              href={basePath}
-              label="Completar viaje"
-              sublabel={`${pendingQuestionCount} pregunta${pendingQuestionCount === 1 ? '' : 's'} pendiente${pendingQuestionCount === 1 ? '' : 's'}`}
-              icon={<BookHeart className="w-4 h-4" />}
-              isActive={false}
-              badge={(
-                <span className="text-[10px] font-bold bg-amber-400/15 text-amber-200 w-5 h-5 rounded-full flex items-center justify-center border border-amber-400/30">
-                  {pendingQuestionCount}
-                </span>
-              )}
-            />
-          )}
         </CollapsibleSection>
 
         {/* Lugar */}

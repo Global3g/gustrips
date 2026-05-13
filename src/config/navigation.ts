@@ -2,6 +2,7 @@ export const APP_NAV_ITEMS = [
   { href: '/dashboard', label: 'Mis Viajes', icon: 'LayoutDashboard' },
   { href: '/travelers', label: 'Viajeros', icon: 'Users' },
   { href: '/trips/new', label: 'Nuevo Viaje', icon: 'PlaneTakeoff' },
+  { href: '/tripshistory', label: 'Historias', icon: 'BookHeart' },
 ] as const;
 
 export const APP_BOTTOM_NAV_ITEMS = [

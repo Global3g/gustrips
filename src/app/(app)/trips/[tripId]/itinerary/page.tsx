@@ -20,9 +20,6 @@ import EventCard from '@/components/trips/EventCard';
 import EventForm from '@/components/trips/EventForm';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import AutoGenerateModal from '@/components/trips/AutoGenerateModal';
-import EventQuestionsBlock from '@/features/tripshistory/components/EventQuestionsBlock';
-import { useStoryFromTrip } from '@/features/tripshistory/hooks/useStoryFromTrip';
-import type { Question } from '@/features/tripshistory/types';
 import Button from '@/components/ui/Button';
 import { classNames, getTimezoneAbbr, getTimezoneOffset, formatDateHeaderES } from '@/lib/utils/helpers';
 import { ROUTES, EVENT_TYPE_TO_DOC_CATEGORY, EVENT_TYPES } from '@/config/constants';
@@ -151,102 +148,6 @@ export default function ItineraryPage() {
   const { trip, updateTrip } = useTrip(tripId);
   const { events, loading, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
 
-  // Tripshistory: pending questions to surface inline inside each event card.
-  const {
-    story: photoStory,
-    pendingQuestions: photoQuestions,
-    refetch: refetchStoryQuestions,
-  } = useStoryFromTrip(tripId);
-
-  // Map storyEventId -> Question[]. Used to render EventQuestionsBlock
-  // beneath the matching event card.
-  const questionsByStoryEvent = useMemo(() => {
-    const map = new Map<string, Question[]>();
-    for (const q of photoQuestions) {
-      const eid = q.context?.relatedEventId;
-      if (!eid) continue;
-      const arr = map.get(eid) ?? [];
-      arr.push(q);
-      map.set(eid, arr);
-    }
-    return map;
-  }, [photoQuestions]);
-
-  // Day-level questions, grouped by storyDayId.
-  const dayQuestionsByStoryDay = useMemo(() => {
-    const map = new Map<string, Question[]>();
-    for (const q of photoQuestions) {
-      const did = q.context?.relatedDayId;
-      if (!did) continue;
-      const arr = map.get(did) ?? [];
-      arr.push(q);
-      map.set(did, arr);
-    }
-    return map;
-  }, [photoQuestions]);
-
-  /**
-   * Build the questionsSlot for a TripEvent.
-   *
-   * Pulls pending questions whose `relatedEventId` matches this event's
-   * back-reference to the Story, and tucks day-level questions onto the
-   * LAST event of the day so users don't see them five times in a row.
-   */
-  const buildQuestionsSlot = useCallback(
-    (event: TripEvent, eventsForDay: TripEvent[]): React.ReactNode => {
-      if (!photoStory) return null;
-      const storyEventId = event.metadata?.storyEventId;
-      const storyDayId = event.metadata?.storyDayId;
-      const eventQs = storyEventId ? questionsByStoryEvent.get(storyEventId) ?? [] : [];
-
-      // Attach day questions to the last event of the day with a story ref.
-      let dayQs: Question[] = [];
-      if (storyDayId) {
-        const dayEventsWithStory = eventsForDay.filter(
-          (e) => e.metadata?.storyEventId,
-        );
-        const isLast =
-          dayEventsWithStory.length === 0 ||
-          dayEventsWithStory[dayEventsWithStory.length - 1].id === event.id;
-        if (isLast) {
-          dayQs = dayQuestionsByStoryDay.get(storyDayId) ?? [];
-        }
-      }
-
-      if (eventQs.length === 0 && dayQs.length === 0) return null;
-
-      return (
-        <EventQuestionsBlock
-          storyId={photoStory.id}
-          questions={eventQs}
-          dayQuestions={dayQs}
-          onChanged={() => { void refetchStoryQuestions(); }}
-          onNext={() => {
-            // Find next event with pending questions and scroll to it.
-            if (typeof document === 'undefined') return;
-            // Visit events globally — flat list ordered by date+time.
-            const sortedAll = [...events].sort((a, b) => {
-              const d = a.date.localeCompare(b.date);
-              return d !== 0 ? d : (a.startTime || '').localeCompare(b.startTime || '');
-            });
-            const idx = sortedAll.findIndex((e) => e.id === event.id);
-            for (let i = idx + 1; i < sortedAll.length; i++) {
-              const candidate = sortedAll[i];
-              const seid = candidate.metadata?.storyEventId;
-              if (seid && (questionsByStoryEvent.get(seid)?.length ?? 0) > 0) {
-                const el = document.querySelector(`[data-event-id="${candidate.id}"]`);
-                if (el && 'scrollIntoView' in el) {
-                  (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                return;
-              }
-            }
-          }}
-        />
-      );
-    },
-    [photoStory, questionsByStoryEvent, dayQuestionsByStoryDay, refetchStoryQuestions, events],
-  );
   const { expenses } = useExpenses(tripId);
   const expensesByEvent = useMemo(() => {
     const map: Record<string, typeof expenses> = {};
@@ -1323,7 +1224,7 @@ export default function ItineraryPage() {
                         const dotColor = EVENT_TYPES[event.type].color;
                         const status = getEventStatus(event);
                         return (
-                          <div key={event.id} className="relative" data-event-id={event.id}>
+                          <div key={event.id} className="relative">
                             {/* Timeline dot — colored by event type, status-aware */}
                             <div className="absolute left-[-29px] top-4 z-10 flex items-center justify-center w-3.5 h-3.5">
                               {status === 'live' && (
@@ -1359,7 +1260,6 @@ export default function ItineraryPage() {
                               onDeletePhoto={handleDeletePhoto}
                               tripCompleted={tripCompleted}
                               tripId={tripId}
-                              questionsSlot={buildQuestionsSlot(event, dayEvts)}
                             />
                           </div>
                         );
@@ -1531,7 +1431,7 @@ export default function ItineraryPage() {
                       </div>
 
                       {/* Event card */}
-                      <div className="flex-1 min-w-0" data-event-id={event.id}>
+                      <div className="flex-1 min-w-0">
                         <EventCard
                           event={event}
                           onEdit={handleEdit}
@@ -1545,7 +1445,6 @@ export default function ItineraryPage() {
                           onDeletePhoto={handleDeletePhoto}
                           tripCompleted={tripCompleted}
                           tripId={tripId}
-                          questionsSlot={buildQuestionsSlot(event, dayEvents)}
                         />
                       </div>
                     </div>

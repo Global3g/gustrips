@@ -9,18 +9,9 @@ import {
   ArrowRightLeft,
   Tag,
   Sparkles,
-  BookHeart,
-  Plane,
-  BedDouble,
-  Wallet,
-  Star,
   Smile,
-  Sun,
   UtensilsCrossed,
   Wand2,
-  Lightbulb,
-  ThumbsUp,
-  RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -33,61 +24,31 @@ import type {
 } from '@/features/tripshistory/types';
 
 const QUESTION_ICONS: Record<QuestionType, LucideIcon> = {
-  // existing
+  trip_title: Sparkles,
+  trip_dates: Calendar,
   location: MapPin,
   event_name: Tag,
-  companions: Users,
-  day_gap: Calendar,
   transition: ArrowRightLeft,
-  trip_dates: Calendar,
-  trip_title: Sparkles,
-  // trip-level
+  day_gap: Calendar,
   trip_companions: Users,
-  trip_purpose: BookHeart,
   trip_highlight: Sparkles,
   trip_anecdote: Smile,
-  trip_transport: Plane,
-  trip_accommodation: BedDouble,
-  trip_budget_approx: Wallet,
-  trip_learnings: Lightbulb,
-  trip_recommend: ThumbsUp,
-  trip_would_return: RotateCcw,
-  // day-level
   day_phrase: Wand2,
-  day_weather: Sun,
   day_food: UtensilsCrossed,
-  day_surprise: Sparkles,
-  // event-level
-  event_companions: Users,
-  event_rating: Star,
-  event_cost_approx: Wallet,
 };
 
 const QUESTION_LABELS: Record<QuestionType, string> = {
+  trip_title: 'Título del viaje',
+  trip_dates: 'Fechas',
   location: 'Ubicación',
   event_name: 'Evento',
-  companions: 'Compañía',
-  day_gap: 'Día sin fotos',
   transition: 'Transición',
-  trip_dates: 'Fechas',
-  trip_title: 'Título del viaje',
+  day_gap: 'Día sin fotos',
   trip_companions: 'Con quién viajaron',
-  trip_purpose: 'Motivo del viaje',
   trip_highlight: 'Mejor momento',
   trip_anecdote: 'Anécdota',
-  trip_transport: 'Transporte',
-  trip_accommodation: 'Hospedaje',
-  trip_budget_approx: 'Presupuesto',
-  trip_learnings: 'Aprendizajes',
-  trip_recommend: '¿Lo recomendarías?',
-  trip_would_return: '¿Volverías?',
   day_phrase: 'Frase del día',
-  day_weather: 'Clima',
   day_food: 'Comida memorable',
-  day_surprise: 'Algo sorprendió',
-  event_companions: '¿Quiénes estaban?',
-  event_rating: 'Recomendación',
-  event_cost_approx: 'Costo aprox',
 };
 
 interface QuestionCardProps {

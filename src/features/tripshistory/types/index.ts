@@ -149,34 +149,20 @@ export interface AnalysisState {
 /* ─── Questions ────────────────────────────────────── */
 
 export type QuestionType =
-  // existing
+  // structure / identity
+  | 'trip_title'
+  | 'trip_dates'
   | 'location'
   | 'event_name'
-  | 'companions'
-  | 'day_gap'
   | 'transition'
-  | 'trip_dates'
-  | 'trip_title'
-  // trip-level expansion
+  | 'day_gap'
+  // trip-level memory
   | 'trip_companions'
-  | 'trip_purpose'
   | 'trip_highlight'
   | 'trip_anecdote'
-  | 'trip_transport'
-  | 'trip_accommodation'
-  | 'trip_budget_approx'
-  | 'trip_learnings'
-  | 'trip_recommend'
-  | 'trip_would_return'
-  // day-level expansion
+  // day-level memory
   | 'day_phrase'
-  | 'day_weather'
-  | 'day_food'
-  | 'day_surprise'
-  // event-level expansion
-  | 'event_companions'
-  | 'event_rating'
-  | 'event_cost_approx';
+  | 'day_food';
 
 export type QuestionStatus = 'pending' | 'answered' | 'skipped';
 
@@ -285,16 +271,4 @@ export interface Storyboard {
   story: Story;
   days: StoryboardDay[];
   unassignedPhotoCount?: number;
-}
-
-/* ─── Convert to Trip ──────────────────────────────── */
-
-export interface ConvertToTripRequest {
-  title?: string;
-  destination?: string;
-}
-
-export interface ConvertToTripResponse {
-  tripId: string;
-  storyId: string;
 }
