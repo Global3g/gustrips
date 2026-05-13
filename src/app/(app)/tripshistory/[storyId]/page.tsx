@@ -5,26 +5,18 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { ArrowLeft, BookHeart, Loader2 } from 'lucide-react';
 import StoryWizard from '@/features/tripshistory/components/StoryWizard';
-import ConvertToTripBanner from '@/features/tripshistory/components/ConvertToTripBanner';
 import { useStory } from '@/features/tripshistory/hooks/useStory';
 
 /**
- * Standalone story page (no tripId).
- *
- * Renders the same StoryWizard the in-trip version uses, plus a
- * convert-to-trip banner once the story is ready and not yet linked to
- * a real Trip.
+ * Standalone story page (no tripId). Renders the StoryWizard. Stories
+ * are a self-contained "memory album" experience and never convert into
+ * planning Trips.
  */
 export default function StandaloneStoryPage() {
   const params = useParams();
   const storyId = params.storyId as string;
 
   const { data: story, loading, error } = useStory(storyId);
-
-  const showConvertBanner =
-    !!story &&
-    !story.tripId &&
-    (story.status === 'ready' || story.status === 'finalized');
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -36,10 +28,10 @@ export default function StandaloneStoryPage() {
           <ArrowLeft className="w-3.5 h-3.5" />
           Volver
         </Link>
-        {story && !story.tripId && (
+        {story && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-fuchsia-500/15 border border-fuchsia-400/30 text-fuchsia-200 text-[11px] font-bold uppercase tracking-[0.12em]">
             <BookHeart className="w-3 h-3" />
-            Reconstruyendo viaje desde fotos
+            Álbum de recuerdos
           </span>
         )}
       </div>
@@ -62,14 +54,7 @@ export default function StandaloneStoryPage() {
         </div>
       )}
 
-      {!loading && !error && story && (
-        <StoryWizard
-          storyId={story.id}
-          storyboardBanner={
-            showConvertBanner ? <ConvertToTripBanner story={story} /> : null
-          }
-        />
-      )}
+      {!loading && !error && story && <StoryWizard storyId={story.id} />}
     </div>
   );
 }

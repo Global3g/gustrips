@@ -370,38 +370,6 @@ paths:
         '204':
           description: Borrado
 
-  # ─────────────────────────────────────────────────────────────────
-  # TRIPS — integración con GusTrips
-  # ─────────────────────────────────────────────────────────────────
-  /stories/{storyId}:convert-to-trip:
-    parameters:
-      - $ref: '#/components/parameters/StoryId'
-    post:
-      tags: [trips]
-      summary: Convertir historia en Trip de GusTrips
-      description: |
-        Aplica solo a historias creadas sin `tripId` (Caso A).
-        Crea un Trip con itinerario derivado del storyboard.
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title: { type: string }
-                destination: { type: string }
-      responses:
-        '201':
-          description: Trip creado
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  tripId: { type: string }
-                  storyId: { type: string }
-
 # ════════════════════════════════════════════════════════════════════
 # COMPONENTS
 # ════════════════════════════════════════════════════════════════════

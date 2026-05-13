@@ -36,36 +36,20 @@ const TYPE_BASE_PRIORITY: Record<QuestionType, number> = {
   transition: 70,
   // identity + emotion
   trip_companions: 88,
-  trip_purpose: 85,
   trip_highlight: 80,
   event_name: 75,
-  // logistics
-  trip_transport: 70,
-  trip_accommodation: 65,
   // per day
   day_phrase: 60,
-  event_companions: 55,
   day_food: 50,
   day_gap: 50,
-  event_rating: 45,
   // longer-tail emotional
   trip_anecdote: 40,
-  trip_learnings: 35,
-  day_weather: 30,
-  day_surprise: 30,
-  companions: 30,
-  // optional / closing
-  event_cost_approx: 25,
-  trip_budget_approx: 20,
-  trip_would_return: 15,
-  trip_recommend: 10,
 };
 
 // Caps to keep the wizard from feeling like a survey.
 const MAX_DAY_LEVEL_QUESTIONS_PER_DAY = 2;
 const LONG_TRIP_DAY_THRESHOLD = 7;
 const HIGH_PHOTO_DAY_THRESHOLD = 30;
-const EVENT_LEVEL_MIN_PHOTOS = 8;
 
 // ─────────────────────────────────────────────────────────────────
 // Internal shapes
@@ -513,25 +497,6 @@ export const questionService = {
       },
     );
 
-    // Propósito / motivo del viaje.
-    pushTripQ(
-      'trip_purpose-story',
-      'trip_purpose',
-      '¿Cuál fue la razón del viaje?',
-      {
-        suggested: [
-          'Vacaciones',
-          'Aniversario',
-          'Luna de miel',
-          'Cumpleaños',
-          'Escape de fin de semana',
-          'Trabajo',
-          'Evento familiar',
-        ],
-        placeholder: 'Una razón simple alcanza',
-      },
-    );
-
     // Mejor momento de todo el viaje.
     pushTripQ(
       'trip_highlight-story',
@@ -553,84 +518,6 @@ export const questionService = {
         multiline: true,
         placeholder: 'Esa historia que siempre cuentan...',
         helperText: 'Opcional — si no se te ocurre, saltala',
-      },
-    );
-
-    // Transporte para llegar.
-    pushTripQ(
-      'trip_transport-story',
-      'trip_transport',
-      '¿Cómo llegaron al destino?',
-      {
-        suggested: ['Avión', 'Auto', 'Tren', 'Bus', 'Ferry', 'Mix de varios'],
-      },
-    );
-
-    // Hospedaje.
-    pushTripQ(
-      'trip_accommodation-story',
-      'trip_accommodation',
-      '¿Dónde se hospedaron?',
-      {
-        suggested: [
-          'Hotel',
-          'Airbnb',
-          'Hostel',
-          'Casa de familia',
-          'Camping',
-          'Cambiamos varias veces',
-        ],
-        placeholder: 'Nombre del hotel/zona si lo recuerdan',
-      },
-    );
-
-    // Presupuesto aproximado (opcional).
-    pushTripQ(
-      'trip_budget_approx-story',
-      'trip_budget_approx',
-      'Más o menos, ¿cuánto gastaron en total?',
-      {
-        skippable: true,
-        placeholder: 'Ej: $50.000 MXN — opcional',
-        helperText: 'Ayuda a estimar viajes parecidos a futuro',
-      },
-    );
-
-    // Aprendizajes.
-    pushTripQ(
-      'trip_learnings-story',
-      'trip_learnings',
-      '¿Aprendieron algo en este viaje? Una palabra, una comida nueva, una costumbre.',
-      {
-        skippable: true,
-        multiline: true,
-        placeholder: 'Lo primero que se te venga',
-      },
-    );
-
-    // Recomendación.
-    pushTripQ(
-      'trip_recommend-story',
-      'trip_recommend',
-      '¿Le recomendarías este viaje a alguien?',
-      {
-        suggested: [
-          'Sí, mil veces',
-          'Sí',
-          'Depende a quién',
-          'No mucho',
-          'No',
-        ],
-      },
-    );
-
-    // Volverían.
-    pushTripQ(
-      'trip_would_return-story',
-      'trip_would_return',
-      '¿Volverías a este destino?',
-      {
-        suggested: ['Mañana mismo', 'Sí', 'Tal vez', 'No creo'],
       },
     );
 
@@ -669,16 +556,6 @@ export const questionService = {
         });
       }
 
-      // day_weather — siempre, conversacional.
-      dayProposals.push({
-        id: `day_weather-${day.date}`,
-        type: 'day_weather',
-        prompt: `¿Cómo estuvo el clima el ${friendly}?`,
-        ctx: { relatedDayId: day.id, skippable: true },
-        suggested: ['Soleado', 'Nublado', 'Lluvioso', 'Frío', 'Caluroso', 'Mezcla'],
-        priority: TYPE_BASE_PRIORITY.day_weather,
-      });
-
       // day_food — solo si hay buen rastro de comida (cluster en horario o muchas fotos).
       const dayEvents = events.filter((e) => e.dayId === day.id);
       const mealHinted = dayEvents.some((e) => {
@@ -705,22 +582,6 @@ export const questionService = {
         });
       }
 
-      // day_surprise — heurística simple: si el día tiene >=15 fotos.
-      if (photoCount >= 15) {
-        dayProposals.push({
-          id: `day_surprise-${day.date}`,
-          type: 'day_surprise',
-          prompt: `¿Algo de ese día les sorprendió?`,
-          ctx: {
-            relatedDayId: day.id,
-            skippable: true,
-            multiline: true,
-            placeholder: 'Algo inesperado, bueno o malo',
-          },
-          priority: TYPE_BASE_PRIORITY.day_surprise,
-        });
-      }
-
       // Cap a top-N por prioridad para no inundar.
       dayProposals
         .sort((a, b) => b.priority - a.priority)
@@ -742,91 +603,6 @@ export const questionService = {
             },
           });
         });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Event-level expansion (only events with >=8 photos)
-    // ═══════════════════════════════════════════════════════════════
-
-    for (const ev of events) {
-      const photoCount = ev.photoCount ?? ev.photoIds?.length ?? 0;
-      if (photoCount < EVENT_LEVEL_MIN_PHOTOS) continue;
-
-      const evLabel = ev.title ?? 'ese momento';
-
-      // event_companions
-      proposed.push({
-        id: `event_companions-${ev.id}`,
-        data: {
-          storyId,
-          type: 'event_companions',
-          prompt: `¿Quiénes estaban en ${evLabel}? ¿Todo el grupo o solo algunos?`,
-          context: {
-            relatedEventId: ev.id,
-            relatedDayId: ev.dayId,
-            photoCount,
-            skippable: true,
-          },
-          suggestedAnswers: ['Todo el grupo', 'Solo yo', 'En pareja', 'Subgrupo'],
-          priority: TYPE_BASE_PRIORITY.event_companions,
-          status: 'pending',
-          answer: null,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          answeredAt: null,
-        },
-      });
-
-      // event_rating
-      proposed.push({
-        id: `event_rating-${ev.id}`,
-        data: {
-          storyId,
-          type: 'event_rating',
-          prompt: `¿Cómo describirías ${evLabel} como experiencia?`,
-          context: {
-            relatedEventId: ev.id,
-            relatedDayId: ev.dayId,
-            skippable: true,
-          },
-          suggestedAnswers: [
-            'Imperdible',
-            'Está muy bueno',
-            'Bien',
-            'Nada del otro mundo',
-            'Salteable',
-          ],
-          priority: TYPE_BASE_PRIORITY.event_rating,
-          status: 'pending',
-          answer: null,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          answeredAt: null,
-        },
-      });
-
-      // event_cost_approx — solo si tiene location y el día tiene varios eventos
-      const sameDayEvents = events.filter((e) => e.dayId === ev.dayId).length;
-      if (ev.location && sameDayEvents > 1) {
-        proposed.push({
-          id: `event_cost_approx-${ev.id}`,
-          data: {
-            storyId,
-            type: 'event_cost_approx',
-            prompt: `¿Cuánto les costó ${evLabel}?`,
-            context: {
-              relatedEventId: ev.id,
-              relatedDayId: ev.dayId,
-              skippable: true,
-              placeholder: 'Aprox, opcional',
-              helperText: 'Suma al presupuesto del viaje',
-            },
-            priority: TYPE_BASE_PRIORITY.event_cost_approx,
-            status: 'pending',
-            answer: null,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            answeredAt: null,
-          },
-        });
-      }
     }
 
     // ─── Persist: upsert each proposed question. Skip if existing doc
@@ -1025,19 +801,11 @@ export const questionService = {
         }
         break;
 
-      // ─── Trip-level metadata ──────────────────────────────────────
+      // ─── Trip-level metadata (essential album questions) ─────────
       case 'trip_companions':
-      case 'trip_purpose':
       case 'trip_highlight':
       case 'trip_anecdote':
-      case 'trip_transport':
-      case 'trip_accommodation':
-      case 'trip_budget_approx':
-      case 'trip_learnings':
-      case 'trip_recommend':
-      case 'trip_would_return':
-      case 'trip_dates':
-      case 'companions': {
+      case 'trip_dates': {
         const key = stripPrefix(stored.type);
         await db.doc(paths.story(userId, storyId)).set(
           {
@@ -1049,11 +817,9 @@ export const questionService = {
         break;
       }
 
-      // ─── Day-level metadata ───────────────────────────────────────
+      // ─── Day-level metadata (essential album questions) ──────────
       case 'day_phrase':
-      case 'day_weather':
-      case 'day_food':
-      case 'day_surprise': {
+      case 'day_food': {
         if (ctx?.relatedDayId) {
           const key = stripPrefix(stored.type);
           await db.doc(paths.day(userId, storyId, ctx.relatedDayId)).set(
@@ -1067,24 +833,16 @@ export const questionService = {
         break;
       }
 
-      // ─── Event-level metadata ─────────────────────────────────────
-      case 'event_companions':
-      case 'event_rating':
-      case 'event_cost_approx': {
-        if (ctx?.relatedEventId) {
-          const key = stripPrefix(stored.type);
-          await db.doc(paths.event(userId, storyId, ctx.relatedEventId)).set(
-            {
-              metadata: { [key]: valueForMetadata },
-              updatedAt: now,
-            },
-            { merge: true },
-          );
-        }
-        break;
-      }
-
       default:
+        // Unknown / legacy types: store as metadata blob on story so we
+        // never lose an answer if a stale question still exists.
+        await db.doc(paths.story(userId, storyId)).set(
+          {
+            metadata: { [`legacy_${stored.type}`]: valueForMetadata },
+            updatedAt: now,
+          },
+          { merge: true },
+        );
         break;
     }
 

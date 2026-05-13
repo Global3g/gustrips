@@ -11,6 +11,7 @@ import {
   HardDriveDownload,
   Loader2,
   Compass,
+  BookHeart,
 } from 'lucide-react';
 import { APP_NAV_ITEMS } from '@/config/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,6 +51,7 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   LayoutDashboard,
   Users,
   PlaneTakeoff,
+  BookHeart,
 };
 
 export default function AppSidebar() {

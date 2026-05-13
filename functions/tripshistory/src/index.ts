@@ -19,7 +19,6 @@ import { photosRouter } from './routes/photos';
 import { analysisRouter } from './routes/analysis';
 import { questionsRouter } from './routes/questions';
 import { storyboardRouter } from './routes/storyboard';
-import { tripsRouter } from './routes/trips';
 import { errorHandler, notFoundHandler } from './middleware/errors';
 
 export const app = express();
@@ -71,7 +70,6 @@ app.use('/', photosRouter);
 app.use('/', analysisRouter);
 app.use('/', questionsRouter);
 app.use('/', storyboardRouter);
-app.use('/', tripsRouter);
 
 // 404 + centralized error handler must be registered LAST.
 app.use(notFoundHandler);
