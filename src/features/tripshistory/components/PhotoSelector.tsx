@@ -256,6 +256,8 @@ export default function PhotoSelector({
       });
     };
 
+    const errors: string[] = [];
+
     const worker = async () => {
       while (true) {
         const idx = cursor++;
@@ -279,7 +281,12 @@ export default function PhotoSelector({
           };
           updateStatus(idx, 'done');
         } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Falló el procesamiento';
+          const msg = err instanceof Error ? err.message : String(err);
+          // Surface the underlying error in the console for debugging. The
+          // per-item chip shows the same `msg` so you can hover it too.
+          // eslint-disable-next-line no-console
+          console.error('[PhotoSelector] failed processing', file.name, err);
+          errors.push(`${file.name}: ${msg}`);
           updateStatus(idx, 'error', msg);
         } finally {
           setProgress((p) => ({ done: p.done + 1, total: p.total }));
@@ -297,7 +304,13 @@ export default function PhotoSelector({
     setProcessing(false);
 
     if (successful.length === 0) {
-      setGlobalError('No pudimos procesar ninguna foto. Revisá los archivos y volvé a intentar.');
+      // Show the first concrete failure so the user has a real lead.
+      const firstError = errors[0];
+      setGlobalError(
+        firstError
+          ? `No pudimos procesar ninguna foto. Primer error: ${firstError}`
+          : 'No pudimos procesar ninguna foto. Revisá los archivos y volvé a intentar.',
+      );
       return;
     }
 
