@@ -31,10 +31,11 @@ interface SelectedItem {
   error?: string;
 }
 
-// Server-side HEIC conversion can be slow on cold start (a few seconds per
-// photo). Keep parallelism low so we don't queue 4 long-running requests
-// against the same Cloud Run instance.
-const PROCESSING_CONCURRENCY = 2;
+// With the slimmer pipeline (no pHash on mobile, 2 sizes instead of 3,
+// no 2400px full re-encode) each photo finishes much faster. We can run
+// 4 in parallel without saturating the Cloud Run HEIC converter — Cloud
+// Run autoscales instances when traffic spikes.
+const PROCESSING_CONCURRENCY = 4;
 
 /**
  * File picker + drag-drop surface. When the user hits "Procesar fotos" we:

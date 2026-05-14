@@ -28,10 +28,16 @@ interface SizeSpec {
   quality: number;
 }
 
+// Aggressive sizing for mobile speed. The previous 3 sizes (200/800/2400)
+// meant generating 3 canvas blobs + 3 Storage uploads per photo, which on
+// a phone took 5-10 s per file. Two sizes is enough for the album use
+// case: a small thumb for grids and a medium for lightbox. We dropped the
+// 2400px "full" — the original-quality version isn't needed for memory
+// albums, and re-encoding 12 MP photos to JPEG on a phone CPU is the
+// single biggest source of latency in the upload pipeline.
 const SIZES: readonly SizeSpec[] = [
-  { label: 'thumb', maxEdge: 200, quality: 0.75 },
-  { label: 'medium', maxEdge: 800, quality: 0.82 },
-  { label: 'full', maxEdge: 2400, quality: 0.88 },
+  { label: 'thumb', maxEdge: 300, quality: 0.78 },
+  { label: 'medium', maxEdge: 1200, quality: 0.84 },
 ] as const;
 
 /* ─── Image resize helpers ─────────────────────────── */
@@ -139,12 +145,18 @@ export async function uploadPhotoToStory(
   );
 
   const urls = await Promise.all(refs.map((r) => getDownloadURL(r)));
-  const fullBlob = blobs[SIZES.findIndex((s) => s.label === 'full')];
+  // "full" was removed — use medium as the largest available variant.
+  const largestIdx = SIZES.findIndex((s) => s.label === 'medium');
+  const largestBlob = blobs[largestIdx];
 
+  const mediumUrl = urls[SIZES.findIndex((s) => s.label === 'medium')];
   return {
     thumbnailUrl: urls[SIZES.findIndex((s) => s.label === 'thumb')],
-    mediumUrl: urls[SIZES.findIndex((s) => s.label === 'medium')],
-    fullUrl: urls[SIZES.findIndex((s) => s.label === 'full')],
-    sizeBytes: fullBlob.size,
+    mediumUrl,
+    // No more "full" variant generated client-side. Consumers that read
+    // photo.fullUrl get the medium one — visually fine for an album, much
+    // cheaper to produce on a phone.
+    fullUrl: mediumUrl,
+    sizeBytes: largestBlob.size,
   };
 }
