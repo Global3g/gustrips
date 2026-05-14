@@ -90,13 +90,15 @@ exports.heicToJpeg = onRequest(
         return;
       }
 
+      // sharp uses libvips compiled with libheif including the HEVC decoder
+      // (the heic-convert package's pure-JS libheif build cannot decode
+      // HEVC 10-bit, which is iPhone 12+ default).
       // eslint-disable-next-line global-require
-      const heicConvert = require('heic-convert');
-      const jpegBuffer = await heicConvert({
-        buffer: inputBuffer,
-        format: 'JPEG',
-        quality: 0.9,
-      });
+      const sharp = require('sharp');
+      const jpegBuffer = await sharp(inputBuffer, { failOn: 'none' })
+        .rotate() // auto-rotate from EXIF
+        .jpeg({ quality: 90, mozjpeg: true })
+        .toBuffer();
 
       res.setHeader('Content-Type', 'image/jpeg');
       res.setHeader('Cache-Control', 'no-store');
