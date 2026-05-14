@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
   Plane,
@@ -24,7 +25,12 @@ import { parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/context/ToastContext';
-import OnboardingModal from '@/components/onboarding/OnboardingModal';
+// OnboardingModal is shown only to first-time users; ship it lazily so the
+// dashboard JS stays lean for the 99% of visits where it never renders.
+const OnboardingModal = dynamic(
+  () => import('@/components/onboarding/OnboardingModal'),
+  { ssr: false },
+);
 import { ROUTES } from '@/config/constants';
 import { classNames, formatDateShortES } from '@/lib/utils/helpers';
 import type { Trip } from '@/types';

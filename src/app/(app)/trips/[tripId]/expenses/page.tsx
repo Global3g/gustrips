@@ -1,15 +1,30 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Plus, List, BarChart3, Scale, CalendarDays } from 'lucide-react';
 import { classNames } from '@/lib/utils/helpers';
 import { CaptureTab } from '@/components/expenses/CaptureTab';
-import { HistoryTab } from '@/components/expenses/HistoryTab';
-import { BudgetComparisonTab } from '@/components/expenses/BudgetComparisonTab';
-import { BalanceTab } from '@/components/expenses/BalanceTab';
-import { DailyBudgetTab } from '@/components/expenses/DailyBudgetTab';
+// Only the default "Capturar" tab ships in the initial chunk. The other tabs
+// load on tap — each pulls its own chart/aggregate code.
+const HistoryTab = dynamic(
+  () => import('@/components/expenses/HistoryTab').then((m) => ({ default: m.HistoryTab })),
+  { ssr: false, loading: () => null },
+);
+const BudgetComparisonTab = dynamic(
+  () => import('@/components/expenses/BudgetComparisonTab').then((m) => ({ default: m.BudgetComparisonTab })),
+  { ssr: false, loading: () => null },
+);
+const BalanceTab = dynamic(
+  () => import('@/components/expenses/BalanceTab').then((m) => ({ default: m.BalanceTab })),
+  { ssr: false, loading: () => null },
+);
+const DailyBudgetTab = dynamic(
+  () => import('@/components/expenses/DailyBudgetTab').then((m) => ({ default: m.DailyBudgetTab })),
+  { ssr: false, loading: () => null },
+);
 
 type Tab = 'capture' | 'history' | 'budget' | 'balance' | 'daily';
 

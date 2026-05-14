@@ -37,8 +37,9 @@ import {
   formatDateES,
   getInitials,
 } from '@/lib/utils/helpers';
-import { exportRecapPdf } from '@/lib/utils/exportRecapPdf';
-import Particles from '@/components/ui/Particles';
+import dynamic from 'next/dynamic';
+// jspdf is huge — only load on click. Particles is decorative.
+const Particles = dynamic(() => import('@/components/ui/Particles'), { ssr: false, loading: () => null });
 import type { TripEvent, ExpenseCategory, AlbumPhoto } from '@/types';
 
 /* ─── Helpers ──────────────────────────────────────── */
@@ -363,6 +364,7 @@ export default function TripRecapPage() {
           }
         : undefined;
 
+      const { exportRecapPdf } = await import('@/lib/utils/exportRecapPdf');
       await exportRecapPdf({
         trip,
         events,

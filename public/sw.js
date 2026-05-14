@@ -1,22 +1,69 @@
-/* GusTrips Service Worker — Push Notifications + Web Share Target */
+/* GusTrips Service Worker
+ * - Cache-first for /_next/static, fonts, JS, CSS (immutable)
+ * - Stale-while-revalidate for HTML app-shell routes
+ * - Cache-first w/ 30-day max age for Firebase Storage images
+ * - Excludes /login, /api, /share (POST) from caching
+ * - Preserves: Web Share Target (POST /share) + Push notifications
+ */
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+const SW_VERSION = 'gustrips-v3-2026-05-14';
+const STATIC_CACHE = `${SW_VERSION}-static`;
+const SHELL_CACHE = `${SW_VERSION}-shell`;
+const IMAGE_CACHE = `${SW_VERSION}-images`;
+
+const IMAGE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SHELL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days fallback freshness
+
+// Routes we never cache responses for (auth-sensitive or POST endpoints).
+const NEVER_CACHE_PATHS = [
+  '/login',
+  '/register',
+  '/api/',
+];
+
+const APP_SHELL_URLS = [
+  '/dashboard',
+  '/manifest.json',
+  '/favicon.png',
+  '/favicon.svg',
+  '/apple-touch-icon.png',
+  '/icon-192.png',
+  '/icon-512.png',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const shell = await caches.open(SHELL_CACHE);
+      // Try to prime the dashboard + icons. If the user is offline at install
+      // time, individual failures are swallowed so install still succeeds.
+      await Promise.all(
+        APP_SHELL_URLS.map((url) =>
+          shell.add(url).catch(() => {/* best-effort */})
+        )
+      );
+    } catch {
+      // best-effort
+    }
+    self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((k) => !k.startsWith(SW_VERSION))
+        .map((k) => caches.delete(k))
+    );
+    await self.clients.claim();
+  })());
 });
 
 /* ── Web Share Target ──
-   The PWA manifest declares share_target.action = "/share" with method POST
-   and multipart/form-data. When the user picks "GusTrips" from the macOS/iOS
-   share sheet (Photos.app, Safari, etc.), the OS posts to /share. We intercept
-   that POST here, stash the files in IndexedDB, and 303-redirect to GET /share
-   so the page can pick them up and route them to the right trip.
-
-   Falls through (no respondWith) for everything else — keeps the network path
-   untouched and avoids the latency regression we hit before. */
+ * PWA manifest declares share_target.action = "/share". On POST we stash files
+ * in IndexedDB then redirect to GET /share so the page can route them. */
 
 const SHARED_INBOX_DB_NAME = 'gustrips-shared-inbox';
 const SHARED_INBOX_DB_VERSION = 1;
@@ -66,27 +113,198 @@ async function stashSharedFiles(files) {
   });
 }
 
+/* ── Cache helpers ── */
+
+function isStaticAsset(url) {
+  return (
+    url.pathname.startsWith('/_next/static/') ||
+    url.pathname.startsWith('/_next/image') ||
+    /\.(?:js|css|woff2?|ttf|otf|eot|ico)$/i.test(url.pathname)
+  );
+}
+
+function isAppIcon(url) {
+  return /\/(favicon\.(?:png|ico|svg)|apple-touch-icon\.png|icon-\d+\.png|compass-icon\.png|manifest\.json)$/i.test(
+    url.pathname,
+  );
+}
+
+function isFirebaseImage(url) {
+  return (
+    url.hostname === 'firebasestorage.googleapis.com' ||
+    url.hostname.endsWith('.googleusercontent.com')
+  );
+}
+
+function isHtmlRequest(req) {
+  if (req.mode === 'navigate') return true;
+  const accept = req.headers.get('accept') || '';
+  return accept.includes('text/html');
+}
+
+function isExcluded(url) {
+  if (NEVER_CACHE_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(p))) {
+    return true;
+  }
+  return false;
+}
+
+async function cacheFirst(req, cacheName, maxAgeMs) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+  if (cached) {
+    // Check freshness for images / shell. Static immutable assets get no TTL.
+    if (maxAgeMs) {
+      const dateHeader = cached.headers.get('sw-cached-at');
+      if (dateHeader) {
+        const cachedAt = Number(dateHeader);
+        if (!Number.isNaN(cachedAt) && Date.now() - cachedAt < maxAgeMs) {
+          return cached;
+        }
+      } else {
+        return cached;
+      }
+    } else {
+      return cached;
+    }
+  }
+  try {
+    const network = await fetch(req);
+    if (network && network.ok && network.type !== 'opaqueredirect') {
+      // Wrap the response to stamp cached-at metadata.
+      const cloned = await stampedResponse(network.clone());
+      cache.put(req, cloned).catch(() => {/* quota / opaque issues */});
+    }
+    return network;
+  } catch (err) {
+    if (cached) return cached;
+    throw err;
+  }
+}
+
+async function staleWhileRevalidate(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+  const networkPromise = fetch(req)
+    .then(async (res) => {
+      if (res && res.ok && res.type !== 'opaqueredirect') {
+        const stamped = await stampedResponse(res.clone());
+        cache.put(req, stamped).catch(() => {});
+      }
+      return res;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    // Kick off revalidation but return cached immediately.
+    networkPromise.catch(() => {});
+    return cached;
+  }
+  const network = await networkPromise;
+  if (network) return network;
+  // Last-resort offline fallback: try the cached dashboard.
+  const fallback = await cache.match('/dashboard');
+  if (fallback) return fallback;
+  return new Response('Offline', { status: 503, statusText: 'Offline' });
+}
+
+async function stampedResponse(res) {
+  // Wrap a response so we know when it was cached. We can't mutate headers on
+  // an opaque/network response directly, so we rebuild it.
+  try {
+    const body = await res.blob();
+    const headers = new Headers(res.headers);
+    headers.set('sw-cached-at', String(Date.now()));
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  } catch {
+    return res;
+  }
+}
+
+/* ── Fetch handler ── */
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'POST') return;
+
+  // ── Web Share Target (POST /share) ──
+  if (req.method === 'POST') {
+    const url = new URL(req.url);
+    if (url.pathname === '/share') {
+      event.respondWith((async () => {
+        try {
+          const formData = await req.formData();
+          const files = formData.getAll('files');
+          if (files.length > 0) {
+            await stashSharedFiles(files);
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[SW] share target stash failed', err);
+        }
+        return Response.redirect('/share?incoming=1', 303);
+      })());
+      return;
+    }
+    // All other POSTs: passthrough.
+    return;
+  }
+
+  // Only GETs from here on.
+  if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  if (url.pathname !== '/share') return;
 
+  // Cross-origin: only handle Firebase Storage images, skip the rest.
+  if (url.origin !== self.location.origin) {
+    if (isFirebaseImage(url)) {
+      event.respondWith(cacheFirst(req, IMAGE_CACHE, IMAGE_MAX_AGE_MS));
+    }
+    return;
+  }
+
+  // Auth-sensitive / API endpoints: passthrough, no caching.
+  if (isExcluded(url)) {
+    return;
+  }
+
+  // Service worker itself: always network so updates land.
+  if (url.pathname === '/sw.js') {
+    return;
+  }
+
+  // Static assets (JS/CSS/fonts/_next/static): cache-first, immutable.
+  if (isStaticAsset(url)) {
+    event.respondWith(cacheFirst(req, STATIC_CACHE, null));
+    return;
+  }
+
+  // PWA icons / favicons: cache-first with shell TTL.
+  if (isAppIcon(url)) {
+    event.respondWith(cacheFirst(req, SHELL_CACHE, SHELL_MAX_AGE_MS));
+    return;
+  }
+
+  // HTML / navigation: stale-while-revalidate against shell cache.
+  if (isHtmlRequest(req)) {
+    event.respondWith(staleWhileRevalidate(req, SHELL_CACHE));
+    return;
+  }
+
+  // Everything else (images, fetches, etc.): try network with cache fallback.
   event.respondWith((async () => {
     try {
-      const formData = await req.formData();
-      const files = formData.getAll('files');
-      if (files.length > 0) {
-        await stashSharedFiles(files);
-      }
-    } catch (err) {
-      // Fall through to GET — we'd rather show an empty share page than 500
-      // since iOS/macOS doesn't surface error responses to the user.
-      // eslint-disable-next-line no-console
-      console.warn('[SW] share target stash failed', err);
+      const network = await fetch(req);
+      return network;
+    } catch {
+      const cache = await caches.open(SHELL_CACHE);
+      const cached = await cache.match(req);
+      if (cached) return cached;
+      throw new Error('Offline and no cached response');
     }
-    return Response.redirect('/share?incoming=1', 303);
   })());
 });
 
@@ -130,14 +348,19 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      // Focus existing tab if found
       for (const client of clients) {
         if (client.url.includes('/trips/') && 'focus' in client) {
           return client.focus();
         }
       }
-      // Otherwise open new tab
       return self.clients.openWindow(url);
     }),
   );
+});
+
+/* ── Allow the page to ask us to skipWaiting (forces fresh SW activation) ── */
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

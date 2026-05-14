@@ -17,9 +17,10 @@ import { useDocuments } from '@/hooks/useDocuments';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useToast } from '@/context/ToastContext';
 import EventCard from '@/components/trips/EventCard';
-import EventForm from '@/components/trips/EventForm';
-import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
-import AutoGenerateModal from '@/components/trips/AutoGenerateModal';
+// Modal forms — only load on tap. Each pulls form helpers + framer-motion.
+const EventForm = dynamic(() => import('@/components/trips/EventForm'), { ssr: false, loading: () => null });
+const ScanDocumentModal = dynamic(() => import('@/components/trips/ScanDocumentModal'), { ssr: false, loading: () => null });
+const AutoGenerateModal = dynamic(() => import('@/components/trips/AutoGenerateModal'), { ssr: false, loading: () => null });
 import Button from '@/components/ui/Button';
 import { classNames, getTimezoneAbbr, getTimezoneOffset, formatDateHeaderES } from '@/lib/utils/helpers';
 import { ROUTES, EVENT_TYPE_TO_DOC_CATEGORY, EVENT_TYPES } from '@/config/constants';

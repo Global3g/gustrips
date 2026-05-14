@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { BorderBeam } from 'border-beam';
 import {
   MapPin,
   Calendar,
@@ -57,24 +57,53 @@ import { useMembers } from '@/hooks/useMembers';
 import { useChecklist } from '@/hooks/useChecklist';
 import { useMilestones } from '@/hooks/useMilestones';
 import { useToast } from '@/context/ToastContext';
-import TripForm from '@/components/trips/TripForm';
 import { Button } from '@/components/ui/Button';
-import { exportTripPdf } from '@/lib/utils/exportPdf';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { buildIcsString, downloadIcsFile, getTripIcsFilename } from '@/lib/utils/exportIcs';
-import QRCode from '@/components/ui/QRCode';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { TRIP_STATUS, ROUTES, EVENT_TYPES } from '@/config/constants';
 import { glassStyle, classNames, formatCurrency, formatDateES, generateId } from '@/lib/utils/helpers';
 import { nowISO } from '@/lib/utils/helpers';
 import SpotlightCard from '@/components/ui/SpotlightCard';
-import Particles from '@/components/ui/Particles';
 import PendingExpensesBanner from '@/components/expenses/PendingExpensesBanner';
-import SmartSuggestionsBanner from '@/components/trips/SmartSuggestionsBanner';
-import NotificationsBanner from '@/components/trips/NotificationsBanner';
-import CompanionBanner from '@/components/trips/CompanionBanner';
 import QuickActionsRow from '@/components/trips/QuickActionsRow';
 import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
+
+/* ── Dynamic / below-the-fold imports ─────────────────────────────────
+ * Each of these is heavy or conditional and shouldn't ship in the first
+ * trip-detail chunk:
+ *   - TripForm + DocumentUpload + photo cropping bring tons of UI weight; the
+ *     edit modal is only shown when the user taps "Editar".
+ *   - jspdf + autotable (~150KB) only runs on tap of "Exportar PDF".
+ *   - QRCode is only rendered inside the share modal.
+ *   - Particles is decorative WebGL/canvas eye-candy below the fold.
+ *   - The three smart banners (Companion / Notifications / Suggestions) all
+ *     run their own Firestore queries and aren't required for first paint.
+ */
+const TripForm = dynamic(
+  () => import('@/components/trips/TripForm'),
+  { ssr: false, loading: () => null },
+);
+const QRCode = dynamic(
+  () => import('@/components/ui/QRCode'),
+  { ssr: false, loading: () => null },
+);
+const Particles = dynamic(
+  () => import('@/components/ui/Particles'),
+  { ssr: false, loading: () => null },
+);
+const CompanionBanner = dynamic(
+  () => import('@/components/trips/CompanionBanner'),
+  { ssr: false, loading: () => null },
+);
+const NotificationsBanner = dynamic(
+  () => import('@/components/trips/NotificationsBanner'),
+  { ssr: false, loading: () => null },
+);
+const SmartSuggestionsBanner = dynamic(
+  () => import('@/components/trips/SmartSuggestionsBanner'),
+  { ssr: false, loading: () => null },
+);
 
 /* ─── Countdown Badge ─────────────────────────────── */
 
@@ -227,52 +256,67 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
   const dayLabel = isToday ? 'Hoy' : format(parseISO(upcoming.date), "EEEE d 'de' MMMM", { locale: es });
 
   return (
-    <Link href={`/trips/${tripId}/itinerary`}>
-      <BorderBeam
-        size="md"
-        colorVariant="colorful"
-        theme="dark"
-        duration={4}
-        brightness={1.5}
-        strength={1.5}
-        saturation={1.5}
-        active
-        className="rounded-2xl"
-      >
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-        className="rounded-2xl p-5 bg-white/[0.04] backdrop-blur-sm border border-white/[0.08] hover:shadow-[0_0_25px_rgba(59,130,246,0.15)] transition-all group"
-        style={{ background: 'linear-gradient(135deg, rgba(12,25,41,0.95) 0%, rgba(22,42,68,0.95) 100%)' }}
-      >
-        <div className="flex items-center gap-1.5 mb-3">
-          <Navigation className="w-3.5 h-3.5 text-blue-400" />
-          <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">
-            {isToday ? 'Siguiente' : 'Proximo evento'}
-          </span>
-          <span className="text-xs text-white/30 capitalize ml-auto">{dayLabel}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          {upcoming.startTime && (
-            <div className="text-3xl font-black text-blue-400 tabular-nums leading-none">
-              {upcoming.startTime}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-bold text-base truncate">{upcoming.title}</p>
-            {upcoming.location && (
-              <p className="text-white/40 text-sm flex items-center gap-1 mt-1 truncate">
-                <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-blue-400/60" />
-                {upcoming.location}
-              </p>
-            )}
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes beam-walk-${tripId.replace(/[^a-z0-9]/gi, '')} { to { offset-distance: 100%; } }
+        .beam-track-${tripId.replace(/[^a-z0-9]/gi, '')} {
+          position: absolute;
+          top: 0; left: 0;
+          width: 140px;
+          height: 3px;
+          border-radius: 999px;
+          background: linear-gradient(90deg,
+            transparent 0%,
+            #06b6d4 15%,
+            #38bdf8 40%,
+            #a78bfa 65%,
+            #ec4899 85%,
+            transparent 100%
+          );
+          offset-path: inset(-2px round 18px);
+          offset-distance: 0%;
+          offset-rotate: auto;
+          animation: beam-walk-${tripId.replace(/[^a-z0-9]/gi, '')} 8s linear infinite;
+          pointer-events: none;
+          z-index: 10;
+        }
+      ` }} />
+      <Link href={`/trips/${tripId}/itinerary`} className="block">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+          className="relative rounded-2xl p-5 hover:shadow-[0_0_25px_rgba(59,130,246,0.15)] transition-all group"
+          style={{ background: 'linear-gradient(135deg, #0c1929 0%, #162a44 100%)' }}
+        >
+          <div className={`beam-track-${tripId.replace(/[^a-z0-9]/gi, '')}`} aria-hidden />
+          <div className="flex items-center gap-1.5 mb-3 relative z-0">
+            <Navigation className="w-3.5 h-3.5 text-blue-400" />
+            <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">
+              {isToday ? 'Siguiente' : 'Proximo evento'}
+            </span>
+            <span className="text-xs text-white/30 capitalize ml-auto">{dayLabel}</span>
           </div>
-          <ChevronRight className="w-5 h-5 text-white/20 group-hover:text-blue-400 transition-colors flex-shrink-0" />
-        </div>
-      </motion.div>
-      </BorderBeam>
-    </Link>
+          <div className="flex items-center gap-4 relative z-0">
+            {upcoming.startTime && (
+              <div className="text-3xl font-black text-blue-400 tabular-nums leading-none">
+                {upcoming.startTime}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-base truncate">{upcoming.title}</p>
+              {upcoming.location && (
+                <p className="text-white/40 text-sm flex items-center gap-1 mt-1 truncate">
+                  <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-blue-400/60" />
+                  {upcoming.location}
+                </p>
+              )}
+            </div>
+            <ChevronRight className="w-5 h-5 text-white/20 group-hover:text-blue-400 transition-colors flex-shrink-0" />
+          </div>
+        </motion.div>
+      </Link>
+    </>
   );
 }
 
@@ -618,9 +662,15 @@ export default function TripDetailPage() {
     finally { setDuplicating(false); }
   };
 
-  const handleExportPdf = () => {
-    try { exportTripPdf(trip, events, members, checklistItems); toast('PDF descargado', 'success'); }
-    catch { toast('Error al generar PDF', 'error'); }
+  const handleExportPdf = async () => {
+    try {
+      // jspdf + autotable add ~150KB gzipped. Load on demand only.
+      const { exportTripPdf } = await import('@/lib/utils/exportPdf');
+      exportTripPdf(trip, events, members, checklistItems);
+      toast('PDF descargado', 'success');
+    } catch {
+      toast('Error al generar PDF', 'error');
+    }
   };
 
   const handleBackup = async () => {

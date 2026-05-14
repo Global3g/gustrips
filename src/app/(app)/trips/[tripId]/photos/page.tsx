@@ -42,8 +42,8 @@ import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useToast } from '@/context/ToastContext';
-import Particles from '@/components/ui/Particles';
-import TripInsights from '@/components/trips/TripInsights';
+const Particles = dynamic(() => import('@/components/ui/Particles'), { ssr: false, loading: () => null });
+const TripInsights = dynamic(() => import('@/components/trips/TripInsights'), { ssr: false, loading: () => null });
 const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
 const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePhoto'), { ssr: false });
 const MobileScrollHelper = dynamic(

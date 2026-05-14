@@ -1,13 +1,20 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Receipt, CalendarPlus, Camera } from 'lucide-react';
-import EventForm from '@/components/trips/EventForm';
 import { useEvents } from '@/hooks/useEvents';
 import { useToast } from '@/context/ToastContext';
 import type { Trip } from '@/types';
+
+// EventForm pulls a heavy form tree (date picker, location autocomplete, etc.)
+// — only load when the user actually taps "Evento".
+const EventForm = dynamic(() => import('@/components/trips/EventForm'), {
+  ssr: false,
+  loading: () => null,
+});
 
 interface QuickActionsRowProps {
   tripId: string;

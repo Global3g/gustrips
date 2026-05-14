@@ -2,19 +2,47 @@
 
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import AuthGuard from '@/components/layout/AuthGuard';
 import AppSidebar from '@/components/layout/AppSidebar';
 import AppBottomNav from '@/components/layout/AppBottomNav';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
 import { ToastProvider } from '@/context/ToastContext';
-import { Chatbot } from '@/components/chat/Chatbot';
-import CommandPaletteProvider from '@/components/CommandPaletteProvider';
-import KeyboardShortcuts from '@/components/KeyboardShortcuts';
-import MilestoneBanner from '@/components/MilestoneBanner';
 import OfflineIndicator from '@/components/OfflineIndicator';
-import SyncIndicator from '@/components/SyncIndicator';
-import PendingPhotoSync from '@/components/PendingPhotoSync';
 import { classNames } from '@/lib/utils/helpers';
+
+/* ── Below-the-fold / interaction-only widgets — lazy ────────────────
+ *
+ * None of these need to be in the initial chunk: the Chatbot only opens on
+ * tap, the CommandPalette is keyboard-triggered, KeyboardShortcuts only acts
+ * on key events, the MilestoneBanner only fires after a milestone event,
+ * Sync/Pending indicators only matter once Firebase resolves auth, and
+ * OnboardingModal only shows for first-time users. Pulling them out of the
+ * initial bundle is the single biggest first-paint win for dashboard. */
+const Chatbot = dynamic(
+  () => import('@/components/chat/Chatbot').then((m) => ({ default: m.Chatbot })),
+  { ssr: false },
+);
+const CommandPaletteProvider = dynamic(
+  () => import('@/components/CommandPaletteProvider'),
+  { ssr: false },
+);
+const KeyboardShortcuts = dynamic(
+  () => import('@/components/KeyboardShortcuts'),
+  { ssr: false },
+);
+const MilestoneBanner = dynamic(
+  () => import('@/components/MilestoneBanner'),
+  { ssr: false },
+);
+const SyncIndicator = dynamic(
+  () => import('@/components/SyncIndicator'),
+  { ssr: false },
+);
+const PendingPhotoSync = dynamic(
+  () => import('@/components/PendingPhotoSync'),
+  { ssr: false },
+);
 
 /** Detect if we are inside a trip detail view (has tripId in path) */
 function isInsideTrip(pathname: string): boolean {
@@ -57,20 +85,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {/* Bottom nav - mobile only, hidden inside trip views */}
             {!inTrip && <AppBottomNav />}
 
-            {/* AI Chatbot - floating assistant */}
+            {/* AI Chatbot - floating assistant (lazy) */}
             <Chatbot />
 
-            {/* Global command palette (Cmd/Ctrl + K) */}
+            {/* Global command palette (Cmd/Ctrl + K) (lazy) */}
             <CommandPaletteProvider />
 
-            {/* Global keyboard shortcuts (e, g, f, m, i, b, r, ?) */}
+            {/* Global keyboard shortcuts (e, g, f, m, i, b, r, ?) (lazy) */}
             <KeyboardShortcuts />
 
-            {/* Confetti milestone toast banner */}
+            {/* Confetti milestone toast banner (lazy) */}
             <MilestoneBanner />
 
-            {/* Offline / sync UX */}
+            {/* Offline indicator stays eager — it's tiny and needs to react
+                instantly to network changes. */}
             <OfflineIndicator />
+
+            {/* Sync / pending photo sync (lazy) */}
             <SyncIndicator />
             <PendingPhotoSync />
           </div>

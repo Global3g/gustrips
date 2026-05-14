@@ -616,3 +616,6 @@ input::-webkit-date-and-time-value {
   pointer-events: none;
   animation: particle-float linear infinite;
 }
+
+/* Border Beam ahora vive como <style> inline en NextEventCard
+   para evitar que Lightning CSS rompa mask-composite. */
