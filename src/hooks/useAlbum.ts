@@ -142,6 +142,7 @@ interface UseAlbumReturn {
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
+  realignEventPhotoDates: (eventId: string, newDate: string) => Promise<number>;
   migrateThumbnails: (
     onProgress?: (done: number, total: number) => void,
   ) => Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }>;
@@ -588,12 +589,78 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     return cleaned.length;
   }, [tripId, trip]);
 
+  /**
+   * Re-stamp the `date` of every photo linked to `eventId` to `newDate`.
+   * Used by the itinerary editor: when the user moves an event to a different
+   * day, the linked photos should follow — without this, the photos page
+   * keeps them bucketed on the old date because it groups by `photo.date`,
+   * not by `event.date`.
+   *
+   * Touches both the subcollection (source of truth) and the legacy
+   * `trip.albumPhotos[]` array if any photos still live there. Returns the
+   * total number of photos updated.
+   */
+  const realignEventPhotoDates = useCallback(
+    async (eventId: string, newDate: string): Promise<number> => {
+      if (!eventId || !newDate) return 0;
+      const db = getClientDb();
+      let updated = 0;
+
+      // 1. Subcollection — batched updates of up to 450 ops per commit.
+      const subMatches = subPhotos.filter(
+        (p) => p.eventId === eventId && p.date !== newDate,
+      );
+      if (subMatches.length > 0) {
+        let batch = writeBatch(db);
+        let ops = 0;
+        for (const p of subMatches) {
+          const photoId = photoIdFromUrl(p.url);
+          const ref = doc(db, 'trips', tripId, 'photos', photoId);
+          batch.set(
+            ref,
+            { date: newDate, updatedAt: serverTimestamp() },
+            { merge: true },
+          );
+          ops++;
+          if (ops >= 450) {
+            await batch.commit();
+            batch = writeBatch(db);
+            ops = 0;
+          }
+        }
+        if (ops > 0) await batch.commit();
+        updated += subMatches.length;
+      }
+
+      // 2. Legacy array — rewrite in place if any photos still live there.
+      const legacy = trip?.albumPhotos ?? [];
+      const legacyHits = legacy.filter(
+        (p) => p.eventId === eventId && p.date !== newDate,
+      );
+      if (legacyHits.length > 0) {
+        const next = legacy.map((p) =>
+          p.eventId === eventId && p.date !== newDate ? { ...p, date: newDate } : p,
+        );
+        const tripRef = doc(db, 'trips', tripId);
+        await updateDoc(tripRef, { albumPhotos: next, updatedAt: nowISO() });
+        updated += legacyHits.length;
+      }
+
+      if (updated > 0) {
+        try { markMutation(); } catch { /* localStorage may be unavailable */ }
+      }
+      return updated;
+    },
+    [tripId, trip, subPhotos],
+  );
+
   return {
     albumPhotos,
     addPhoto,
     deletePhoto,
     updateCaption,
     updatePhoto,
+    realignEventPhotoDates,
     migrateThumbnails,
     markAllOptimized,
     processPendingUploads,

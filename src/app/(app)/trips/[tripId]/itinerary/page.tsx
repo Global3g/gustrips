@@ -12,6 +12,7 @@ const AgendaView = dynamic(() => import('@/components/trips/AgendaView'), { ssr:
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage } from '@/lib/firebase/client';
 import { useEvents } from '@/hooks/useEvents';
+import { useAlbum } from '@/hooks/useAlbum';
 import { useTrip } from '@/hooks/useTrip';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useExpenses } from '@/hooks/useExpenses';
@@ -148,6 +149,7 @@ export default function ItineraryPage() {
 
   const { trip, updateTrip } = useTrip(tripId);
   const { events, loading, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
+  const { realignEventPhotoDates } = useAlbum(tripId, trip);
 
   const { expenses } = useExpenses(tripId);
   const expensesByEvent = useMemo(() => {
@@ -537,9 +539,28 @@ export default function ItineraryPage() {
     if (!editingEvent) return;
     setFormLoading(true);
     try {
+      const dateChanged = !!data.date && data.date !== editingEvent.date;
       await updateEvent(editingEvent.id, data);
+      // If the user moved the event to a different day, follow the linked
+      // album photos so they don't get stranded on the old date in the
+      // photos page (which buckets by photo.date, not event.date).
+      let movedPhotos = 0;
+      if (dateChanged) {
+        try {
+          movedPhotos = await realignEventPhotoDates(editingEvent.id, data.date);
+        } catch (err) {
+          console.error('Error al mover fotos del evento al nuevo día:', err);
+        }
+      }
       setEditingEvent(null);
-      toast('Evento actualizado', 'success');
+      if (movedPhotos > 0) {
+        toast(
+          `Evento actualizado · ${movedPhotos} ${movedPhotos === 1 ? 'foto movida' : 'fotos movidas'} al nuevo día`,
+          'success',
+        );
+      } else {
+        toast('Evento actualizado', 'success');
+      }
     } catch (error) {
       console.error('Error al actualizar evento:', error);
       toast('Error al actualizar el evento', 'error');
