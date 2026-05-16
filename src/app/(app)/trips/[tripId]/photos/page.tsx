@@ -1162,10 +1162,11 @@ export default function PhotosPage() {
                 const estimatedRows = Math.max(1, Math.ceil(group.photos.length / 4));
                 const placeholderHeight = 110 + estimatedRows * 168;
 
-                // Render the first two sections eagerly so they paint without
+                // Render the first section eagerly so it paints without
                 // waiting for the IntersectionObserver tick (avoids a flash
-                // of empty placeholders on initial load).
-                const eager = groupIdx < 2;
+                // of empty placeholders on initial load). The rest mount
+                // when scrolled near — keeping initial render cheap.
+                const eager = groupIdx === 0;
 
                 return (
                   <LazySection
@@ -1254,13 +1255,13 @@ export default function PhotosPage() {
                       const photoIds = group.photos.map((p) => p.url);
                       const photoCards = group.photos.map((photo) => {
                         const isSelected = selectedUrls.has(photo.url);
-                        return (
-                        <SortablePhoto key={photo.url} id={photo.url} enabled={reorderable}>
-                          <motion.div
-                            whileHover={{ y: -2 }}
-                            transition={{ duration: 0.2 }}
-                            className="space-y-1.5"
-                          >
+                        // Plain card body shared by both render paths. Hover
+                        // uses CSS-only transforms (no framer-motion
+                        // subscriptions per photo) and dnd-kit only wraps
+                        // the card when the group is actually reorderable —
+                        // useSortable is otherwise wasted state per item.
+                        const cardBody = (
+                          <div className="space-y-1.5 transition-transform duration-200 hover:-translate-y-0.5">
                             <div
                               className={classNames(
                                 'relative group rounded-2xl overflow-hidden bg-black/40 aspect-square cursor-pointer border transition-all',
@@ -1391,8 +1392,14 @@ export default function PhotosPage() {
                                 {photo.caption}
                               </p>
                             )}
-                          </motion.div>
-                        </SortablePhoto>
+                          </div>
+                        );
+                        return reorderable ? (
+                          <SortablePhoto key={photo.url} id={photo.url} enabled={true}>
+                            {cardBody}
+                          </SortablePhoto>
+                        ) : (
+                          <div key={photo.url}>{cardBody}</div>
                         );
                       });
 

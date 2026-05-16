@@ -63,8 +63,20 @@ export default function LazySection({
     return () => observer.disconnect();
   }, [visible, rootMargin]);
 
+  // content-visibility: auto lets the browser skip layout/paint of this
+  // subtree while it's off-screen, even after we've mounted children.
+  // contain-intrinsic-size reserves a stable box so the scrollbar stays
+  // honest. The combo is doing what virtualization libraries used to need
+  // a full layout engine for.
+  const offscreenStyle: React.CSSProperties = visible
+    ? {
+        contentVisibility: 'auto' as unknown as 'auto',
+        containIntrinsicSize: `${placeholderHeight}px`,
+      }
+    : { minHeight: placeholderHeight };
+
   return (
-    <div ref={ref} style={visible ? undefined : { minHeight: placeholderHeight }}>
+    <div ref={ref} style={offscreenStyle}>
       {visible ? children : null}
     </div>
   );
