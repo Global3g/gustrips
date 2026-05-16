@@ -23,7 +23,7 @@ function shuffleArray<T>(arr: T[]): T[] {
 /** Movie-reel banner: photos drift right→left forever, framed by sprocket
  *  holes on top and bottom and a soft fade at each edge. Hover pauses the
  *  motion via group-hover; the duplicated photo array makes the loop seamless. */
-export default function PhotoFilmstrip({ photos, maxPhotos = 12 }: PhotoFilmstripProps) {
+export default function PhotoFilmstrip({ photos, maxPhotos = 18 }: PhotoFilmstripProps) {
   const strip = useMemo(() => {
     const withUrls = photos.filter((p) => !!p.url);
     if (withUrls.length < 4) return [];
@@ -60,36 +60,28 @@ export default function PhotoFilmstrip({ photos, maxPhotos = 12 }: PhotoFilmstri
           }}
           style={{ width: 'fit-content' }}
         >
-          {strip.map((photo, i) => {
-            // Only the first cycle (= the first half of the doubled array)
-            // needs to be eager — the second half is the duplicate used for
-            // seamless looping, by the time it scrolls into view the browser
-            // already has the bytes cached.
-            const isFirstCycle = i < strip.length / 2;
-            return (
-              <div
-                key={`strip-${i}-${photo.url}`}
-                className="flex-shrink-0 w-56 h-36 sm:w-72 sm:h-44 md:w-80 md:h-52 rounded-xl overflow-hidden relative bg-black/60"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={photo.url}
-                  alt={photo.caption || 'Foto del viaje'}
-                  className="w-full h-full object-contain"
-                  loading={isFirstCycle ? 'eager' : 'lazy'}
-                  fetchPriority={isFirstCycle && i < 4 ? 'high' : 'auto'}
-                  decoding="async"
-                />
-                {photo.caption && (
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
-                    <p className="text-[10px] text-white/85 truncate font-medium">
-                      {photo.caption}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {strip.map((photo, i) => (
+            <div
+              key={`strip-${i}-${photo.url}`}
+              className="flex-shrink-0 w-44 h-28 sm:w-56 sm:h-36 md:w-64 md:h-40 rounded-xl overflow-hidden relative"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photo.url}
+                alt={photo.caption || 'Foto del viaje'}
+                className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
+              />
+              {photo.caption && (
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
+                  <p className="text-[10px] text-white/85 truncate font-medium">
+                    {photo.caption}
+                  </p>
+                </div>
+              )}
+            </div>
+          ))}
         </motion.div>
       </div>
 
