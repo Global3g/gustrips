@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, Plus, X, Plane, Receipt, CalendarPlus, MapPin, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, Plus, X, Plane, Receipt, CalendarPlus, MapPin, ChevronRight, BookHeart } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { useTrips } from '@/hooks/useTrips';
 import { classNames } from '@/lib/utils/helpers';
@@ -21,6 +21,7 @@ export default function AppBottomNav() {
 
   const isOnDashboard = pathname === '/dashboard';
   const isOnTravelers = pathname === '/travelers';
+  const isOnHistorias = pathname === '/tripshistory' || pathname.startsWith('/tripshistory/');
   const mouseX = useMotionValue(Infinity);
   const navRef = useRef<HTMLElement>(null);
 
@@ -181,6 +182,12 @@ export default function AppBottomNav() {
               <span className={classNames('text-[9px] font-medium transition-colors absolute -bottom-3.5', isOnDashboard ? 'text-amber-600' : 'text-gray-400')}>Viajes</span>
             </DockItem>
 
+            {/* Travelers */}
+            <DockItem mouseX={mouseX} href="/travelers" active={isOnTravelers}>
+              <Users className={classNames('w-full h-full transition-colors', isOnTravelers ? 'text-amber-600' : 'text-gray-400')} />
+              <span className={classNames('text-[9px] font-medium transition-colors absolute -bottom-3.5', isOnTravelers ? 'text-amber-600' : 'text-gray-400')}>Viajeros</span>
+            </DockItem>
+
             {/* FAB — center "+" */}
             <motion.button
               whileTap={{ scale: 0.9 }}
@@ -201,10 +208,10 @@ export default function AppBottomNav() {
               </motion.div>
             </motion.button>
 
-            {/* Viajeros */}
-            <DockItem mouseX={mouseX} href="/travelers" active={isOnTravelers}>
-              <Users className={classNames('w-full h-full transition-colors', isOnTravelers ? 'text-amber-600' : 'text-gray-400')} />
-              <span className={classNames('text-[9px] font-medium transition-colors absolute -bottom-3.5', isOnTravelers ? 'text-amber-600' : 'text-gray-400')}>Viajeros</span>
+            {/* Historias */}
+            <DockItem mouseX={mouseX} href="/tripshistory" active={isOnHistorias}>
+              <BookHeart className={classNames('w-full h-full transition-colors', isOnHistorias ? 'text-amber-600' : 'text-gray-400')} />
+              <span className={classNames('text-[9px] font-medium transition-colors absolute -bottom-3.5', isOnHistorias ? 'text-amber-600' : 'text-gray-400')}>Historias</span>
             </DockItem>
           </nav>
         </div>
