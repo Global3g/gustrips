@@ -257,30 +257,6 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes beam-walk-${tripId.replace(/[^a-z0-9]/gi, '')} { to { offset-distance: 100%; } }
-        .beam-track-${tripId.replace(/[^a-z0-9]/gi, '')} {
-          position: absolute;
-          top: 0; left: 0;
-          width: 140px;
-          height: 3px;
-          border-radius: 999px;
-          background: linear-gradient(90deg,
-            transparent 0%,
-            #06b6d4 15%,
-            #38bdf8 40%,
-            #a78bfa 65%,
-            #ec4899 85%,
-            transparent 100%
-          );
-          offset-path: inset(-2px round 18px);
-          offset-distance: 0%;
-          offset-rotate: auto;
-          animation: beam-walk-${tripId.replace(/[^a-z0-9]/gi, '')} 8s linear infinite;
-          pointer-events: none;
-          z-index: 10;
-        }
-      ` }} />
       <Link href={`/trips/${tripId}/itinerary`} className="block">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -289,7 +265,43 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
           className="relative rounded-2xl p-5 hover:shadow-[0_0_25px_rgba(59,130,246,0.15)] transition-all group"
           style={{ background: 'linear-gradient(135deg, #0c1929 0%, #162a44 100%)' }}
         >
-          <div className={`beam-track-${tripId.replace(/[^a-z0-9]/gi, '')}`} aria-hidden />
+          {/* SVG border beam: 4 rects superpuestos = trail multicolor con curvas smooth */}
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute inset-0 h-full w-full"
+            style={{ overflow: 'visible', zIndex: 10 }}
+          >
+            {[
+              { color: '#06b6d4', delay: 0 },
+              { color: '#38bdf8', delay: 0.15 },
+              { color: '#a78bfa', delay: 0.3 },
+              { color: '#ec4899', delay: 0.45 },
+            ].map((c, i) => (
+              <rect
+                key={i}
+                x="1.5"
+                y="1.5"
+                width="calc(100% - 3px)"
+                height="calc(100% - 3px)"
+                rx="15"
+                ry="15"
+                fill="none"
+                stroke={c.color}
+                strokeWidth="3"
+                strokeLinecap="round"
+                pathLength="100"
+                strokeDasharray="6 94"
+              >
+                <animate
+                  attributeName="stroke-dashoffset"
+                  from={-c.delay * 100 / 8}
+                  to={-100 - (c.delay * 100 / 8)}
+                  dur="8s"
+                  repeatCount="indefinite"
+                />
+              </rect>
+            ))}
+          </svg>
           <div className="flex items-center gap-1.5 mb-3 relative z-0">
             <Navigation className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">
