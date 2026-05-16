@@ -244,6 +244,23 @@ export default function ItineraryPage() {
     return new Date();
   }, [searchParams, tripDays]);
 
+  // Deep-link from /photos: when the URL has ?edit=<eventId>, open the
+  // event editor for that event once its data is available, and clean the
+  // query param so a refresh doesn't keep re-opening it.
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId) return;
+    if (events.length === 0) return;
+    const target = events.find((e) => e.id === editId);
+    if (!target) return;
+    setEditingEvent(target);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('edit');
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, events]);
+
   const selectedDayStr = format(selectedDay, 'yyyy-MM-dd');
 
   /* ---- Day number (1-indexed) ---- */

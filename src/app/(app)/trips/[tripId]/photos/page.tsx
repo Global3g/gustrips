@@ -20,6 +20,7 @@ import {
   MapPin,
   Sparkles,
   CheckSquare,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   DndContext,
@@ -110,6 +111,33 @@ export default function PhotosPage() {
   const [migrating, setMigrating] = useState(false);
   const [migrateProgress, setMigrateProgress] = useState<{ done: number; total: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  // Order in which the day → event groups render. Persisted per-trip in
+  // localStorage so the user's preference survives reloads.
+  type SortMode = 'chronological' | 'reverse' | 'most-photos' | 'unassigned-first';
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    if (typeof window === 'undefined') return 'chronological';
+    try {
+      const stored = window.localStorage.getItem(`gustrips:photos:sort:${tripId}`);
+      if (
+        stored === 'chronological' ||
+        stored === 'reverse' ||
+        stored === 'most-photos' ||
+        stored === 'unassigned-first'
+      ) {
+        return stored;
+      }
+    } catch {/* ignore */}
+    return 'chronological';
+  });
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(`gustrips:photos:sort:${tripId}`, sortMode);
+    } catch {/* ignore */}
+  }, [sortMode, tripId]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -259,10 +287,11 @@ export default function PhotosPage() {
         groups.push({ key: `${date}-no-event`, date, photos: noEvent });
       }
     }
-    // Itinerary order within a day: by event startTime ascending. Events
-    // without a time fall to the bottom of the day, and the "Sin evento"
-    // bucket stays at the very end so it doesn't break the flow.
-    return groups.sort((a, b) => {
+    // User-chosen ordering. Default is chronological (oldest → newest)
+    // following the itinerary; reverse flips dates and event times; the
+    // photo-count and unassigned-first modes are aliases over the same
+    // group set with a different primary key.
+    const byChronological = (a: typeof groups[number], b: typeof groups[number]): number => {
       const dateCmp = a.date.localeCompare(b.date);
       if (dateCmp !== 0) return dateCmp;
       const aHasEvent = !!a.eventId;
@@ -272,8 +301,28 @@ export default function PhotosPage() {
       const aTime = a.eventStartTime || '99:99';
       const bTime = b.eventStartTime || '99:99';
       return aTime.localeCompare(bTime);
-    });
-  }, [allPhotos, eventsById]);
+    };
+    if (sortMode === 'reverse') {
+      return groups.sort((a, b) => -byChronological(a, b));
+    }
+    if (sortMode === 'most-photos') {
+      return groups.sort((a, b) => {
+        if (b.photos.length !== a.photos.length) {
+          return b.photos.length - a.photos.length;
+        }
+        return byChronological(a, b);
+      });
+    }
+    if (sortMode === 'unassigned-first') {
+      return groups.sort((a, b) => {
+        const aUn = !a.eventId ? 0 : 1;
+        const bUn = !b.eventId ? 0 : 1;
+        if (aUn !== bUn) return aUn - bUn;
+        return byChronological(a, b);
+      });
+    }
+    return groups.sort(byChronological);
+  }, [allPhotos, eventsById, sortMode]);
 
   /* ── Trip days for numbering ── */
   const tripDays = useMemo(() => {
@@ -1032,6 +1081,63 @@ export default function PhotosPage() {
             </div>
           ) : (
             <div className="space-y-7">
+              {/* Sort filter — lets the user flip the order of the day/event
+                  sections. Persisted per-trip so the choice survives reloads. */}
+              <div className="flex items-center justify-between gap-3 -mt-2">
+                <p className="text-white/55 text-xs font-medium">
+                  {photoGroups.length} {photoGroups.length === 1 ? 'grupo' : 'grupos'} · {stats.total} {stats.total === 1 ? 'foto' : 'fotos'}
+                </p>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSortMenuOpen((o) => !o)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/85 hover:text-white text-xs font-semibold transition-colors"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    {sortMode === 'chronological' && 'Más antiguo primero'}
+                    {sortMode === 'reverse' && 'Más reciente primero'}
+                    {sortMode === 'most-photos' && 'Más fotos primero'}
+                    {sortMode === 'unassigned-first' && 'Sin evento primero'}
+                  </button>
+                  {sortMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-30"
+                        onClick={() => setSortMenuOpen(false)}
+                        aria-hidden
+                      />
+                      <div
+                        role="menu"
+                        className="absolute right-0 top-full mt-1 z-40 w-60 rounded-xl border border-white/15 bg-[#0d1b2e] shadow-2xl shadow-black/60 overflow-hidden"
+                      >
+                        {([
+                          ['chronological', 'Más antiguo primero', 'Como el itinerario'],
+                          ['reverse', 'Más reciente primero', 'Lo último arriba'],
+                          ['most-photos', 'Más fotos primero', 'Los días con más material'],
+                          ['unassigned-first', 'Sin evento primero', 'Para vincularlas'],
+                        ] as const).map(([value, label, hint]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setSortMode(value);
+                              setSortMenuOpen(false);
+                            }}
+                            className={`w-full flex flex-col items-start gap-0.5 px-3 py-2.5 text-left hover:bg-white/[0.06] transition-colors ${sortMode === value ? 'bg-amber-400/10' : ''}`}
+                            role="menuitem"
+                          >
+                            <span className={`text-[13px] font-semibold ${sortMode === value ? 'text-amber-200' : 'text-white'}`}>
+                              {label}
+                            </span>
+                            <span className="text-[11px] text-white/55">{hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
               {photoGroups.map((group, groupIdx) => {
                 const dayNum = tripDays[group.date];
                 let dayLabel: string;
@@ -1120,6 +1226,26 @@ export default function PhotosPage() {
                           </div>
                         )}
                       </div>
+                      {/* Edit event — only when the group is bound to a real
+                          event. Takes the user to the itinerary view scrolled
+                          to that event so they can change date / time / type
+                          or unlink photos. */}
+                      {group.eventId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            router.push(
+                              `/trips/${tripId}/itinerary?day=${group.date}&edit=${group.eventId}`,
+                            );
+                          }}
+                          aria-label="Editar evento"
+                          title="Editar evento"
+                          className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.08] text-white/75 hover:text-white text-[11px] font-semibold transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Editar
+                        </button>
+                      )}
                     </div>
 
                     {/* Photo grid (sortable when photos belong to an event) */}
