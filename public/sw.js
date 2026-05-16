@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v3-2026-05-14';
+const SW_VERSION = 'gustrips-v4-2026-05-16';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const IMAGE_CACHE = `${SW_VERSION}-images`;
@@ -31,17 +31,60 @@ const APP_SHELL_URLS = [
   '/icon-512.png',
 ];
 
+/**
+ * Pull the chunk URLs out of a freshly-fetched HTML so we can warm the
+ * static cache during install. Without this, the first offline visit fails
+ * because the HTML is cached but the JS chunks linked from it aren't.
+ */
+function extractStaticUrls(html) {
+  const urls = new Set();
+  // <script src="/_next/..."> and <link href="/_next/...">
+  const scriptRe = /<script[^>]+src=["']([^"']+)["']/gi;
+  const linkRe = /<link[^>]+href=["']([^"']+)["']/gi;
+  let m;
+  while ((m = scriptRe.exec(html)) !== null) urls.add(m[1]);
+  while ((m = linkRe.exec(html)) !== null) urls.add(m[1]);
+  return Array.from(urls).filter(
+    (u) =>
+      u.startsWith('/_next/') ||
+      u.startsWith('/static/') ||
+      /\.(js|css|woff2?)$/i.test(u),
+  );
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     try {
       const shell = await caches.open(SHELL_CACHE);
-      // Try to prime the dashboard + icons. If the user is offline at install
-      // time, individual failures are swallowed so install still succeeds.
+      const staticCache = await caches.open(STATIC_CACHE);
+
+      // 1. Prime the dashboard HTML + icons.
       await Promise.all(
         APP_SHELL_URLS.map((url) =>
           shell.add(url).catch(() => {/* best-effort */})
         )
       );
+
+      // 2. Fetch the dashboard HTML and extract every <script>/<link>
+      //    referenced — those are the Next.js chunks we need to render
+      //    the app offline. Pre-fetch them into the static cache.
+      try {
+        const dashRes = await fetch('/dashboard', { credentials: 'same-origin' });
+        if (dashRes.ok) {
+          const html = await dashRes.text();
+          const chunkUrls = extractStaticUrls(html);
+          // eslint-disable-next-line no-console
+          console.log('[SW] precaching', chunkUrls.length, 'chunks');
+          await Promise.all(
+            chunkUrls.map((u) =>
+              staticCache.add(u).catch(() => {/* best-effort */})
+            )
+          );
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[SW] precache of dashboard chunks failed', err);
+      }
     } catch {
       // best-effort
     }
@@ -202,10 +245,26 @@ async function staleWhileRevalidate(req, cacheName) {
   }
   const network = await networkPromise;
   if (network) return network;
-  // Last-resort offline fallback: try the cached dashboard.
-  const fallback = await cache.match('/dashboard');
-  if (fallback) return fallback;
-  return new Response('Offline', { status: 503, statusText: 'Offline' });
+  // Last-resort offline fallback: try common shell routes in order.
+  // We tried the requested URL — if it's a /trips/<id>/... route we
+  // probably have /dashboard or the trip root cached.
+  const url = new URL(req.url);
+  const fallbacks = ['/dashboard', '/'];
+  if (url.pathname.startsWith('/trips/')) {
+    const tripRootMatch = url.pathname.match(/^(\/trips\/[^/]+)/);
+    if (tripRootMatch) fallbacks.unshift(tripRootMatch[1]);
+  }
+  for (const path of fallbacks) {
+    const fb = await cache.match(path);
+    if (fb) return fb;
+  }
+  return new Response(
+    '<!doctype html><meta charset="utf-8"><title>Sin conexion</title>' +
+      '<body style="font-family:system-ui;background:#0a1628;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center">' +
+      '<div><h1 style="margin:0 0 12px">Sin conexion</h1>' +
+      '<p style="opacity:.7;margin:0">Volve cuando tengas senal — tus cambios estan guardados.</p></div></body>',
+    { status: 503, statusText: 'Offline', headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+  );
 }
 
 async function stampedResponse(res) {

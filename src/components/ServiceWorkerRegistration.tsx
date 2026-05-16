@@ -16,24 +16,39 @@ export default function ServiceWorkerRegistration() {
     const register = async () => {
       try {
         const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        // eslint-disable-next-line no-console
+        console.log('[sw] registered, scope:', reg.scope);
 
         // If there is already a waiting worker (user has visited before and an
         // updated SW is queued), activate it now.
         if (reg.waiting) {
+          // eslint-disable-next-line no-console
+          console.log('[sw] activating waiting worker');
           reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        if (reg.active) {
+          // eslint-disable-next-line no-console
+          console.log('[sw] active worker present — offline mode ready');
         }
 
         reg.addEventListener('updatefound', () => {
           const newSW = reg.installing;
           if (!newSW) return;
           newSW.addEventListener('statechange', () => {
+            // eslint-disable-next-line no-console
+            console.log('[sw] new worker state:', newSW.state);
             if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-              // An update is ready. Activate it on the next nav — don't force
-              // a reload mid-session.
               newSW.postMessage({ type: 'SKIP_WAITING' });
+            }
+            if (newSW.state === 'activated') {
+              // eslint-disable-next-line no-console
+              console.log('[sw] new version activated — offline cache primed');
             }
           });
         });
+
+        // Force an immediate update check on every visit.
+        reg.update().catch(() => {/* ignore */});
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('[sw] register failed', err);
