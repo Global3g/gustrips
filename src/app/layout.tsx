@@ -57,61 +57,29 @@ export default function RootLayout({
         <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
-      </head>
-      <body className={`${dmSans.variable} antialiased`}>
-        {/* Instant splash that renders before React hydrates. Removed by an
-            inline script as soon as the body becomes interactive (or after
-            React paints anything). Keeps the user looking at *something*
-            during the JS parse + Firebase init window. */}
-        <div
-          id="gustrips-boot-splash"
-          aria-hidden
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background:
-              'radial-gradient(circle at 50% 35%, #14253d 0%, #0a1628 60%, #07101f 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-            pointerEvents: 'none',
-            transition: 'opacity 280ms ease-out',
-          }}
-        >
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 18,
-              background: 'linear-gradient(135deg,#f59e0b,#f43f5e)',
-              boxShadow: '0 10px 40px rgba(245,158,11,0.35)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'system-ui',
-              color: '#fff',
-              fontWeight: 800,
-              fontSize: 28,
-              letterSpacing: '-0.02em',
-            }}
-          >
-            G
-          </div>
-        </div>
+        {/* Instant boot splash — injected into <body> by JS so it lives OUTSIDE
+            the React tree, avoiding hydration mismatches (React-18+ rejects
+            unexpected children inside <body> and crashes the whole app with
+            error #418). The same script removes the splash once the page
+            finishes loading or after 1.5s as a hard safety. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "(function(){var s=document.getElementById('gustrips-boot-splash');" +
-              "if(!s)return;var off=function(){s.style.opacity='0';" +
-              "setTimeout(function(){s.remove()},320)};" +
-              // Drop the splash on first paint signal we can catch.
+              "(function(){function mount(){if(document.getElementById('gustrips-boot-splash'))return;" +
+              "var s=document.createElement('div');s.id='gustrips-boot-splash';s.setAttribute('aria-hidden','true');" +
+              "s.style.cssText='position:fixed;inset:0;background:radial-gradient(circle at 50% 35%,#14253d 0%,#0a1628 60%,#07101f 100%);display:flex;align-items:center;justify-content:center;z-index:9999;pointer-events:none;transition:opacity 280ms ease-out';" +
+              "var m=document.createElement('div');" +
+              "m.style.cssText='width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,#f59e0b,#f43f5e);box-shadow:0 10px 40px rgba(245,158,11,0.35);display:flex;align-items:center;justify-content:center;font-family:system-ui;color:#fff;font-weight:800;font-size:28px;letter-spacing:-0.02em';" +
+              "m.textContent='G';s.appendChild(m);document.body.appendChild(s);}" +
+              "function off(){var s=document.getElementById('gustrips-boot-splash');if(!s)return;s.style.opacity='0';setTimeout(function(){s.remove()},320)}" +
+              "if(document.body){mount()}else{document.addEventListener('DOMContentLoaded',mount)}" +
               "if(document.readyState==='complete'){requestAnimationFrame(off)}" +
               "else{window.addEventListener('load',function(){requestAnimationFrame(off)})}" +
-              // Hard safety: never sit longer than 1.5s no matter what.
               "setTimeout(off,1500);})();",
           }}
         />
+      </head>
+      <body className={`${dmSans.variable} antialiased`}>
         <ServiceWorkerRegistration />
         <AuthProvider>{children}</AuthProvider>
       </body>
