@@ -239,8 +239,6 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
   const now = new Date();
   const todayStr = format(now, 'yyyy-MM-dd');
   const currentTime = format(now, 'HH:mm');
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
 
   const upcoming = useMemo(() => {
     const sorted = [...events].sort((a, b) => {
@@ -267,8 +265,8 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
           className="relative rounded-2xl p-5 hover:shadow-[0_0_25px_rgba(59,130,246,0.15)] transition-all group"
           style={{ background: 'linear-gradient(135deg, #0c1929 0%, #162a44 100%)' }}
         >
-          {/* SVG border beam — solo client-side para evitar hydration mismatch con <animate> SMIL */}
-          {mounted && <svg
+          {/* SVG border beam: 4 rects superpuestos = trail multicolor con curvas smooth */}
+          <svg
             aria-hidden
             className="pointer-events-none absolute inset-0 h-full w-full"
             style={{ overflow: 'visible', zIndex: 10 }}
@@ -303,7 +301,7 @@ function NextEventCard({ events, tripId }: { events: TripEvent[]; tripId: string
                 />
               </rect>
             ))}
-          </svg>}
+          </svg>
           <div className="flex items-center gap-1.5 mb-3 relative z-0">
             <Navigation className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">
