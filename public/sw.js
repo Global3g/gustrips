@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v4-2026-05-16';
+const SW_VERSION = 'gustrips-v5-2026-05-16';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const IMAGE_CACHE = `${SW_VERSION}-images`;
@@ -267,6 +267,58 @@ async function staleWhileRevalidate(req, cacheName) {
   );
 }
 
+/**
+ * Cache-first for HTML routes with a fire-and-forget background refresh.
+ * Returns the cached response immediately if present (sub-millisecond), then
+ * silently updates the cache for the next visit. If we have nothing cached
+ * yet, falls through to network (with the same fallback chain as SWR).
+ */
+async function cacheFirstWithRefresh(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+
+  if (cached) {
+    // Refresh in the background — don't await it.
+    fetch(req)
+      .then(async (res) => {
+        if (res && res.ok && res.type !== 'opaqueredirect') {
+          const stamped = await stampedResponse(res.clone());
+          cache.put(req, stamped).catch(() => {});
+        }
+      })
+      .catch(() => {/* offline or transient — keep cached version */});
+    return cached;
+  }
+
+  // No cache yet — go to network with the existing offline fallback chain.
+  try {
+    const network = await fetch(req);
+    if (network && network.ok && network.type !== 'opaqueredirect') {
+      const stamped = await stampedResponse(network.clone());
+      cache.put(req, stamped).catch(() => {});
+    }
+    return network;
+  } catch {
+    const url = new URL(req.url);
+    const fallbacks = ['/dashboard', '/'];
+    if (url.pathname.startsWith('/trips/')) {
+      const tripRootMatch = url.pathname.match(/^(\/trips\/[^/]+)/);
+      if (tripRootMatch) fallbacks.unshift(tripRootMatch[1]);
+    }
+    for (const path of fallbacks) {
+      const fb = await cache.match(path);
+      if (fb) return fb;
+    }
+    return new Response(
+      '<!doctype html><meta charset="utf-8"><title>Sin conexion</title>' +
+        '<body style="font-family:system-ui;background:#0a1628;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center">' +
+        '<div><h1 style="margin:0 0 12px">Sin conexion</h1>' +
+        '<p style="opacity:.7;margin:0">Volve cuando tengas senal — tus cambios estan guardados.</p></div></body>',
+      { status: 503, statusText: 'Offline', headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+  }
+}
+
 async function stampedResponse(res) {
   // Wrap a response so we know when it was cached. We can't mutate headers on
   // an opaque/network response directly, so we rebuild it.
@@ -347,9 +399,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML / navigation: stale-while-revalidate against shell cache.
+  // HTML / navigation: cache-first to give an instant render, then refresh
+  // in the background. The previous stale-while-revalidate strategy still
+  // awaited the network on cold-cache reads, which is what the user
+  // perceived as "tarda mucho en entrar". With cache-first we serve from
+  // disk in milliseconds and update silently for the next visit.
   if (isHtmlRequest(req)) {
-    event.respondWith(staleWhileRevalidate(req, SHELL_CACHE));
+    event.respondWith(cacheFirstWithRefresh(req, SHELL_CACHE));
     return;
   }
 

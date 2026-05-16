@@ -59,6 +59,59 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
       </head>
       <body className={`${dmSans.variable} antialiased`}>
+        {/* Instant splash that renders before React hydrates. Removed by an
+            inline script as soon as the body becomes interactive (or after
+            React paints anything). Keeps the user looking at *something*
+            during the JS parse + Firebase init window. */}
+        <div
+          id="gustrips-boot-splash"
+          aria-hidden
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background:
+              'radial-gradient(circle at 50% 35%, #14253d 0%, #0a1628 60%, #07101f 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            pointerEvents: 'none',
+            transition: 'opacity 280ms ease-out',
+          }}
+        >
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 18,
+              background: 'linear-gradient(135deg,#f59e0b,#f43f5e)',
+              boxShadow: '0 10px 40px rgba(245,158,11,0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'system-ui',
+              color: '#fff',
+              fontWeight: 800,
+              fontSize: 28,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            G
+          </div>
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){var s=document.getElementById('gustrips-boot-splash');" +
+              "if(!s)return;var off=function(){s.style.opacity='0';" +
+              "setTimeout(function(){s.remove()},320)};" +
+              // Drop the splash on first paint signal we can catch.
+              "if(document.readyState==='complete'){requestAnimationFrame(off)}" +
+              "else{window.addEventListener('load',function(){requestAnimationFrame(off)})}" +
+              // Hard safety: never sit longer than 1.5s no matter what.
+              "setTimeout(off,1500);})();",
+          }}
+        />
         <ServiceWorkerRegistration />
         <AuthProvider>{children}</AuthProvider>
       </body>
