@@ -326,6 +326,15 @@ export default function CollagePage() {
   const [customDestination, setCustomDestination] = useState<string | null>(null);
   // Per-strip captions for the Photobooth template.
   const [photoboothCaptions, setPhotoboothCaptions] = useState<{ line1: string; line2: string }[]>([]);
+  /** Drag-to-swap permutation applied on top of the computed sample.
+   *  permutation[slot] = index in the underlying sample. Identity by
+   *  default. Used in auto mode; in manual mode swap rewrites the
+   *  selection directly so the "Orden" strip stays in sync. */
+  const [slotPermutation, setSlotPermutation] = useState<number[]>([]);
+  // Source slot of an in-progress drag (auto mode visual feedback)
+  const dragSrcRef = useRef<{ url: string; idx: number; startX: number; startY: number; capturedEl: HTMLElement | null; pointerId: number } | null>(null);
+  const [dragMoving, setDragMoving] = useState(false);
+  const [dragHoverIdx, setDragHoverIdx] = useState<number | null>(null);
   // Free-position text labels — apply to any template.
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
@@ -391,6 +400,48 @@ export default function CollagePage() {
     const need = Math.max(0, effectiveCount - pinnedPhotos.length);
     return [...pinnedPhotos.slice(0, effectiveCount), ...shuffled.slice(0, need)];
   }, [allPool, mode, manualSelection, pinnedUrls, shuffleSeed, effectiveCount]);
+
+  /** Sample with the user's drag-to-swap permutation applied. The
+   *  template only ever sees this; sample stays the "raw" derived
+   *  state. */
+  const displaySample = useMemo(() => {
+    if (slotPermutation.length === 0) return sample;
+    return sample.map((_, i) => sample[slotPermutation[i] ?? i] ?? sample[i]);
+  }, [sample, slotPermutation]);
+
+  /** Swap the photos at two slot positions. Manual mode rewrites
+   *  manualSelection so the Orden strip mirrors the new order; auto
+   *  mode tracks the swap in slotPermutation. */
+  const swapSlots = useCallback(
+    (a: number, b: number) => {
+      if (a === b || a < 0 || b < 0) return;
+      if (mode === 'manual') {
+        setManualSelection((prev) => {
+          if (a >= prev.length || b >= prev.length) return prev;
+          const next = [...prev];
+          [next[a], next[b]] = [next[b], next[a]];
+          return next;
+        });
+      } else {
+        setSlotPermutation((prev) => {
+          const max = Math.max(a, b, prev.length - 1);
+          const next: number[] = [];
+          for (let i = 0; i <= max; i++) next[i] = prev[i] ?? i;
+          [next[a], next[b]] = [next[b], next[a]];
+          return next;
+        });
+      }
+    },
+    [mode],
+  );
+
+  const resetPositions = useCallback(() => setSlotPermutation([]), []);
+
+  // Reset the drag permutation when mode or count changes — those make
+  // the slot indices stop meaning the same thing.
+  useEffect(() => {
+    setSlotPermutation([]);
+  }, [mode, effectiveCount]);
 
   const dateRange = useMemo(
     () => formatDateRange(trip?.startDate, trip?.endDate),
@@ -503,24 +554,102 @@ export default function CollagePage() {
     });
   }, []);
 
-  /** Click handler delegated to elements inside the stage with data-photo-url.
-   *  Auto mode: toggle pin. Manual mode: remove from selection. */
-  const handleStageClick = useCallback(
-    (e: React.MouseEvent) => {
+  /** Pointer-down on a photo: start tracking. If the pointer moves more
+   *  than DRAG_THRESHOLD pixels before release we treat it as a swap;
+   *  otherwise it's a tap → pin/unpin or remove. */
+  const DRAG_THRESHOLD = 8;
+  const handleStagePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      // Right-click and middle-click shouldn't start a drag.
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
       const target = e.target as HTMLElement;
+      // Text overlays handle their own pointer events.
+      if (target.closest('[data-text-overlay]')) return;
       const wrapper = target.closest('[data-photo-url]') as HTMLElement | null;
       if (!wrapper) return;
       const url = wrapper.getAttribute('data-photo-url');
       if (!url) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (mode === 'manual') {
-        removeFromManual(url);
+      const idx = displaySample.findIndex((p) => p.url === url);
+      if (idx < 0) return;
+      try { wrapper.setPointerCapture(e.pointerId); } catch {/* may already be captured */}
+      dragSrcRef.current = {
+        url,
+        idx,
+        startX: e.clientX,
+        startY: e.clientY,
+        capturedEl: wrapper,
+        pointerId: e.pointerId,
+      };
+      setDragMoving(false);
+      setDragHoverIdx(null);
+    },
+    [displaySample],
+  );
+
+  const handleStagePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const src = dragSrcRef.current;
+      if (!src) return;
+      const dx = e.clientX - src.startX;
+      const dy = e.clientY - src.startY;
+      if (!dragMoving && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      if (!dragMoving) setDragMoving(true);
+
+      // Find which photo is under the cursor right now.
+      const els = document.elementsFromPoint(e.clientX, e.clientY);
+      let foundIdx: number | null = null;
+      for (const el of els) {
+        const w = (el as HTMLElement).closest('[data-photo-url]') as HTMLElement | null;
+        if (w) {
+          const u = w.getAttribute('data-photo-url');
+          if (u && u !== src.url) {
+            foundIdx = displaySample.findIndex((p) => p.url === u);
+            break;
+          }
+        }
+      }
+      setDragHoverIdx(foundIdx);
+    },
+    [dragMoving, displaySample],
+  );
+
+  const handleStagePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const src = dragSrcRef.current;
+      if (!src) return;
+      const wasDragging = dragMoving;
+      dragSrcRef.current = null;
+      setDragMoving(false);
+      setDragHoverIdx(null);
+      if (src.capturedEl) {
+        try { src.capturedEl.releasePointerCapture(src.pointerId); } catch {/* ignore */}
+      }
+      if (wasDragging) {
+        // Treat as drop — find target via elementsFromPoint.
+        const els = document.elementsFromPoint(e.clientX, e.clientY);
+        for (const el of els) {
+          const w = (el as HTMLElement).closest('[data-photo-url]') as HTMLElement | null;
+          if (w) {
+            const u = w.getAttribute('data-photo-url');
+            if (u && u !== src.url) {
+              const tgtIdx = displaySample.findIndex((p) => p.url === u);
+              if (tgtIdx >= 0) swapSlots(src.idx, tgtIdx);
+              break;
+            }
+          }
+        }
+        e.preventDefault();
+        e.stopPropagation();
       } else {
-        togglePin(url);
+        // It was a tap, not a drag — pin/unpin in auto, remove in manual.
+        if (mode === 'manual') removeFromManual(src.url);
+        else togglePin(src.url);
+        // Click on empty area = deselect (already handled by onClickCapture
+        // below; pointerup here covers the photo click path).
+        setSelectedOverlayId(null);
       }
     },
-    [mode, removeFromManual, togglePin],
+    [dragMoving, displaySample, mode, removeFromManual, togglePin, swapSlots],
   );
 
   /** After every render, measure photo positions in the stage so we can
@@ -551,7 +680,7 @@ export default function CollagePage() {
     });
     return () => cancelAnimationFrame(id);
     // sample, template, scale and pinning all affect rendered positions.
-  }, [sample, template, previewScale, mode, pinnedUrls, manualSelection]);
+  }, [displaySample, template, previewScale, mode, pinnedUrls, manualSelection]);
 
   const handleDownload = async () => {
     if (!exportRootRef.current) return;
@@ -589,7 +718,7 @@ export default function CollagePage() {
   };
 
   const commonProps = {
-    photos: sample,
+    photos: displaySample,
     tripTitle: effectiveTitle,
     destination: effectiveDestination || undefined,
     dateRange,
@@ -718,16 +847,10 @@ export default function CollagePage() {
                 width: 1080,
                 height: 1080,
               }}
-              onClickCapture={(e) => {
-                // Click that hits a text-overlay = select it for editing,
-                // don't pin a photo. Anything else falls through to the
-                // photo click handler.
-                const target = e.target as HTMLElement;
-                if (target.closest('[data-text-overlay]')) return;
-                handleStageClick(e);
-                // Click outside any overlay = deselect.
-                setSelectedOverlayId(null);
-              }}
+              onPointerDown={handleStagePointerDown}
+              onPointerMove={handleStagePointerMove}
+              onPointerUp={handleStagePointerUp}
+              onPointerCancel={handleStagePointerUp}
             >
               <div
                 ref={exportRootRef}
@@ -792,6 +915,23 @@ export default function CollagePage() {
                 </div>
               );
             })}
+            {/* Drag-target hover ring — shows where the dragged photo will land. */}
+            {dragMoving && dragHoverIdx !== null && slotMeasures[dragHoverIdx] && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: slotMeasures[dragHoverIdx].left,
+                  top: slotMeasures[dragHoverIdx].top,
+                  width: slotMeasures[dragHoverIdx].width,
+                  height: slotMeasures[dragHoverIdx].height,
+                  border: '4px solid rgba(34,197,94,0.95)',
+                  borderRadius: 6,
+                  pointerEvents: 'none',
+                  boxShadow: '0 0 0 2px rgba(0,0,0,0.4), 0 8px 24px rgba(34,197,94,0.55)',
+                  zIndex: 80,
+                }}
+              />
+            )}
             {/* Manual mode preview hint — show a subtle X badge on each filled photo */}
             {mode === 'manual' && slotMeasures.map((s, i) => (
               <div
@@ -837,6 +977,16 @@ export default function CollagePage() {
                 >
                   <Eraser className="w-4 h-4" />
                   Soltar todas
+                </button>
+              )}
+              {mode === 'auto' && slotPermutation.some((v, i) => v !== i) && (
+                <button
+                  type="button"
+                  onClick={resetPositions}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white/85 text-sm font-semibold transition-colors"
+                  title="Vuelve las fotos a su orden original"
+                >
+                  ↺ Posiciones
                 </button>
               )}
               {mode === 'manual' && manualSelection.length > 0 && (
