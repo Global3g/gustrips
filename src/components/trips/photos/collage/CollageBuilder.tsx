@@ -4,14 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, Shuffle, Sparkles, X, ImageIcon, Loader2 } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import EditorialTemplate from './EditorialTemplate';
+import MosaicAutoTemplate from './MosaicAutoTemplate';
+import PinterestWallTemplate from './PinterestWallTemplate';
 import PolaroidWallTemplate from './PolaroidWallTemplate';
 import ScrapbookTemplate from './ScrapbookTemplate';
-import PostcardTemplate from './PostcardTemplate';
 import { useToast } from '@/context/ToastContext';
 import type { AlbumPhoto, Trip } from '@/types';
 
-type TemplateId = 'editorial' | 'polaroid' | 'scrapbook' | 'postcard';
+type TemplateId = 'mosaic' | 'pinterest' | 'polaroid' | 'scrapbook';
 
 interface Props {
   open: boolean;
@@ -54,7 +54,7 @@ function formatDateRange(trip: Trip | null): string | undefined {
 }
 
 export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
-  const [template, setTemplate] = useState<TemplateId>('editorial');
+  const [template, setTemplate] = useState<TemplateId>('mosaic');
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [previewScale, setPreviewScale] = useState(0.5);
@@ -87,7 +87,7 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
     // void the seed dep so eslint sees it as used
     void shuffleSeed;
     const ranked = [...shuffle(withCaption), ...shuffle(others)];
-    return ranked.slice(0, 16);
+    return ranked.slice(0, 32);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photos, shuffleSeed]);
 
@@ -171,10 +171,10 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
             {/* Template selector — horizontal scroll on mobile if many */}
             <div className="px-5 pt-4 flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
               {([
-                ['editorial', 'Editorial'],
-                ['polaroid', 'Polaroid Wall'],
+                ['mosaic', 'Mosaic'],
+                ['pinterest', 'Pinterest'],
+                ['polaroid', 'Polaroid'],
                 ['scrapbook', 'Scrapbook'],
-                ['postcard', 'Postal'],
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -221,16 +221,17 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
                         tripTitle: trip?.title || 'Mi viaje',
                         destination: trip?.destination,
                         dateRange,
+                        seed: shuffleSeed + 1,
                       };
                       switch (template) {
-                        case 'editorial':
-                          return <EditorialTemplate {...common} />;
+                        case 'mosaic':
+                          return <MosaicAutoTemplate {...common} />;
+                        case 'pinterest':
+                          return <PinterestWallTemplate {...common} />;
                         case 'polaroid':
                           return <PolaroidWallTemplate {...common} />;
                         case 'scrapbook':
                           return <ScrapbookTemplate {...common} />;
-                        case 'postcard':
-                          return <PostcardTemplate {...common} />;
                       }
                     })()
                   ) : (
