@@ -9,6 +9,7 @@ interface Props {
   destination?: string;
   dateRange?: string;
   seed?: number;
+  count?: number;
 }
 
 function proxied(url: string): string {
@@ -33,7 +34,7 @@ function mulberry32(seed: number): () => number {
  *  current height. Title sits in a slim header band — never on top of
  *  photos. */
 const PinterestWallTemplate = forwardRef<HTMLDivElement, Props>(function PinterestWallTemplate(
-  { photos, tripTitle, destination, dateRange, seed = 1 },
+  { photos, tripTitle, destination, dateRange, seed = 1, count = 20 },
   ref,
 ) {
   const HEADER = 130;
@@ -51,7 +52,7 @@ const PinterestWallTemplate = forwardRef<HTMLDivElement, Props>(function Pintere
     // of vertical room. Cap at ~20 photos so each one is readable.
     const columns: { items: { url: string; aspect: number; h: number }[]; total: number }[] = [];
     for (let i = 0; i < COLUMNS; i++) columns.push({ items: [], total: 0 });
-    const maxItems = Math.min(20, photos.length === 0 ? 0 : 20);
+    const maxItems = photos.length === 0 ? 0 : Math.max(4, Math.min(48, count));
     const usable: AlbumPhoto[] = [];
     while (usable.length < maxItems && photos.length > 0) {
       usable.push(photos[usable.length % photos.length]);

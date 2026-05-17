@@ -9,6 +9,7 @@ interface Props {
   destination?: string;
   dateRange?: string;
   seed?: number;
+  count?: number;
 }
 
 function proxied(url: string): string {
@@ -41,18 +42,26 @@ const TAPES = [
  *  per-card rotation and washi tape — feels scattered without leaving big
  *  empty corners. */
 const PolaroidWallTemplate = forwardRef<HTMLDivElement, Props>(function PolaroidWallTemplate(
-  { photos, tripTitle, destination, dateRange, seed = 1 },
+  { photos, tripTitle, destination, dateRange, seed = 1, count = 12 },
   ref,
 ) {
   const HEADER = 130;
   const CANVAS = 1080;
-  const COLS = 4;
-  const ROWS = 3;
-  const CARD = 220;
-  const COUNT = COLS * ROWS;
+  // Pick grid dimensions that fit the chosen count cleanly.
+  const COUNT = Math.max(4, Math.min(48, count));
+  const COLS = COUNT <= 6 ? 3 : COUNT <= 12 ? 4 : COUNT <= 24 ? 6 : COUNT <= 36 ? 6 : 8;
+  const ROWS = Math.ceil(COUNT / COLS);
+  // Card size shrinks as the grid grows so everything fits.
+  const baseW = (CANVAS - 40) / COLS;
+  const baseH = (CANVAS - HEADER - 40) / ROWS;
+  const CARD = Math.min(baseW, baseH) - 16;
   const photoArea = { x: 0, y: HEADER, w: CANVAS, h: CANVAS - HEADER };
   const cellW = photoArea.w / COLS;
   const cellH = photoArea.h / ROWS;
+  // Jitter & rotation scale down as the grid gets denser, otherwise
+  // higher counts overlap too much.
+  const jitter = COUNT <= 12 ? 24 : COUNT <= 24 ? 12 : 6;
+  const rotMax = COUNT <= 12 ? 9 : COUNT <= 24 ? 5 : 3;
 
   const placed = useMemo(() => {
     const rand = mulberry32(seed);
@@ -67,9 +76,9 @@ const PolaroidWallTemplate = forwardRef<HTMLDivElement, Props>(function Polaroid
         const p = usable[idx];
         if (!p) continue;
         // Center jitter within the cell so polaroids feel hand-laid
-        const cx = photoArea.x + c * cellW + cellW / 2 + (rand() - 0.5) * 24;
-        const cy = photoArea.y + r * cellH + cellH / 2 + (rand() - 0.5) * 24;
-        const rot = (rand() - 0.5) * 18; // ±9deg
+        const cx = photoArea.x + c * cellW + cellW / 2 + (rand() - 0.5) * jitter;
+        const cy = photoArea.y + r * cellH + cellH / 2 + (rand() - 0.5) * jitter;
+        const rot = (rand() - 0.5) * rotMax * 2;
         out.push({ url: p.url, cx, cy, rot, tape: Math.floor(rand() * TAPES.length) });
       }
     }

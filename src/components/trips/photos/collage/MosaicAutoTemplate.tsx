@@ -11,6 +11,9 @@ interface Props {
   /** Re-render the layout when this changes (the parent shuffle button
    *  bumps it). Without this the useMemo would never recompute. */
   seed?: number;
+  /** How many photo slots to generate. Defaults to 26. Common values:
+   *  6, 12, 24, 36, 48. */
+  count?: number;
 }
 
 interface Slot {
@@ -76,16 +79,13 @@ function generateMosaicSlots(
  *  whole canvas via recursive binary partition. Small header band at the
  *  top holds the title (no overlap). Tight 3px gutters between photos. */
 const MosaicAutoTemplate = forwardRef<HTMLDivElement, Props>(function MosaicAutoTemplate(
-  { photos, tripTitle, destination, dateRange, seed = 1 },
+  { photos, tripTitle, destination, dateRange, seed = 1, count = 26 },
   ref,
 ) {
   const HEADER = 130;
   const CANVAS = 1080;
-  const GAP = 4;
-  // 26 photos give nice variety while keeping each slot big enough to
-  // recognize on a 1080px canvas. Increase via repeat if the user has
-  // fewer photos than slots.
-  const NUM = 26;
+  const GAP = count <= 12 ? 6 : count <= 24 ? 4 : 3;
+  const NUM = Math.max(2, Math.min(64, count));
   const usable: AlbumPhoto[] = [];
   while (usable.length < NUM && photos.length > 0) {
     usable.push(photos[usable.length % photos.length]);
@@ -93,7 +93,8 @@ const MosaicAutoTemplate = forwardRef<HTMLDivElement, Props>(function MosaicAuto
 
   const slots = useMemo(
     () => generateMosaicSlots(NUM, CANVAS, CANVAS - HEADER, seed),
-    [seed],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [seed, NUM],
   );
 
   return (
@@ -177,7 +178,7 @@ const MosaicAutoTemplate = forwardRef<HTMLDivElement, Props>(function MosaicAuto
               textTransform: 'uppercase',
             }}
           >
-            GusTrips · {NUM} fotos
+            GusTrips · {usable.length} fotos
           </p>
         </div>
       </div>

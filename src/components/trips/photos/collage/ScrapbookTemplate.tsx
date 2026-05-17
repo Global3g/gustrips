@@ -9,6 +9,9 @@ interface Props {
   destination?: string;
   dateRange?: string;
   seed?: number;
+  /** Scrapbook is hand-laid to 10 slots; higher values clamp. The
+   *  template advertises max=10 to the page UI. */
+  count?: number;
 }
 
 function proxied(url: string): string {
@@ -58,19 +61,20 @@ const TAPES = [
  *  grid, washi tape, dashed borders, doodles. Title in a slim band at
  *  the top so it never sits on top of photos. */
 const ScrapbookTemplate = forwardRef<HTMLDivElement, Props>(function ScrapbookTemplate(
-  { photos, tripTitle, destination, dateRange, seed = 1 },
+  { photos, tripTitle, destination, dateRange, seed = 1, count = SLOTS.length },
   ref,
 ) {
+  const targetCount = Math.min(SLOTS.length, Math.max(4, count));
   const usable = useMemo(() => {
     const out: AlbumPhoto[] = [];
     const rand = mulberry32(seed);
     void rand;
-    while (out.length < SLOTS.length && photos.length > 0) {
+    while (out.length < targetCount && photos.length > 0) {
       out.push(photos[out.length % photos.length]);
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photos, seed]);
+  }, [photos, seed, targetCount]);
 
   return (
     <div
@@ -171,7 +175,7 @@ const ScrapbookTemplate = forwardRef<HTMLDivElement, Props>(function ScrapbookTe
       </div>
 
       {/* Photos */}
-      {SLOTS.map((slot, i) => {
+      {SLOTS.slice(0, targetCount).map((slot, i) => {
         const p = usable[i];
         if (!p) return null;
         return (

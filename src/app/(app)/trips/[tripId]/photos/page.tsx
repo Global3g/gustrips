@@ -54,7 +54,6 @@ const MobileScrollHelper = dynamic(
 );
 import LazySection from '@/components/trips/photos/LazySection';
 const PhotoFilmstrip = dynamic(() => import('@/components/trips/photos/PhotoFilmstrip'), { ssr: false, loading: () => null });
-const CollageBuilder = dynamic(() => import('@/components/trips/photos/collage/CollageBuilder'), { ssr: false, loading: () => null });
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
@@ -134,7 +133,6 @@ export default function PhotosPage() {
     return 'chronological';
   });
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [collageOpen, setCollageOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1098,7 +1096,7 @@ export default function PhotosPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setCollageOpen(true)}
+                    onClick={() => router.push(`/trips/${tripId}/photos/collage`)}
                     disabled={allPhotos.length < 2}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/15 to-rose-500/15 hover:from-amber-400/25 hover:to-rose-500/25 border border-amber-300/30 text-amber-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
                   >
@@ -1925,13 +1923,6 @@ export default function PhotosPage() {
         deleting={deleting}
       />
 
-      {/* ── Collage builder modal ── */}
-      <CollageBuilder
-        open={collageOpen}
-        onClose={() => setCollageOpen(false)}
-        photos={allPhotos}
-        trip={trip}
-      />
     </div>
   );
 }
