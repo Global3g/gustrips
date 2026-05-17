@@ -6,10 +6,13 @@ import { Download, Shuffle, Sparkles, X, ImageIcon, Loader2 } from 'lucide-react
 import { toPng } from 'html-to-image';
 import MosaicMagazine from './MosaicMagazine';
 import PolaroidScattered from './PolaroidScattered';
+import CircleTemplate from './CircleTemplate';
+import HeartTemplate from './HeartTemplate';
+import MasonryTemplate from './MasonryTemplate';
 import { useToast } from '@/context/ToastContext';
 import type { AlbumPhoto, Trip } from '@/types';
 
-type TemplateId = 'mosaic' | 'polaroid';
+type TemplateId = 'mosaic' | 'polaroid' | 'circle' | 'heart' | 'masonry';
 
 interface Props {
   open: boolean;
@@ -85,7 +88,7 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
     // void the seed dep so eslint sees it as used
     void shuffleSeed;
     const ranked = [...shuffle(withCaption), ...shuffle(others)];
-    return ranked.slice(0, 8);
+    return ranked.slice(0, 16);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photos, shuffleSeed]);
 
@@ -156,17 +159,20 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
               </button>
             </div>
 
-            {/* Template selector */}
-            <div className="px-5 pt-4 flex gap-2">
+            {/* Template selector — horizontal scroll on mobile if many */}
+            <div className="px-5 pt-4 flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
               {([
                 ['mosaic', 'Magazine'],
                 ['polaroid', 'Polaroid'],
+                ['circle', 'Círculo'],
+                ['heart', 'Corazón'],
+                ['masonry', 'Masonry'],
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => setTemplate(id)}
-                  className={`flex-1 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
+                  className={`flex-shrink-0 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all ${
                     template === id
                       ? 'bg-amber-400/15 border-amber-300/60 text-amber-100'
                       : 'bg-white/[0.04] border-white/10 text-white/75 hover:bg-white/[0.08]'
@@ -200,23 +206,27 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
                   }}
                 >
                   {sample.length > 0 ? (
-                    template === 'mosaic' ? (
-                      <MosaicMagazine
-                        ref={stageRef}
-                        photos={sample}
-                        tripTitle={trip?.title || 'Mi viaje'}
-                        destination={trip?.destination}
-                        dateRange={dateRange}
-                      />
-                    ) : (
-                      <PolaroidScattered
-                        ref={stageRef}
-                        photos={sample}
-                        tripTitle={trip?.title || 'Mi viaje'}
-                        destination={trip?.destination}
-                        dateRange={dateRange}
-                      />
-                    )
+                    (() => {
+                      const common = {
+                        ref: stageRef,
+                        photos: sample,
+                        tripTitle: trip?.title || 'Mi viaje',
+                        destination: trip?.destination,
+                        dateRange,
+                      };
+                      switch (template) {
+                        case 'mosaic':
+                          return <MosaicMagazine {...common} />;
+                        case 'polaroid':
+                          return <PolaroidScattered {...common} />;
+                        case 'circle':
+                          return <CircleTemplate {...common} />;
+                        case 'heart':
+                          return <HeartTemplate {...common} />;
+                        case 'masonry':
+                          return <MasonryTemplate {...common} />;
+                      }
+                    })()
                   ) : (
                     <div className="flex items-center justify-center text-white/40 text-sm" style={{ width: 1080, height: 1080 }}>
                       No hay fotos suficientes
