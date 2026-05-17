@@ -41,12 +41,31 @@ const BigHeroTemplate = forwardRef<HTMLDivElement, Props>(function BigHeroTempla
 
   const hero = usable[0];
   const rest = usable.slice(1);
-  // Bottom grid: pick cols so cells stay roughly square.
+  // Pick a grid for the bottom strip whose cells are as square-ish as
+  // possible against the remaining (1080 × (1080 - HERO_H)) canvas.
   const restCount = rest.length;
-  const cols = restCount <= 6 ? 3 : restCount <= 12 ? 4 : restCount <= 24 ? 6 : restCount <= 36 ? 8 : 10;
-  const rows = Math.ceil(restCount / cols);
-  const cellW = (CANVAS - GAP * (cols - 1)) / cols;
-  const cellH = (CANVAS - HERO_H - GAP * (rows - 1)) / rows;
+  const restCanvasH = CANVAS - HERO_H;
+  const { cols, rows } = useMemo(() => {
+    if (restCount <= 0) return { cols: 1, rows: 1 };
+    let bestCols = Math.ceil(Math.sqrt(restCount));
+    let bestRows = Math.ceil(restCount / bestCols);
+    let bestScore = Infinity;
+    for (let c = 2; c <= restCount; c++) {
+      const r = Math.ceil(restCount / c);
+      const cellW = CANVAS / c;
+      const cellH = restCanvasH / r;
+      const aspectPenalty = Math.abs(Math.log(cellW / cellH));
+      const emptyPenalty = (c * r - restCount) * 0.18;
+      const score = aspectPenalty + emptyPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        bestCols = c;
+        bestRows = r;
+      }
+    }
+    return { cols: bestCols, rows: bestRows };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restCount]);
 
   return (
     <div
@@ -93,7 +112,7 @@ const BigHeroTemplate = forwardRef<HTMLDivElement, Props>(function BigHeroTempla
         </div>
       </div>
 
-      {/* Grid below */}
+      {/* Grid below — 1fr both axes so cells divide the area cleanly */}
       <div
         style={{
           position: 'absolute',
@@ -103,7 +122,7 @@ const BigHeroTemplate = forwardRef<HTMLDivElement, Props>(function BigHeroTempla
           bottom: 0,
           display: 'grid',
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gridAutoRows: `${cellH}px`,
+          gridTemplateRows: `repeat(${rows}, 1fr)`,
           gap: GAP,
         }}
       >

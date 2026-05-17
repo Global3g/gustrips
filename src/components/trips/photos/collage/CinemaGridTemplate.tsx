@@ -28,21 +28,33 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
   const CANVAS = 1080;
   const GAP = 4;
   const NUM = Math.max(4, Math.min(48, count));
-  // Pick a grid shape close to square that fits NUM exactly when possible.
+  // Pick a grid shape whose cells are close to SQUARE for the given canvas.
+  // Previous heuristic optimized only for "no empty cells", which gave 3×8
+  // grids for 24 photos — ugly tall sliver cells. Now we score each
+  // candidate by how close its cell aspect ratio gets to 1, with a small
+  // penalty for empty trailing cells.
   const { cols, rows } = useMemo(() => {
-    // Find cols × rows that fit, preferring landscape grids slightly wider.
-    const target = NUM;
-    let bestCols = Math.ceil(Math.sqrt(target));
-    let bestRows = Math.ceil(target / bestCols);
-    for (let c = Math.max(2, Math.floor(Math.sqrt(target)) - 2); c <= Math.ceil(Math.sqrt(target)) + 2; c++) {
-      const r = Math.ceil(target / c);
-      // Prefer the grid that wastes fewer cells.
-      if (c * r >= target && c * r - target < bestCols * bestRows - target) {
+    const canvasW = 1080;
+    const canvasH = 1080 - HEADER;
+    let bestCols = Math.ceil(Math.sqrt(NUM));
+    let bestRows = Math.ceil(NUM / bestCols);
+    let bestScore = Infinity;
+    for (let c = 2; c <= NUM; c++) {
+      const r = Math.ceil(NUM / c);
+      const cellW = canvasW / c;
+      const cellH = canvasH / r;
+      // log(aspect) measures distance from square in both directions equally.
+      const aspectPenalty = Math.abs(Math.log(cellW / cellH));
+      const emptyPenalty = (c * r - NUM) * 0.18;
+      const score = aspectPenalty + emptyPenalty;
+      if (score < bestScore) {
+        bestScore = score;
         bestCols = c;
         bestRows = r;
       }
     }
     return { cols: bestCols, rows: bestRows };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [NUM]);
 
   const usable = useMemo(() => {
@@ -54,9 +66,6 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photos, seed, NUM]);
-
-  const cellW = (CANVAS - GAP * (cols - 1)) / cols;
-  const cellH = (CANVAS - HEADER - GAP * (rows - 1)) / rows;
 
   return (
     <div
@@ -100,7 +109,8 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Grid — 1fr on both axes so cells divide the available area exactly,
+          regardless of how many photos. No overflow ever. */}
       <div
         style={{
           position: 'absolute',
@@ -110,7 +120,7 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
           bottom: 0,
           display: 'grid',
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gridAutoRows: `${cellH}px`,
+          gridTemplateRows: `repeat(${rows}, 1fr)`,
           gap: GAP,
         }}
       >
