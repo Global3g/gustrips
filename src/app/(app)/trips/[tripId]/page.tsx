@@ -53,6 +53,7 @@ import { getClientDb } from '@/lib/firebase/client';
 import { useTrip } from '@/hooks/useTrip';
 import { useTrips } from '@/hooks/useTrips';
 import { useEvents } from '@/hooks/useEvents';
+import { useAlbum } from '@/hooks/useAlbum';
 import { useMembers } from '@/hooks/useMembers';
 import { useChecklist } from '@/hooks/useChecklist';
 import { useMilestones } from '@/hooks/useMilestones';
@@ -522,6 +523,7 @@ export default function TripDetailPage() {
   const router = useRouter();
   const tripId = params.tripId as string;
   const { trip, loading, updateTrip, generateShareToken } = useTrip(tripId);
+  const { albumPhotos } = useAlbum(tripId, trip);
   useMilestones(tripId);
 
   // One-time cleanup: legacy done notes (from before the toggle-deletes
@@ -543,6 +545,26 @@ export default function TripDetailPage() {
   const { items: checklistItems } = useChecklist(tripId);
   const { travelers: globalTravelers } = useGlobalTravelers();
   const { toast } = useToast();
+
+  // Photo count for the KPI card. Old code read `trip.albumPhotos.length`
+  // but after the May-2026 migration that array is empty — photos now
+  // live in the `/trips/{id}/photos` subcollection (via useAlbum) and a
+  // few legacy ones are attached as URLs directly to events. Dedupe by
+  // URL across both sources.
+  const photoCount = useMemo(() => {
+    const urls = new Set<string>();
+    for (const p of albumPhotos) {
+      if (p.url) urls.add(p.url);
+    }
+    for (const ev of events) {
+      if (Array.isArray(ev.photos)) {
+        for (const url of ev.photos) {
+          if (url) urls.add(url);
+        }
+      }
+    }
+    return urls.size;
+  }, [albumPhotos, events]);
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -874,8 +896,8 @@ export default function TripDetailPage() {
                           <Camera className="w-6 h-6 text-violet-400" />
                         </div>
                         <p className="text-white font-bold text-sm">Fotos</p>
-                        <p className="text-2xl font-black text-violet-400 mt-1">{trip.albumPhotos?.length || 0}</p>
-                        <p className="text-white/25 text-[10px] mt-0.5">foto{(trip.albumPhotos?.length || 0) !== 1 ? 's' : ''} del viaje</p>
+                        <p className="text-2xl font-black text-violet-400 mt-1">{photoCount}</p>
+                        <p className="text-white/25 text-[10px] mt-0.5">foto{photoCount !== 1 ? 's' : ''} del viaje</p>
                       </div>
                     </SpotlightCard>
                   </Link>

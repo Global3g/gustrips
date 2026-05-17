@@ -28,6 +28,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import { useTrips } from '@/hooks/useTrips';
+import { useAlbum } from '@/hooks/useAlbum';
 import { useToast } from '@/context/ToastContext';
 import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
@@ -448,7 +449,18 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   /* ---- Travelers count (still used in nav badge) ---- */
 
   const travelers = travelerCount || trip?.travelerIds?.length || 0;
-  const photoCount = trip?.albumPhotos?.length ?? 0;
+  // Photos used to live in trip.albumPhotos[] but were migrated to the
+  // /trips/{id}/photos subcollection. Read the merged view via useAlbum
+  // and also count any event-only photos (URLs only in event.photos[]).
+  const { albumPhotos } = useAlbum(tripId, trip);
+  const photoCount = useMemo(() => {
+    const urls = new Set<string>();
+    for (const p of albumPhotos) if (p.url) urls.add(p.url);
+    for (const ev of events) {
+      if (Array.isArray(ev.photos)) for (const url of ev.photos) if (url) urls.add(url);
+    }
+    return urls.size;
+  }, [albumPhotos, events]);
 
   /* ---- Today / jump-to-today ---- */
 

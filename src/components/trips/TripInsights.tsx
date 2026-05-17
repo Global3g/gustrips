@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, MapPin, Navigation, CalendarDays, Camera } from 'lucide-react';
 import { EVENT_TYPES } from '@/config/constants';
+import { useAlbum } from '@/hooks/useAlbum';
 import type { Trip, TripEvent } from '@/types';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -51,6 +52,19 @@ interface TripInsightsProps {
 }
 
 export default function TripInsights({ trip, events }: TripInsightsProps) {
+  // Reads merged subcollection + legacy array. The old `trip.albumPhotos`
+  // path was emptied by the May-2026 migration so this is the only reliable
+  // count.
+  const { albumPhotos } = useAlbum(trip.id, trip);
+  const photoCount = useMemo(() => {
+    const urls = new Set<string>();
+    for (const p of albumPhotos) if (p.url) urls.add(p.url);
+    for (const ev of events) {
+      if (Array.isArray(ev.photos)) for (const url of ev.photos) if (url) urls.add(url);
+    }
+    return urls.size;
+  }, [albumPhotos, events]);
+
   const insights = useMemo(() => {
     const cities = new Set<string>();
     for (const e of events) {
@@ -80,7 +94,7 @@ export default function TripInsights({ trip, events }: TripInsightsProps) {
     return { cities: cities.size, kmTotal, topTypes };
   }, [events]);
 
-  if (events.length === 0 && (trip.albumPhotos?.length ?? 0) === 0) return null;
+  if (events.length === 0 && photoCount === 0) return null;
 
   return (
     <motion.div
@@ -110,7 +124,7 @@ export default function TripInsights({ trip, events }: TripInsightsProps) {
             color="cyan"
           />
           <StatBlock icon={CalendarDays} label="Eventos" value={events.length.toString()} color="violet" />
-          <StatBlock icon={Camera} label="Fotos" value={(trip.albumPhotos?.length ?? 0).toString()} color="rose" />
+          <StatBlock icon={Camera} label="Fotos" value={photoCount.toString()} color="rose" />
         </div>
 
         {insights.topTypes.length > 0 && (
