@@ -21,6 +21,7 @@ import {
   Sparkles,
   CheckSquare,
   ArrowUpDown,
+  LayoutGrid,
 } from 'lucide-react';
 import {
   DndContext,
@@ -53,6 +54,7 @@ const MobileScrollHelper = dynamic(
 );
 import LazySection from '@/components/trips/photos/LazySection';
 const PhotoFilmstrip = dynamic(() => import('@/components/trips/photos/PhotoFilmstrip'), { ssr: false, loading: () => null });
+const CollageBuilder = dynamic(() => import('@/components/trips/photos/collage/CollageBuilder'), { ssr: false, loading: () => null });
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
@@ -132,6 +134,7 @@ export default function PhotosPage() {
     return 'chronological';
   });
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [collageOpen, setCollageOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1088,10 +1091,20 @@ export default function PhotosPage() {
 
               {/* Sort filter — lets the user flip the order of the day/event
                   sections. Persisted per-trip so the choice survives reloads. */}
-              <div className="flex items-center justify-between gap-3 -mt-2">
+              <div className="flex items-center justify-between gap-3 -mt-2 flex-wrap">
                 <p className="text-white/55 text-xs font-medium">
                   {photoGroups.length} {photoGroups.length === 1 ? 'grupo' : 'grupos'} · {stats.total} {stats.total === 1 ? 'foto' : 'fotos'}
                 </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCollageOpen(true)}
+                    disabled={allPhotos.length < 2}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/15 to-rose-500/15 hover:from-amber-400/25 hover:to-rose-500/25 border border-amber-300/30 text-amber-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    Crear collage
+                  </button>
                 <div className="relative">
                   <button
                     type="button"
@@ -1140,6 +1153,7 @@ export default function PhotosPage() {
                       </div>
                     </>
                   )}
+                </div>
                 </div>
               </div>
 
@@ -1909,6 +1923,14 @@ export default function PhotosPage() {
         onDelete={(p) => handleDelete(p)}
         onDownload={(p) => downloadPhoto(p)}
         deleting={deleting}
+      />
+
+      {/* ── Collage builder modal ── */}
+      <CollageBuilder
+        open={collageOpen}
+        onClose={() => setCollageOpen(false)}
+        photos={allPhotos}
+        trip={trip}
       />
     </div>
   );
