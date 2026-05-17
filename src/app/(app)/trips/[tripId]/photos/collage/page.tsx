@@ -331,18 +331,11 @@ export default function CollagePage() {
    *  default. Used in auto mode; in manual mode swap rewrites the
    *  selection directly so the "Orden" strip stays in sync. */
   const [slotPermutation, setSlotPermutation] = useState<number[]>([]);
-  // Drag state. Ref for the in-flight pointer data (avoids closures on
-  // pointermove); state mirrors for the React-rendered hover ring.
-  const dragSrcRef = useRef<{ url: string; idx: number; startX: number; startY: number } | null>(null);
-  // Sticky flag — once the pointer travels far enough we lock this in
-  // until release, so a wobble back to (0,0) still counts as a drag.
-  const draggedRef = useRef(false);
-  const [dragSrcUrl, setDragSrcUrl] = useState<string | null>(null);
-  const [dragMoving, setDragMoving] = useState(false);
-  /** URL of the photo currently under the cursor during drag. Drives the
-   *  hover ring. Using a URL instead of an index makes it template-agnostic
-   *  — Pinterest's DOM order doesn't match the array order. */
-  const [dragHoverUrl, setDragHoverUrl] = useState<string | null>(null);
+  // Drag state — just two URLs. Native HTML5 drag-and-drop handles all
+  // the cursor/capture/threshold machinery, so all we track is which
+  // photo is being dragged and which one is hovered.
+  const [draggingUrl, setDraggingUrl] = useState<string | null>(null);
+  const [hoverUrl, setHoverUrl] = useState<string | null>(null);
   // Free-position text labels — apply to any template.
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
@@ -562,109 +555,77 @@ export default function CollagePage() {
     });
   }, []);
 
-  /** Pointer-down on a photo starts tracking. If the pointer travels
-   *  more than DRAG_THRESHOLD before release we treat it as a swap;
-   *  otherwise it's a tap → pin/unpin or remove from selection.
-   *
-   *  Once down, we attach document-level listeners so the drag keeps
-   *  working even when the cursor passes over text overlays, scrolls
-   *  off the wrapper, or crosses a transform boundary (Polaroid/Tilted
-   *  rotations made setPointerCapture unreliable). */
-  const DRAG_THRESHOLD = 8;
+  /* ── Drag-to-swap via native HTML5 drag-and-drop ────────────────
+     The browser already knows how to: detect intent, pick up the
+     element, follow the cursor, identify the drop target, and clean
+     up if you cancel. We just listen for start / over / drop / end on
+     the stage wrapper and do a URL-based swap. Click stays separate
+     so a quick tap still pins. */
 
-  /** Returns the array index in displaySample of the photo whose URL
-   *  the wrapper exposes via data-photo-url. */
-  const slotIndexOfUrl = (url: string): number =>
-    displaySample.findIndex((p) => p.url === url);
-
-  /** Walk every layer at (x, y) until we find one that's a photo
-   *  wrapper. Skips the source URL so swapping onto yourself is a
-   *  no-op. */
-  const slotInfoAtPoint = (x: number, y: number, excludeUrl?: string): { idx: number; url: string } | null => {
-    const els = document.elementsFromPoint(x, y);
-    for (const el of els) {
-      const w = (el as HTMLElement).closest('[data-photo-url]') as HTMLElement | null;
-      if (!w) continue;
-      const u = w.getAttribute('data-photo-url');
-      if (!u) continue;
-      if (excludeUrl && u === excludeUrl) continue;
-      const idx = slotIndexOfUrl(u);
-      if (idx >= 0) return { idx, url: u };
+  const handleStageDragStart = (e: React.DragEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-text-overlay]')) {
+      e.preventDefault();
+      return;
     }
-    return null;
+    const wrapper = target.closest('[data-photo-url]') as HTMLElement | null;
+    if (!wrapper) {
+      e.preventDefault();
+      return;
+    }
+    const url = wrapper.getAttribute('data-photo-url');
+    if (!url) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData('text/plain', url);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingUrl(url);
   };
 
-  const handleStagePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      const target = e.target as HTMLElement;
-      if (target.closest('[data-text-overlay]')) return;
-      const wrapper = target.closest('[data-photo-url]') as HTMLElement | null;
-      if (!wrapper) return;
-      const url = wrapper.getAttribute('data-photo-url');
-      if (!url) return;
-      const srcIdx = slotIndexOfUrl(url);
-      if (srcIdx < 0) return;
+  const handleStageDragOver = (e: React.DragEvent) => {
+    if (!draggingUrl) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const wrapper = (e.target as HTMLElement).closest('[data-photo-url]') as HTMLElement | null;
+    const url = wrapper?.getAttribute('data-photo-url') ?? null;
+    setHoverUrl(url && url !== draggingUrl ? url : null);
+  };
 
-      dragSrcRef.current = { url, idx: srcIdx, startX: e.clientX, startY: e.clientY };
-      draggedRef.current = false;
-      setDragSrcUrl(url);
-      setDragMoving(false);
-      setDragHoverUrl(null);
+  const handleStageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const sourceUrl = e.dataTransfer.getData('text/plain') || draggingUrl;
+    setDraggingUrl(null);
+    setHoverUrl(null);
+    if (!sourceUrl) return;
+    const wrapper = (e.target as HTMLElement).closest('[data-photo-url]') as HTMLElement | null;
+    const targetUrl = wrapper?.getAttribute('data-photo-url');
+    if (!targetUrl || targetUrl === sourceUrl) return;
+    const srcIdx = displaySample.findIndex((p) => p.url === sourceUrl);
+    const tgtIdx = displaySample.findIndex((p) => p.url === targetUrl);
+    if (srcIdx >= 0 && tgtIdx >= 0) swapSlots(srcIdx, tgtIdx);
+  };
 
-      // Document-level listeners so events keep flowing while cursor moves
-      // across template boundaries / transforms.
-      const onDocMove = (ev: PointerEvent) => {
-        const src = dragSrcRef.current;
-        if (!src) return;
-        const dx = ev.clientX - src.startX;
-        const dy = ev.clientY - src.startY;
-        if (!draggedRef.current && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-        if (!draggedRef.current) {
-          draggedRef.current = true;
-          setDragMoving(true);
-        }
-        const hit = slotInfoAtPoint(ev.clientX, ev.clientY, src.url);
-        setDragHoverUrl(hit ? hit.url : null);
-        // Suppress browser scroll / selection while dragging.
-        ev.preventDefault();
-      };
-      let removeUp = () => {};
-      const cleanup = () => {
-        document.removeEventListener('pointermove', onDocMove);
-        removeUp();
-      };
-      const onDocUp = (ev: PointerEvent) => {
-        const src = dragSrcRef.current;
-        const wasDragging = draggedRef.current;
-        dragSrcRef.current = null;
-        draggedRef.current = false;
-        setDragSrcUrl(null);
-        setDragMoving(false);
-        setDragHoverUrl(null);
-        cleanup();
-        if (!src) return;
-        if (wasDragging) {
-          const hit = slotInfoAtPoint(ev.clientX, ev.clientY, src.url);
-          if (hit) swapSlots(src.idx, hit.idx);
-        } else {
-          // Tap, not drag
-          if (mode === 'manual') removeFromManual(src.url);
-          else togglePin(src.url);
-          setSelectedOverlayId(null);
-        }
-      };
-      removeUp = () => {
-        document.removeEventListener('pointerup', onDocUp);
-        document.removeEventListener('pointercancel', onDocUp);
-      };
-      document.addEventListener('pointermove', onDocMove, { passive: false });
-      document.addEventListener('pointerup', onDocUp);
-      document.addEventListener('pointercancel', onDocUp);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [displaySample, mode, removeFromManual, togglePin, swapSlots],
-  );
+  const handleStageDragEnd = () => {
+    setDraggingUrl(null);
+    setHoverUrl(null);
+  };
+
+  /** Plain click on a photo (no drag started) = pin/unpin in auto,
+   *  remove from selection in manual. */
+  const handleStageClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-text-overlay]')) return;
+    const wrapper = target.closest('[data-photo-url]') as HTMLElement | null;
+    if (!wrapper) {
+      setSelectedOverlayId(null);
+      return;
+    }
+    const url = wrapper.getAttribute('data-photo-url');
+    if (!url) return;
+    if (mode === 'manual') removeFromManual(url);
+    else togglePin(url);
+  };
 
   /** After every render, measure photo positions in the stage so we can
    *  overlay click-targets + pin badges on top of the scaled preview. */
@@ -860,14 +821,12 @@ export default function CollagePage() {
                 transform: `scale(${previewScale})`,
                 width: 1080,
                 height: 1080,
-                // touchAction: 'none' stops mobile browsers from
-                // scrolling/zooming while the user is dragging a photo,
-                // so pointermove events keep firing.
-                touchAction: 'none',
-                WebkitUserSelect: 'none',
-                userSelect: 'none',
               }}
-              onPointerDown={handleStagePointerDown}
+              onClick={handleStageClick}
+              onDragStart={handleStageDragStart}
+              onDragOver={handleStageDragOver}
+              onDrop={handleStageDrop}
+              onDragEnd={handleStageDragEnd}
             >
               <div
                 ref={exportRootRef}
@@ -933,35 +892,30 @@ export default function CollagePage() {
               );
             })}
             {/* Drag-source dim — shows which photo you're holding. */}
-            {dragMoving && dragSrcUrl &&
-              slotMeasures
-                .map((s, i) => s.url === dragSrcUrl ? { s, i } : null)
-                .filter(Boolean)
-                .map((entry) => {
-                  const { s } = entry as { s: typeof slotMeasures[number]; i: number };
-                  return (
-                    <div
-                      key={`src-${s.url}`}
-                      style={{
-                        position: 'absolute',
-                        left: s.left,
-                        top: s.top,
-                        width: s.width,
-                        height: s.height,
-                        background: 'rgba(0,0,0,0.45)',
-                        border: '3px dashed rgba(255,255,255,0.85)',
-                        borderRadius: 6,
-                        pointerEvents: 'none',
-                        zIndex: 75,
-                      }}
-                    />
-                  );
-                })}
-            {/* Drag-target hover ring — find the slot measure by URL so
-                this works on templates whose DOM order differs from the
-                array order (Pinterest masonry, Big Hero's hero slot, etc). */}
-            {dragMoving && dragHoverUrl && slotMeasures
-              .filter((s) => s.url === dragHoverUrl)
+            {draggingUrl && slotMeasures
+              .filter((s) => s.url === draggingUrl)
+              .slice(0, 1)
+              .map((s) => (
+                <div
+                  key="drag-src"
+                  style={{
+                    position: 'absolute',
+                    left: s.left,
+                    top: s.top,
+                    width: s.width,
+                    height: s.height,
+                    background: 'rgba(0,0,0,0.4)',
+                    border: '3px dashed rgba(255,255,255,0.85)',
+                    borderRadius: 6,
+                    pointerEvents: 'none',
+                    zIndex: 75,
+                  }}
+                />
+              ))}
+            {/* Drag-target hover ring — by URL so it works on templates
+                whose DOM order differs from the array order. */}
+            {hoverUrl && slotMeasures
+              .filter((s) => s.url === hoverUrl)
               .slice(0, 1)
               .map((s) => (
                 <div
