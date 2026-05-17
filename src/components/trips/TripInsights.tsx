@@ -4,8 +4,7 @@ import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, MapPin, Navigation, CalendarDays, Camera } from 'lucide-react';
 import { EVENT_TYPES } from '@/config/constants';
-import { useAlbum } from '@/hooks/useAlbum';
-import type { Trip, TripEvent } from '@/types';
+import type { Trip, TripEvent, AlbumPhoto } from '@/types';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -49,13 +48,13 @@ function StatBlock({
 interface TripInsightsProps {
   trip: Trip;
   events: TripEvent[];
+  /** Pre-computed album photos from the parent. Passing them avoids a
+   *  duplicate subcollection subscription — useAlbum loads 300+ docs on
+   *  big trips and the parent /photos page already has them. */
+  albumPhotos?: AlbumPhoto[];
 }
 
-export default function TripInsights({ trip, events }: TripInsightsProps) {
-  // Reads merged subcollection + legacy array. The old `trip.albumPhotos`
-  // path was emptied by the May-2026 migration so this is the only reliable
-  // count.
-  const { albumPhotos } = useAlbum(trip.id, trip);
+export default function TripInsights({ trip, events, albumPhotos = [] }: TripInsightsProps) {
   const photoCount = useMemo(() => {
     const urls = new Set<string>();
     for (const p of albumPhotos) if (p.url) urls.add(p.url);

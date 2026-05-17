@@ -28,7 +28,8 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import { useTrips } from '@/hooks/useTrips';
-import { useAlbum } from '@/hooks/useAlbum';
+import { collection, getCountFromServer } from 'firebase/firestore';
+import { getClientDb } from '@/lib/firebase/client';
 import { useToast } from '@/context/ToastContext';
 import { classNames } from '@/lib/utils/helpers';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
@@ -449,18 +450,39 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   /* ---- Travelers count (still used in nav badge) ---- */
 
   const travelers = travelerCount || trip?.travelerIds?.length || 0;
-  // Photos used to live in trip.albumPhotos[] but were migrated to the
-  // /trips/{id}/photos subcollection. Read the merged view via useAlbum
-  // and also count any event-only photos (URLs only in event.photos[]).
-  const { albumPhotos } = useAlbum(tripId, trip);
+  // Photo badge — count only. The full photo data lives in the photos
+  // subcollection (~300+ docs for a big trip) and subscribing to it from
+  // the sidebar made every page load N×500ms slower just to render a tiny
+  // number. getCountFromServer returns a single aggregate row instead.
+  // Event-only photo URLs come from the `events` prop we already have, so
+  // no extra subscription needed.
+  const [subPhotoCount, setSubPhotoCount] = useState<number>(0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const db = getClientDb();
+        const ref = collection(db, 'trips', tripId, 'photos');
+        const snap = await getCountFromServer(ref);
+        if (!cancelled) setSubPhotoCount(snap.data().count);
+      } catch (err) {
+        if (!cancelled) console.warn('[TripSidebar] photo count failed:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tripId]);
   const photoCount = useMemo(() => {
-    const urls = new Set<string>();
-    for (const p of albumPhotos) if (p.url) urls.add(p.url);
+    const eventUrls = new Set<string>();
     for (const ev of events) {
-      if (Array.isArray(ev.photos)) for (const url of ev.photos) if (url) urls.add(url);
+      if (Array.isArray(ev.photos)) for (const url of ev.photos) if (url) eventUrls.add(url);
     }
-    return urls.size;
-  }, [albumPhotos, events]);
+    // Upper bound — we treat subcollection + event-only as additive. Worst
+    // case there's some overlap and the badge shows N+ extras; for a nav
+    // badge that's fine.
+    return subPhotoCount + eventUrls.size;
+  }, [subPhotoCount, events]);
 
   /* ---- Today / jump-to-today ---- */
 

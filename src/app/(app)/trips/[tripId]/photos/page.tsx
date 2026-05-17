@@ -1509,7 +1509,7 @@ export default function PhotosPage() {
       {/* ── Trip insights (relocated from overview) ── */}
       {trip && (
         <div className="mt-5">
-          <TripInsights trip={trip} events={events} />
+          <TripInsights trip={trip} events={events} albumPhotos={albumPhotos} />
         </div>
       )}
 
