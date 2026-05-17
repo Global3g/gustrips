@@ -10,6 +10,19 @@ interface Props {
   dateRange?: string;
   seed?: number;
   count?: number;
+  /** Optional per-strip captions. Each entry maps to one filmstrip and
+   *  renders two lines beneath its photos: line1 in larger script type
+   *  (typically the place), line2 below it (typically the date). When
+   *  missing, falls back to destination + dateRange. */
+  captions?: { line1: string; line2: string }[];
+}
+
+/** Exposed so the page can render the matching number of caption editors
+ *  in the sidebar without having to re-implement the math. */
+export function photoboothStripsCount(count: number): number {
+  const num = Math.max(4, Math.min(24, count));
+  const photosPerStrip = num <= 6 ? num : num <= 10 ? 5 : num <= 16 ? 4 : 4;
+  return Math.ceil(num / photosPerStrip);
 }
 
 function proxied(url: string): string {
@@ -21,7 +34,7 @@ function proxied(url: string): string {
  *  each, white frames, dates handwritten beneath. Strips arrange side-by-
  *  side as count grows. Soft dark background like an old leather album. */
 const PhotoboothTemplate = forwardRef<HTMLDivElement, Props>(function PhotoboothTemplate(
-  { photos, tripTitle, destination, dateRange, seed = 1, count = 6 },
+  { photos, tripTitle, destination, dateRange, seed = 1, count = 6, captions },
   ref,
 ) {
   const CANVAS = 1080;
@@ -149,7 +162,8 @@ const PhotoboothTemplate = forwardRef<HTMLDivElement, Props>(function Photobooth
                 />
               </div>
             ))}
-            {/* Footer with date in handwriting */}
+            {/* Footer — 2 lines (lugar + fecha). Each strip can be edited
+                independently via the page's "Pies de foto" panel. */}
             <div style={{ textAlign: 'center', paddingTop: 4 }}>
               <p
                 style={{
@@ -161,7 +175,19 @@ const PhotoboothTemplate = forwardRef<HTMLDivElement, Props>(function Photobooth
                   lineHeight: 1,
                 }}
               >
-                {dateRange ? dateRange.split('—')[0]?.trim() : '★'}
+                {captions?.[s]?.line1 ?? destination ?? '★'}
+              </p>
+              <p
+                style={{
+                  fontFamily: 'var(--font-caveat), cursive',
+                  fontSize: 16,
+                  color: '#3a2a18',
+                  margin: 0,
+                  marginTop: 2,
+                  lineHeight: 1,
+                }}
+              >
+                {captions?.[s]?.line2 ?? (dateRange ? dateRange.split('—')[0]?.trim() : '')}
               </p>
             </div>
           </div>

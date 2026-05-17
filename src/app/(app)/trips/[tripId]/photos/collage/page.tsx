@@ -3,7 +3,8 @@
 import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Shuffle, Download, Pin, Loader2, Eraser, Wand2, Hand, X, GripVertical } from 'lucide-react';
+import { ArrowLeft, Shuffle, Download, Pin, Loader2, Eraser, Wand2, Hand, X, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { photoboothStripsCount } from '@/components/trips/photos/collage/PhotoboothTemplate';
 import { toPng } from 'html-to-image';
 import {
   DndContext,
@@ -102,6 +103,8 @@ function SortableThumb({
     zIndex: isDragging ? 50 : 'auto',
     opacity: isDragging ? 0.85 : 1,
     touchAction: 'none',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
   };
   return (
     <div
@@ -111,8 +114,12 @@ function SortableThumb({
       {...listeners}
       className="relative group flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 border-amber-300/60 ring-1 ring-amber-300/30 shadow-md cursor-grab active:cursor-grabbing"
     >
+      {/* draggable=false stops the browser's native image-drag from
+          fighting dnd-kit for the pointer events. Without this, on some
+          browsers the user just ends up dragging a ghost copy of the
+          image and the sortable callback never fires. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+      <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" draggable={false} />
       <div className="absolute top-0.5 left-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-300 flex items-center justify-center shadow">
         <span className="text-[10px] font-black text-amber-950">{index + 1}</span>
       </div>
@@ -132,6 +139,128 @@ function SortableThumb({
       <div className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded bg-black/55 backdrop-blur-sm flex items-center justify-center pointer-events-none">
         <GripVertical className="w-2.5 h-2.5 text-white/85" />
       </div>
+    </div>
+  );
+}
+
+/* ── Free text overlays ────────────────────────────────────────────
+   Lightweight free-position text labels the user can add to ANY
+   template. Lives inside the export root so html-to-image captures
+   them; positioning is in 1080×1080 stage coordinates and the drag
+   converts screen deltas back to stage coords via the previewScale. */
+
+type TextOverlayFamily = 'serif' | 'script' | 'display' | 'sans';
+
+interface TextOverlay {
+  id: string;
+  x: number; // stage coords (0-1080), centered
+  y: number;
+  text: string;
+  size: number;
+  color: string;
+  family: TextOverlayFamily;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+const TEXT_FAMILIES: Record<TextOverlayFamily, string> = {
+  sans: 'var(--font-dm-sans), Inter, sans-serif',
+  serif: 'var(--font-playfair), Georgia, serif',
+  script: 'var(--font-caveat), cursive',
+  display: 'var(--font-bebas), Impact, sans-serif',
+};
+
+const TEXT_COLOR_PRESETS = ['#ffffff', '#0a1628', '#f59e0b', '#f43f5e', '#10b981', '#3b82f6', '#a855f7', '#fbcfe8'];
+
+function newTextOverlay(): TextOverlay {
+  return {
+    id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    x: 540,
+    y: 540,
+    text: 'Tu texto',
+    size: 64,
+    color: '#ffffff',
+    family: 'serif',
+  };
+}
+
+function DraggableTextOverlay({
+  overlay,
+  selected,
+  onSelect,
+  onChange,
+  previewScale,
+}: {
+  overlay: TextOverlay;
+  selected: boolean;
+  onSelect: () => void;
+  onChange: (patch: Partial<TextOverlay>) => void;
+  previewScale: number;
+}) {
+  const startRef = useRef<{ mx: number; my: number; ox: number; oy: number; pid: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    onSelect();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    startRef.current = {
+      mx: e.clientX,
+      my: e.clientY,
+      ox: overlay.x,
+      oy: overlay.y,
+      pid: e.pointerId,
+    };
+    setDragging(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!startRef.current) return;
+    const dx = (e.clientX - startRef.current.mx) / previewScale;
+    const dy = (e.clientY - startRef.current.my) / previewScale;
+    onChange({ x: Math.max(0, Math.min(1080, startRef.current.ox + dx)), y: Math.max(0, Math.min(1080, startRef.current.oy + dy)) });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (startRef.current && (e.currentTarget as HTMLElement).hasPointerCapture(startRef.current.pid)) {
+      (e.currentTarget as HTMLElement).releasePointerCapture(startRef.current.pid);
+    }
+    startRef.current = null;
+    setDragging(false);
+  };
+
+  return (
+    <div
+      data-text-overlay
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      style={{
+        position: 'absolute',
+        left: overlay.x,
+        top: overlay.y,
+        transform: 'translate(-50%, -50%)',
+        fontFamily: TEXT_FAMILIES[overlay.family],
+        fontSize: overlay.size,
+        color: overlay.color,
+        fontWeight: overlay.bold ? 900 : 400,
+        fontStyle: overlay.italic ? 'italic' : 'normal',
+        lineHeight: 1.05,
+        textAlign: 'center',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        touchAction: 'none',
+        cursor: dragging ? 'grabbing' : 'grab',
+        whiteSpace: 'pre',
+        textShadow: overlay.color === '#ffffff' ? '0 2px 8px rgba(0,0,0,0.5)' : 'none',
+        outline: selected ? '2px dashed rgba(245,158,11,0.8)' : 'none',
+        outlineOffset: 6,
+        padding: 4,
+        zIndex: 200,
+      }}
+    >
+      {overlay.text || ' '}
     </div>
   );
 }
@@ -195,7 +324,16 @@ export default function CollagePage() {
    *  the user can edit freely. Empty string = hide that line. */
   const [customTitle, setCustomTitle] = useState<string | null>(null);
   const [customDestination, setCustomDestination] = useState<string | null>(null);
+  // Per-strip captions for the Photobooth template.
+  const [photoboothCaptions, setPhotoboothCaptions] = useState<{ line1: string; line2: string }[]>([]);
+  // Free-position text labels — apply to any template.
+  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  // Root of the export — wraps both the template and the free text
+  // overlays so the PNG includes them. Stage (template's own root)
+  // remains the source for slot measurements.
+  const exportRootRef = useRef<HTMLDivElement | null>(null);
   const previewWrapperRef = useRef<HTMLDivElement | null>(null);
 
   // Active template's max photos. If user picks a count higher than the
@@ -319,6 +457,42 @@ export default function CollagePage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // Text-overlay handlers
+  const addTextOverlay = useCallback(() => {
+    const o = newTextOverlay();
+    setTextOverlays((prev) => [...prev, o]);
+    setSelectedOverlayId(o.id);
+  }, []);
+  const updateOverlay = useCallback((id: string, patch: Partial<TextOverlay>) => {
+    setTextOverlays((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+  }, []);
+  const removeOverlay = useCallback((id: string) => {
+    setTextOverlays((prev) => prev.filter((o) => o.id !== id));
+    setSelectedOverlayId((cur) => (cur === id ? null : cur));
+  }, []);
+
+  // Photobooth captions: keep length in sync with the strip count.
+  const photoboothStrips = useMemo(
+    () => (template === 'photobooth' ? photoboothStripsCount(effectiveCount) : 0),
+    [template, effectiveCount],
+  );
+  useEffect(() => {
+    if (template !== 'photobooth') return;
+    setPhotoboothCaptions((prev) => {
+      if (prev.length === photoboothStrips) return prev;
+      const next = [...prev];
+      while (next.length < photoboothStrips) {
+        next.push({
+          line1: customDestination ?? trip?.destination ?? '',
+          line2: dateRange?.split('—')[0]?.trim() ?? '',
+        });
+      }
+      next.length = photoboothStrips;
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template, photoboothStrips]);
+
   const handleSelectionDragEnd = useCallback((e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
     setManualSelection((prev) => {
@@ -380,7 +554,7 @@ export default function CollagePage() {
   }, [sample, template, previewScale, mode, pinnedUrls, manualSelection]);
 
   const handleDownload = async () => {
-    if (!stageRef.current) return;
+    if (!exportRootRef.current) return;
     setDownloading(true);
     try {
       // Wait for Google Fonts to land so the export uses Playfair/Caveat
@@ -390,7 +564,12 @@ export default function CollagePage() {
           await (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready;
         }
       } catch {/* ignore */}
-      const dataUrl = await toPng(stageRef.current, {
+      // Deselect any text overlay before capturing so the amber outline
+      // doesn't show up in the PNG.
+      setSelectedOverlayId(null);
+      // Wait one frame for the outline to disappear.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      const dataUrl = await toPng(exportRootRef.current, {
         pixelRatio: 1,
         cacheBust: true,
         backgroundColor: '#0a1628',
@@ -418,6 +597,7 @@ export default function CollagePage() {
     count: effectiveCount,
     ref: stageRef,
   };
+  const photoboothProps = { ...commonProps, captions: photoboothCaptions };
 
   const renderTemplate = () => {
     if (sample.length === 0) {
@@ -464,7 +644,7 @@ export default function CollagePage() {
       case 'moodboard':  return <MoodBoardTemplate {...commonProps} />;
       case 'minimal':    return <MinimalKinfolkTemplate {...commonProps} />;
       case 'diamond':    return <DiamondTemplate {...commonProps} />;
-      case 'photobooth': return <PhotoboothTemplate {...commonProps} />;
+      case 'photobooth': return <PhotoboothTemplate {...photoboothProps} />;
     }
   };
 
@@ -538,9 +718,39 @@ export default function CollagePage() {
                 width: 1080,
                 height: 1080,
               }}
-              onClickCapture={handleStageClick}
+              onClickCapture={(e) => {
+                // Click that hits a text-overlay = select it for editing,
+                // don't pin a photo. Anything else falls through to the
+                // photo click handler.
+                const target = e.target as HTMLElement;
+                if (target.closest('[data-text-overlay]')) return;
+                handleStageClick(e);
+                // Click outside any overlay = deselect.
+                setSelectedOverlayId(null);
+              }}
             >
-              {renderTemplate()}
+              <div
+                ref={exportRootRef}
+                style={{
+                  position: 'relative',
+                  width: 1080,
+                  height: 1080,
+                }}
+              >
+                {renderTemplate()}
+                {/* Free-position text overlays live INSIDE the export root
+                    so they get baked into the downloaded PNG. */}
+                {textOverlays.map((o) => (
+                  <DraggableTextOverlay
+                    key={o.id}
+                    overlay={o}
+                    selected={selectedOverlayId === o.id}
+                    onSelect={() => setSelectedOverlayId(o.id)}
+                    onChange={(patch) => updateOverlay(o.id, patch)}
+                    previewScale={previewScale}
+                  />
+                ))}
+              </div>
             </div>
             {/* Pin badge overlay — visible only in auto mode, on top of
                 pinned photos. Computed from slotMeasures (post-render DOM
@@ -707,6 +917,159 @@ export default function CollagePage() {
               </div>
             </div>
           </div>
+
+          {/* Free text overlays — apply to any template */}
+          <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider">Texto libre</p>
+              <button
+                type="button"
+                onClick={addTextOverlay}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400/15 hover:bg-amber-400/25 border border-amber-300/40 text-amber-100 text-[11px] font-bold uppercase tracking-wider"
+              >
+                <Plus className="w-3 h-3" />
+                Agregar
+              </button>
+            </div>
+            {textOverlays.length === 0 ? (
+              <p className="text-white/35 text-[11px] leading-snug">
+                Agregá títulos, fechas o frases — y arrastralos en el preview para acomodarlos donde quieras.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {textOverlays.map((o) => {
+                  const isSel = selectedOverlayId === o.id;
+                  return (
+                    <div
+                      key={o.id}
+                      className={`p-3 rounded-xl border ${isSel ? 'bg-amber-400/10 border-amber-300/60' : 'bg-white/[0.03] border-white/10'}`}
+                      onClick={() => setSelectedOverlayId(o.id)}
+                    >
+                      <input
+                        type="text"
+                        value={o.text}
+                        onChange={(e) => updateOverlay(o.id, { text: e.target.value })}
+                        placeholder="Tu texto"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 focus:border-amber-300/60 focus:bg-white/[0.10] text-white text-sm font-semibold placeholder-white/30 outline-none"
+                      />
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
+                        {(['serif', 'script', 'display', 'sans'] as const).map((f) => (
+                          <button
+                            key={f}
+                            type="button"
+                            onClick={() => updateOverlay(o.id, { family: f })}
+                            className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                              o.family === f
+                                ? 'bg-white text-black border-white'
+                                : 'bg-white/[0.04] text-white/70 border-white/10 hover:bg-white/[0.10]'
+                            }`}
+                            style={{ fontFamily: TEXT_FAMILIES[f] }}
+                          >
+                            {f === 'serif' ? 'Aa' : f === 'script' ? 'Aa' : f === 'display' ? 'AA' : 'Aa'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="range"
+                          min={16}
+                          max={220}
+                          value={o.size}
+                          onChange={(e) => updateOverlay(o.id, { size: Number(e.target.value) })}
+                          className="flex-1 accent-amber-400"
+                        />
+                        <span className="text-white/60 text-[10px] tabular-nums w-8 text-right">{o.size}px</span>
+                      </div>
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
+                        {TEXT_COLOR_PRESETS.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => updateOverlay(o.id, { color: c })}
+                            className={`w-6 h-6 rounded-full border-2 ${o.color === c ? 'border-amber-300 ring-1 ring-amber-300/50' : 'border-white/20'}`}
+                            style={{ background: c }}
+                            aria-label="color"
+                          />
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 mt-3">
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateOverlay(o.id, { bold: !o.bold })}
+                            className={`px-2 py-1 rounded-md text-[11px] font-black border ${o.bold ? 'bg-white text-black border-white' : 'bg-white/[0.04] text-white/70 border-white/10'}`}
+                          >
+                            B
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateOverlay(o.id, { italic: !o.italic })}
+                            className={`px-2 py-1 rounded-md text-[11px] font-bold italic border ${o.italic ? 'bg-white text-black border-white' : 'bg-white/[0.04] text-white/70 border-white/10'}`}
+                          >
+                            I
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeOverlay(o.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-rose-200 text-[11px] font-semibold"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Quitar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-white/35 text-[10px] leading-snug">
+                  💡 Arrastrá cada texto en el preview para moverlo.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Photobooth captions — only when that template is active */}
+          {template === 'photobooth' && photoboothStrips > 0 && (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
+              <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider mb-3">
+                Pies de foto · Photobooth
+              </p>
+              <div className="space-y-3">
+                {Array.from({ length: photoboothStrips }).map((_, s) => {
+                  const cap = photoboothCaptions[s] || { line1: '', line2: '' };
+                  return (
+                    <div key={s} className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                      <p className="text-white/45 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                        Tira #{s + 1}
+                      </p>
+                      <input
+                        type="text"
+                        value={cap.line1}
+                        onChange={(e) =>
+                          setPhotoboothCaptions((prev) =>
+                            prev.map((c, i) => (i === s ? { ...c, line1: e.target.value } : c)),
+                          )
+                        }
+                        placeholder="Lugar"
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 focus:border-amber-300/60 text-white text-sm font-semibold placeholder-white/30 outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={cap.line2}
+                        onChange={(e) =>
+                          setPhotoboothCaptions((prev) =>
+                            prev.map((c, i) => (i === s ? { ...c, line2: e.target.value } : c)),
+                          )
+                        }
+                        placeholder="Fecha"
+                        className="w-full mt-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-white/10 focus:border-amber-300/60 text-white text-sm placeholder-white/30 outline-none"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Templates */}
           <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
