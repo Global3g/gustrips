@@ -3,8 +3,26 @@
 import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Shuffle, Download, Pin, Loader2, Eraser, Wand2, Hand, X } from 'lucide-react';
+import { ArrowLeft, Shuffle, Download, Pin, Loader2, Eraser, Wand2, Hand, X, GripVertical } from 'lucide-react';
 import { toPng } from 'html-to-image';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
@@ -62,6 +80,61 @@ const TEMPLATES: { id: TemplateId; label: string; maxPhotos: number; subtitle: s
 ];
 
 const COUNT_OPTIONS = [6, 12, 24, 36, 48] as const;
+
+/** Draggable thumbnail used in the manual-mode "Orden" strip. Wraps the
+ *  photo in a dnd-kit sortable wrapper; the entire tile is the drag handle
+ *  to keep touch interaction smooth. */
+function SortableThumb({
+  id,
+  index,
+  url,
+  onRemove,
+}: {
+  id: string;
+  index: number;
+  url: string;
+  onRemove: (url: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : 'auto',
+    opacity: isDragging ? 0.85 : 1,
+    touchAction: 'none',
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="relative group flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 border-amber-300/60 ring-1 ring-amber-300/30 shadow-md cursor-grab active:cursor-grabbing"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+      <div className="absolute top-0.5 left-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-300 flex items-center justify-center shadow">
+        <span className="text-[10px] font-black text-amber-950">{index + 1}</span>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onRemove(url);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label="Quitar"
+        className="absolute top-0.5 right-0.5 w-[18px] h-[18px] rounded-full bg-rose-500/95 hover:bg-rose-400 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <X className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+      </button>
+      <div className="absolute bottom-0.5 right-0.5 w-4 h-4 rounded bg-black/55 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+        <GripVertical className="w-2.5 h-2.5 text-white/85" />
+      </div>
+    </div>
+  );
+}
 
 function shuffleWithSeed<T>(arr: T[], seed: number): T[] {
   const out = [...arr];
@@ -237,6 +310,24 @@ export default function CollagePage() {
   const clearPins = useCallback(() => setPinnedUrls(new Set()), []);
   const clearManual = useCallback(() => setManualSelection([]), []);
   const reshuffle = useCallback(() => setShuffleSeed((s) => s + 1), []);
+
+  // dnd-kit sensors for the manual-mode reorder strip. PointerSensor has
+  // a small activation distance so taps on the X button don't start a drag.
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleSelectionDragEnd = useCallback((e: DragEndEvent) => {
+    if (!e.over || e.active.id === e.over.id) return;
+    setManualSelection((prev) => {
+      const oldIdx = prev.indexOf(String(e.active.id));
+      const newIdx = prev.indexOf(String(e.over!.id));
+      if (oldIdx < 0 || newIdx < 0) return prev;
+      return arrayMove(prev, oldIdx, newIdx);
+    });
+  }, []);
 
   /** Click handler delegated to elements inside the stage with data-photo-url.
    *  Auto mode: toggle pin. Manual mode: remove from selection. */
@@ -669,6 +760,34 @@ export default function CollagePage() {
               ))}
             </div>
           </div>
+
+          {/* Order strip — manual mode only, when ≥2 photos picked */}
+          {mode === 'manual' && manualSelection.length >= 2 && (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
+              <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider mb-3">
+                Orden · arrastrá para reacomodar
+              </p>
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleSelectionDragEnd}
+              >
+                <SortableContext items={manualSelection} strategy={horizontalListSortingStrategy}>
+                  <div className="flex flex-wrap gap-1.5">
+                    {manualSelection.map((url, i) => (
+                      <SortableThumb
+                        key={url}
+                        id={url}
+                        index={i}
+                        url={url}
+                        onRemove={removeFromManual}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+          )}
 
           {/* Pool — auto mode = pin toggles, manual mode = ordered selection */}
           <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
