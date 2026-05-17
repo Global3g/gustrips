@@ -117,6 +117,11 @@ export default function CollagePage() {
    *  sample comes straight from this array. Reshuffle in manual mode only
    *  changes the layout (template's internal seed), not the photo choices. */
   const [manualSelection, setManualSelection] = useState<string[]>([]);
+  /** User-editable title + destination. Initialised to the trip values
+   *  on first load (see effect below) so it shows something useful, then
+   *  the user can edit freely. Empty string = hide that line. */
+  const [customTitle, setCustomTitle] = useState<string | null>(null);
+  const [customDestination, setCustomDestination] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const previewWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -180,6 +185,16 @@ export default function CollagePage() {
     () => formatDateRange(trip?.startDate, trip?.endDate),
     [trip],
   );
+
+  // Seed the editable fields with the trip's values once the trip loads.
+  useEffect(() => {
+    if (trip && customTitle === null) setCustomTitle(trip.title || 'Mi viaje');
+    if (trip && customDestination === null) setCustomDestination(trip.destination || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip]);
+
+  const effectiveTitle = (customTitle ?? trip?.title) || 'Mi viaje';
+  const effectiveDestination = customDestination ?? trip?.destination ?? '';
 
   // Resize observer to scale the 1080×1080 preview into the available width.
   useEffect(() => {
@@ -290,7 +305,7 @@ export default function CollagePage() {
         backgroundColor: '#0a1628',
       });
       const link = document.createElement('a');
-      const slug = slugify(trip?.title || 'viaje');
+      const slug = slugify(effectiveTitle);
       link.download = `gustrips-${slug}-${template}.png`;
       link.href = dataUrl;
       link.click();
@@ -305,8 +320,8 @@ export default function CollagePage() {
 
   const commonProps = {
     photos: sample,
-    tripTitle: trip?.title || 'Mi viaje',
-    destination: trip?.destination,
+    tripTitle: effectiveTitle,
+    destination: effectiveDestination || undefined,
     dateRange,
     seed: shuffleSeed + 1,
     count: effectiveCount,
@@ -557,6 +572,51 @@ export default function CollagePage() {
 
         {/* Controls */}
         <div className="space-y-5">
+          {/* Custom title + destination */}
+          <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider">Texto del collage</p>
+              {trip && (effectiveTitle !== trip.title || effectiveDestination !== (trip.destination || '')) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomTitle(trip.title || 'Mi viaje');
+                    setCustomDestination(trip.destination || '');
+                  }}
+                  className="text-[10px] text-white/50 hover:text-white/85 font-semibold uppercase tracking-wider"
+                >
+                  Restaurar
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-white/45 text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Título
+                </label>
+                <input
+                  type="text"
+                  value={customTitle ?? ''}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  placeholder="Mi viaje"
+                  className="w-full px-3 py-2 rounded-lg bg-white/[0.06] border border-white/10 focus:border-amber-300/60 focus:bg-white/[0.10] text-white text-sm font-bold placeholder-white/30 outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-white/45 text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Destino (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={customDestination ?? ''}
+                  onChange={(e) => setCustomDestination(e.target.value)}
+                  placeholder="Cornwall, UK"
+                  className="w-full px-3 py-2 rounded-lg bg-white/[0.06] border border-white/10 focus:border-amber-300/60 focus:bg-white/[0.10] text-white text-sm font-medium placeholder-white/30 outline-none transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Templates */}
           <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
             <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider mb-3">Plantilla</p>
@@ -630,7 +690,7 @@ export default function CollagePage() {
               className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-4 gap-1.5 max-h-[520px] overflow-y-auto pr-1"
               style={{ scrollbarWidth: 'thin' }}
             >
-              {allPool.slice(0, 120).map((p) => {
+              {allPool.map((p) => {
                 const pinned = mode === 'auto' && pinnedUrls.has(p.url);
                 const selectionIndex = mode === 'manual' ? manualSelection.indexOf(p.url) : -1;
                 const selected = selectionIndex >= 0;
@@ -674,11 +734,9 @@ export default function CollagePage() {
                 );
               })}
             </div>
-            {allPool.length > 120 && (
-              <p className="text-white/40 text-[10px] mt-2 text-center">
-                Mostrando primeras 120 de {allPool.length}
-              </p>
-            )}
+            <p className="text-white/40 text-[10px] mt-2 text-center">
+              {allPool.length} fotos en el viaje
+            </p>
           </div>
         </div>
       </div>
