@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans } from "next/font/google";
+import { DM_Sans, Playfair_Display, Caveat, Bebas_Neue } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import "./globals.css";
@@ -8,6 +8,26 @@ const dmSans = DM_Sans({
   variable: "--font-dm-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
+});
+
+// Display fonts used by the collage templates. Loaded as CSS variables so
+// the templates can call them via `font-family: var(--font-playfair)` and
+// html-to-image picks them up cleanly during PNG export.
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
+  subsets: ["latin"],
+  weight: ["400", "700", "900"],
+  style: ["normal", "italic"],
+});
+const caveat = Caveat({
+  variable: "--font-caveat",
+  subsets: ["latin"],
+  weight: ["400", "700"],
+});
+const bebas = Bebas_Neue({
+  variable: "--font-bebas",
+  subsets: ["latin"],
+  weight: ["400"],
 });
 
 export const viewport: Viewport = {
@@ -79,7 +99,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${dmSans.variable} antialiased`}>
+      <body className={`${dmSans.variable} ${playfair.variable} ${caveat.variable} ${bebas.variable} antialiased`}>
         <ServiceWorkerRegistration />
         <AuthProvider>{children}</AuthProvider>
       </body>

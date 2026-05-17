@@ -4,15 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, Shuffle, Sparkles, X, ImageIcon, Loader2 } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import MosaicMagazine from './MosaicMagazine';
-import PolaroidScattered from './PolaroidScattered';
-import CircleTemplate from './CircleTemplate';
-import HeartTemplate from './HeartTemplate';
-import MasonryTemplate from './MasonryTemplate';
+import EditorialTemplate from './EditorialTemplate';
+import PolaroidWallTemplate from './PolaroidWallTemplate';
+import ScrapbookTemplate from './ScrapbookTemplate';
+import PostcardTemplate from './PostcardTemplate';
 import { useToast } from '@/context/ToastContext';
 import type { AlbumPhoto, Trip } from '@/types';
 
-type TemplateId = 'mosaic' | 'polaroid' | 'circle' | 'heart' | 'masonry';
+type TemplateId = 'editorial' | 'polaroid' | 'scrapbook' | 'postcard';
 
 interface Props {
   open: boolean;
@@ -55,7 +54,7 @@ function formatDateRange(trip: Trip | null): string | undefined {
 }
 
 export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
-  const [template, setTemplate] = useState<TemplateId>('mosaic');
+  const [template, setTemplate] = useState<TemplateId>('editorial');
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [previewScale, setPreviewScale] = useState(0.5);
@@ -108,6 +107,16 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
     if (!stageRef.current) return;
     setDownloading(true);
     try {
+      // Wait for any pending Google Fonts to finish loading. Without this
+      // the first export sometimes renders titles in the fallback system
+      // font.
+      try {
+        if (typeof document !== 'undefined' && 'fonts' in document) {
+          await (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready;
+        }
+      } catch {
+        /* ignore — non-blocking */
+      }
       const dataUrl = await toPng(stageRef.current, {
         pixelRatio: 1,
         cacheBust: true,
@@ -162,11 +171,10 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
             {/* Template selector — horizontal scroll on mobile if many */}
             <div className="px-5 pt-4 flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
               {([
-                ['mosaic', 'Magazine'],
-                ['polaroid', 'Polaroid'],
-                ['circle', 'Círculo'],
-                ['heart', 'Corazón'],
-                ['masonry', 'Masonry'],
+                ['editorial', 'Editorial'],
+                ['polaroid', 'Polaroid Wall'],
+                ['scrapbook', 'Scrapbook'],
+                ['postcard', 'Postal'],
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -215,16 +223,14 @@ export default function CollageBuilder({ open, onClose, photos, trip }: Props) {
                         dateRange,
                       };
                       switch (template) {
-                        case 'mosaic':
-                          return <MosaicMagazine {...common} />;
+                        case 'editorial':
+                          return <EditorialTemplate {...common} />;
                         case 'polaroid':
-                          return <PolaroidScattered {...common} />;
-                        case 'circle':
-                          return <CircleTemplate {...common} />;
-                        case 'heart':
-                          return <HeartTemplate {...common} />;
-                        case 'masonry':
-                          return <MasonryTemplate {...common} />;
+                          return <PolaroidWallTemplate {...common} />;
+                        case 'scrapbook':
+                          return <ScrapbookTemplate {...common} />;
+                        case 'postcard':
+                          return <PostcardTemplate {...common} />;
                       }
                     })()
                   ) : (
