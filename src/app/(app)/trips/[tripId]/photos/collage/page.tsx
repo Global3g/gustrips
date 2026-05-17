@@ -235,6 +235,13 @@ export default function CollagePage() {
 
   return (
     <div className="max-w-7xl mx-auto pb-16">
+      {/* Dark glass stage — the trip layout uses a light pastel
+          background; without this wrapper the white-on-white controls
+          are invisible. */}
+      <div
+        className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30 p-5 sm:p-7"
+        style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
+      >
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
         <button
@@ -423,6 +430,7 @@ export default function CollagePage() {
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
