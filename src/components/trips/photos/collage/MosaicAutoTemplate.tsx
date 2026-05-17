@@ -191,6 +191,7 @@ const MosaicAutoTemplate = forwardRef<HTMLDivElement, Props>(function MosaicAuto
           return (
             <div
               key={`${p.url}-${i}-${seed}`}
+              data-photo-url={p.url}
               style={{
                 position: 'absolute',
                 left: slot.x + GAP / 2,

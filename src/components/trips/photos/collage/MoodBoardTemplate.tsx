@@ -176,6 +176,7 @@ const MoodBoardTemplate = forwardRef<HTMLDivElement, Props>(function MoodBoardTe
       {items.map((item, i) => (
         <div
           key={`${item.url}-${i}-${seed}`}
+          data-photo-url={item.url}
           style={{
             position: 'absolute',
             left: item.cx - item.size / 2,

@@ -154,6 +154,7 @@ const MinimalKinfolkTemplate = forwardRef<HTMLDivElement, Props>(function Minima
         return (
           <div
             key={`${p.url}-${i}-${seed}`}
+            data-photo-url={p.url}
             style={{
               position: 'absolute',
               left: slot.x,

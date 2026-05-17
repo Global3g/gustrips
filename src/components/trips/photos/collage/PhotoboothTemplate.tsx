@@ -131,6 +131,7 @@ const PhotoboothTemplate = forwardRef<HTMLDivElement, Props>(function Photobooth
             {stripPhotos.map((p, i) => (
               <div
                 key={`${p.url}-${s}-${i}-${seed}`}
+                data-photo-url={p.url}
                 style={{
                   width: photoSize,
                   height: photoSize,

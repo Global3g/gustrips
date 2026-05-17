@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Shuffle, Download, Pin, Loader2, Eraser } from 'lucide-react';
+import { ArrowLeft, Shuffle, Download, Pin, Loader2, Eraser, Wand2, Hand, X } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
@@ -112,6 +112,11 @@ export default function CollagePage() {
   const [pinnedUrls, setPinnedUrls] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [previewScale, setPreviewScale] = useState(0.5);
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto');
+  /** In manual mode, the user explicitly picks the photos in order. The
+   *  sample comes straight from this array. Reshuffle in manual mode only
+   *  changes the layout (template's internal seed), not the photo choices. */
+  const [manualSelection, setManualSelection] = useState<string[]>([]);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const previewWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -145,20 +150,31 @@ export default function CollagePage() {
     return result;
   }, [albumPhotos, events]);
 
-  // Sample for the active template: pinned URLs first (preserve order),
-  // then random unpinned to fill up to effectiveCount.
+  // Sample for the active template.
+  //  • Auto mode: pinned URLs first (preserve insertion order), then
+  //    random unpinned to fill up to effectiveCount.
+  //  • Manual mode: exactly the user's manualSelection (clamped to count).
   const sample = useMemo(() => {
     if (allPool.length === 0) return [] as AlbumPhoto[];
-    const pinnedPhotos: AlbumPhoto[] = [];
-    const unpinnedPool: AlbumPhoto[] = [];
-    for (const p of allPool) {
-      if (pinnedUrls.has(p.url)) pinnedPhotos.push(p);
-      else unpinnedPool.push(p);
+    const byUrl = new Map(allPool.map((p) => [p.url, p] as const));
+    if (mode === 'manual') {
+      const out: AlbumPhoto[] = [];
+      for (const url of manualSelection.slice(0, effectiveCount)) {
+        const p = byUrl.get(url);
+        if (p) out.push(p);
+      }
+      return out;
     }
+    const pinnedPhotos: AlbumPhoto[] = [];
+    for (const url of pinnedUrls) {
+      const p = byUrl.get(url);
+      if (p) pinnedPhotos.push(p);
+    }
+    const unpinnedPool = allPool.filter((p) => !pinnedUrls.has(p.url));
     const shuffled = shuffleWithSeed(unpinnedPool, shuffleSeed);
     const need = Math.max(0, effectiveCount - pinnedPhotos.length);
-    return [...pinnedPhotos, ...shuffled.slice(0, need)];
-  }, [allPool, pinnedUrls, shuffleSeed, effectiveCount]);
+    return [...pinnedPhotos.slice(0, effectiveCount), ...shuffled.slice(0, need)];
+  }, [allPool, mode, manualSelection, pinnedUrls, shuffleSeed, effectiveCount]);
 
   const dateRange = useMemo(
     () => formatDateRange(trip?.startDate, trip?.endDate),
@@ -188,8 +204,74 @@ export default function CollagePage() {
     });
   }, []);
 
+  const toggleManualSelection = useCallback(
+    (url: string) => {
+      setManualSelection((prev) => {
+        if (prev.includes(url)) return prev.filter((u) => u !== url);
+        if (prev.length >= effectiveCount) return prev; // cap at count
+        return [...prev, url];
+      });
+    },
+    [effectiveCount],
+  );
+
+  const removeFromManual = useCallback((url: string) => {
+    setManualSelection((prev) => prev.filter((u) => u !== url));
+  }, []);
+
   const clearPins = useCallback(() => setPinnedUrls(new Set()), []);
+  const clearManual = useCallback(() => setManualSelection([]), []);
   const reshuffle = useCallback(() => setShuffleSeed((s) => s + 1), []);
+
+  /** Click handler delegated to elements inside the stage with data-photo-url.
+   *  Auto mode: toggle pin. Manual mode: remove from selection. */
+  const handleStageClick = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const wrapper = target.closest('[data-photo-url]') as HTMLElement | null;
+      if (!wrapper) return;
+      const url = wrapper.getAttribute('data-photo-url');
+      if (!url) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (mode === 'manual') {
+        removeFromManual(url);
+      } else {
+        togglePin(url);
+      }
+    },
+    [mode, removeFromManual, togglePin],
+  );
+
+  /** After every render, measure photo positions in the stage so we can
+   *  overlay click-targets + pin badges on top of the scaled preview. */
+  type SlotMeasure = { left: number; top: number; width: number; height: number; url: string };
+  const [slotMeasures, setSlotMeasures] = useState<SlotMeasure[]>([]);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const wrapper = previewWrapperRef.current;
+    if (!stage || !wrapper) return;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    // After a render the templates lay out their photos. Wait one frame to
+    // make sure transforms have settled.
+    const id = requestAnimationFrame(() => {
+      const nodes = Array.from(stage.querySelectorAll<HTMLElement>('[data-photo-url]'));
+      const measures: SlotMeasure[] = nodes.map((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left - wrapperRect.left,
+          top: r.top - wrapperRect.top,
+          width: r.width,
+          height: r.height,
+          url: el.getAttribute('data-photo-url') || '',
+        };
+      });
+      setSlotMeasures(measures);
+    });
+    return () => cancelAnimationFrame(id);
+    // sample, template, scale and pinning all affect rendered positions.
+  }, [sample, template, previewScale, mode, pinnedUrls, manualSelection]);
 
   const handleDownload = async () => {
     if (!stageRef.current) return;
@@ -233,9 +315,32 @@ export default function CollagePage() {
 
   const renderTemplate = () => {
     if (sample.length === 0) {
+      const isManual = mode === 'manual';
       return (
-        <div className="flex items-center justify-center text-white/40 text-sm" style={{ width: 1080, height: 1080 }}>
-          No hay fotos en este viaje
+        <div
+          style={{
+            width: 1080,
+            height: 1080,
+            background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'rgba(255,255,255,0.6)',
+            fontFamily: 'var(--font-playfair), Georgia, serif',
+            textAlign: 'center',
+            padding: '0 80px',
+          }}
+        >
+          <div style={{ fontSize: 90, opacity: 0.4 }}>{isManual ? '👋' : '📷'}</div>
+          <p style={{ fontSize: 36, marginTop: 16, marginBottom: 0, fontStyle: 'italic' }}>
+            {isManual ? `Elegí ${effectiveCount} fotos del panel derecho` : 'No hay fotos en este viaje'}
+          </p>
+          {isManual && (
+            <p style={{ fontSize: 22, marginTop: 12, color: 'rgba(255,255,255,0.4)' }}>
+              o cambiá a modo Auto para que las propongamos solas
+            </p>
+          )}
         </div>
       );
     }
@@ -267,7 +372,7 @@ export default function CollagePage() {
         style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
       >
       {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
         <button
           type="button"
           onClick={() => router.push(`/trips/${tripId}/photos`)}
@@ -276,11 +381,36 @@ export default function CollagePage() {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-white text-2xl font-bold leading-none">Crear collage</h1>
           <p className="text-white/55 text-xs mt-1">
-            {allPool.length} fotos disponibles · {pinnedUrls.size} bloqueadas
+            {mode === 'auto'
+              ? `${allPool.length} fotos · ${pinnedUrls.size} fijadas · click en una foto del preview para fijarla`
+              : `Elegí ${effectiveCount} fotos del panel derecho · ${manualSelection.length}/${effectiveCount}`}
           </p>
+        </div>
+        {/* Mode toggle */}
+        <div className="flex bg-white/[0.04] rounded-xl p-1 border border-white/10">
+          <button
+            type="button"
+            onClick={() => setMode('auto')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              mode === 'auto' ? 'bg-amber-400/20 text-amber-100' : 'text-white/65 hover:text-white'
+            }`}
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            Auto
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('manual')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              mode === 'manual' ? 'bg-amber-400/20 text-amber-100' : 'text-white/65 hover:text-white'
+            }`}
+          >
+            <Hand className="w-3.5 h-3.5" />
+            Manual
+          </button>
         </div>
       </div>
 
@@ -302,9 +432,72 @@ export default function CollagePage() {
                 width: 1080,
                 height: 1080,
               }}
+              onClickCapture={handleStageClick}
             >
               {renderTemplate()}
             </div>
+            {/* Pin badge overlay — visible only in auto mode, on top of
+                pinned photos. Computed from slotMeasures (post-render DOM
+                positions) so it tracks transforms, scale, and any template. */}
+            {mode === 'auto' && slotMeasures.map((s, i) => {
+              if (!pinnedUrls.has(s.url)) return null;
+              return (
+                <div
+                  key={`pin-${i}-${s.url}`}
+                  style={{
+                    position: 'absolute',
+                    left: s.left,
+                    top: s.top,
+                    width: s.width,
+                    height: s.height,
+                    border: '3px solid rgba(245,158,11,0.95)',
+                    borderRadius: 4,
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 0 2px rgba(0,0,0,0.35), 0 6px 18px rgba(245,158,11,0.55)',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 4,
+                      right: 4,
+                      width: 28,
+                      height: 28,
+                      borderRadius: '50%',
+                      background: 'rgba(245,158,11,0.95)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    <Pin className="w-3.5 h-3.5" stroke="#1a1408" strokeWidth={3} />
+                  </div>
+                </div>
+              );
+            })}
+            {/* Manual mode preview hint — show a subtle X badge on each filled photo */}
+            {mode === 'manual' && slotMeasures.map((s, i) => (
+              <div
+                key={`x-${i}-${s.url}`}
+                style={{
+                  position: 'absolute',
+                  left: s.left + s.width - 26,
+                  top: s.top + 4,
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  background: 'rgba(244,63,94,0.92)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                  boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+                }}
+              >
+                <X className="w-3 h-3" stroke="#fff" strokeWidth={3} />
+              </div>
+            ))}
           </div>
 
           {/* Action bar — sticky on mobile so download is always reachable */}
@@ -315,18 +508,29 @@ export default function CollagePage() {
                 onClick={reshuffle}
                 disabled={sample.length === 0}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white/85 text-sm font-semibold transition-colors disabled:opacity-40"
+                title={mode === 'manual' ? 'Reordena el patrón del template' : 'Mezcla las fotos no fijadas'}
               >
                 <Shuffle className="w-4 h-4" />
-                Mezclar
+                {mode === 'manual' ? 'Reordenar' : 'Mezclar'}
               </button>
-              {pinnedUrls.size > 0 && (
+              {mode === 'auto' && pinnedUrls.size > 0 && (
                 <button
                   type="button"
                   onClick={clearPins}
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white/85 text-sm font-semibold transition-colors"
                 >
                   <Eraser className="w-4 h-4" />
-                  Limpiar bloqueos
+                  Soltar todas
+                </button>
+              )}
+              {mode === 'manual' && manualSelection.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearManual}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-white/85 text-sm font-semibold transition-colors"
+                >
+                  <Eraser className="w-4 h-4" />
+                  Vaciar
                 </button>
               )}
             </div>
@@ -406,35 +610,53 @@ export default function CollagePage() {
             </div>
           </div>
 
-          {/* Pool with pin toggles */}
+          {/* Pool — auto mode = pin toggles, manual mode = ordered selection */}
           <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-4">
-            <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider mb-3">
-              Bloquea las fotos que querés conservar
-            </p>
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <p className="text-white/55 text-[11px] font-bold uppercase tracking-wider">
+                {mode === 'auto' ? 'Fijar fotos al collage' : `Elegir fotos · ${manualSelection.length}/${effectiveCount}`}
+              </p>
+              {((mode === 'auto' && pinnedUrls.size > 0) || (mode === 'manual' && manualSelection.length > 0)) && (
+                <button
+                  type="button"
+                  onClick={mode === 'auto' ? clearPins : clearManual}
+                  className="text-[10px] text-white/50 hover:text-white/85 font-semibold uppercase tracking-wider"
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
             <div
               className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-4 gap-1.5 max-h-[520px] overflow-y-auto pr-1"
               style={{ scrollbarWidth: 'thin' }}
             >
-              {allPool.slice(0, 80).map((p) => {
-                const pinned = pinnedUrls.has(p.url);
+              {allPool.slice(0, 120).map((p) => {
+                const pinned = mode === 'auto' && pinnedUrls.has(p.url);
+                const selectionIndex = mode === 'manual' ? manualSelection.indexOf(p.url) : -1;
+                const selected = selectionIndex >= 0;
+                const active = pinned || selected;
                 return (
                   <button
                     key={p.url}
                     type="button"
-                    onClick={() => togglePin(p.url)}
+                    onClick={() => (mode === 'auto' ? togglePin(p.url) : toggleManualSelection(p.url))}
                     className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                      pinned
+                      active
                         ? 'border-amber-300 ring-2 ring-amber-300/50 shadow-[0_4px_18px_rgba(245,158,11,0.45)]'
                         : 'border-white/10 hover:border-white/30'
                     }`}
-                    aria-label={pinned ? 'Desbloquear' : 'Bloquear'}
-                    title={pinned ? 'Bloqueada — clic para desbloquear' : 'Clic para bloquear'}
+                    aria-label={active ? 'Quitar' : 'Agregar'}
+                    title={
+                      mode === 'auto'
+                        ? pinned ? 'Fijada — clic para soltar' : 'Clic para fijar al collage'
+                        : selected ? `Posición #${selectionIndex + 1} — clic para quitar` : 'Clic para agregar'
+                    }
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={p.url}
                       alt=""
-                      className="w-full h-full object-cover"
+                      className={`w-full h-full object-cover ${active ? '' : 'opacity-90'}`}
                       loading="lazy"
                       decoding="async"
                     />
@@ -443,13 +665,18 @@ export default function CollagePage() {
                         <Pin className="w-3 h-3 text-amber-950" strokeWidth={3} />
                       </div>
                     )}
+                    {selected && (
+                      <div className="absolute top-1 right-1 min-w-[20px] h-5 px-1 rounded-full bg-amber-300 flex items-center justify-center shadow-md">
+                        <span className="text-[10px] font-black text-amber-950">{selectionIndex + 1}</span>
+                      </div>
+                    )}
                   </button>
                 );
               })}
             </div>
-            {allPool.length > 80 && (
+            {allPool.length > 120 && (
               <p className="text-white/40 text-[10px] mt-2 text-center">
-                Mostrando primeras 80 de {allPool.length}
+                Mostrando primeras 120 de {allPool.length}
               </p>
             )}
           </div>

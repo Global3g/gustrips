@@ -123,6 +123,7 @@ const FilmstripGridTemplate = forwardRef<HTMLDivElement, Props>(function Filmstr
                 {stripPhotos.map((p, i) => (
                   <div
                     key={`${p.url}-${s}-${i}-${seed}`}
+                    data-photo-url={p.url}
                     style={{ width: photoWidth, height: '100%', overflow: 'hidden', background: '#000', borderRadius: 2 }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}

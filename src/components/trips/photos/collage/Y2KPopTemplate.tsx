@@ -188,6 +188,7 @@ const Y2KPopTemplate = forwardRef<HTMLDivElement, Props>(function Y2KPopTemplate
       {items.map((item, i) => (
         <div
           key={`${item.url}-${i}-${seed}`}
+          data-photo-url={item.url}
           style={{
             position: 'absolute',
             left: item.cx - item.size / 2,

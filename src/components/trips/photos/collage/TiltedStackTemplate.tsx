@@ -118,6 +118,7 @@ const TiltedStackTemplate = forwardRef<HTMLDivElement, Props>(function TiltedSta
       {items.map((item, i) => (
         <div
           key={`${item.url}-${i}-${seed}`}
+          data-photo-url={item.url}
           style={{
             position: 'absolute',
             left: item.cx - item.size / 2,

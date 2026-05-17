@@ -73,7 +73,7 @@ const BigHeroTemplate = forwardRef<HTMLDivElement, Props>(function BigHeroTempla
       style={{ width: CANVAS, height: CANVAS, background: '#050a14', position: 'relative', overflow: 'hidden' }}
     >
       {/* Hero */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: HERO_H, overflow: 'hidden' }}>
+      <div data-photo-url={hero?.url} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: HERO_H, overflow: 'hidden' }}>
         {hero?.url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -127,7 +127,7 @@ const BigHeroTemplate = forwardRef<HTMLDivElement, Props>(function BigHeroTempla
         }}
       >
         {rest.map((p, i) => (
-          <div key={`${p.url}-${i}-${seed}`} style={{ background: '#0d1424', overflow: 'hidden' }}>
+          <div key={`${p.url}-${i}-${seed}`} data-photo-url={p.url} style={{ background: '#0d1424', overflow: 'hidden' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={proxied(p.url)}

@@ -181,6 +181,7 @@ const ScrapbookTemplate = forwardRef<HTMLDivElement, Props>(function ScrapbookTe
         return (
           <div
             key={`${p.url}-${i}-${seed}`}
+            data-photo-url={p.url}
             style={{
               position: 'absolute',
               left: slot.x,

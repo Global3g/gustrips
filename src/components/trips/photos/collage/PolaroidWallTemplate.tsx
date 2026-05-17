@@ -174,6 +174,7 @@ const PolaroidWallTemplate = forwardRef<HTMLDivElement, Props>(function Polaroid
       {placed.map((p, i) => (
         <div
           key={`${p.url}-${i}-${seed}`}
+          data-photo-url={p.url}
           style={{
             position: 'absolute',
             left: p.cx - CARD / 2,

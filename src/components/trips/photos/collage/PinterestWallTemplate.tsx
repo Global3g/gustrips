@@ -162,6 +162,7 @@ const PinterestWallTemplate = forwardRef<HTMLDivElement, Props>(function Pintere
             {col.items.map((item, i) => (
               <div
                 key={`${item.url}-${ci}-${i}-${seed}`}
+                data-photo-url={item.url}
                 style={{
                   width: '100%',
                   height: item.h,

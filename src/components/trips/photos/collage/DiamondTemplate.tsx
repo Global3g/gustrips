@@ -105,6 +105,7 @@ const DiamondTemplate = forwardRef<HTMLDivElement, Props>(function DiamondTempla
       {items.map((item, i) => (
         <div
           key={`${item.url}-${i}-${seed}`}
+          data-photo-url={item.url}
           style={{
             position: 'absolute',
             left: item.cx - cellSize / 2,

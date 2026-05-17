@@ -183,6 +183,7 @@ const BentoTemplate = forwardRef<HTMLDivElement, Props>(function BentoTemplate(
           return (
             <div
               key={`${p.url}-${i}-${seed}`}
+              data-photo-url={p.url}
               style={{
                 gridColumn: `${tile.col} / span ${tile.colSpan}`,
                 gridRow: `${tile.row} / span ${tile.rowSpan}`,

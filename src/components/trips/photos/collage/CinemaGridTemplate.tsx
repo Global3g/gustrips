@@ -127,6 +127,7 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
         {usable.map((p, i) => (
           <div
             key={`${p.url}-${i}-${seed}`}
+            data-photo-url={p.url}
             style={{
               width: '100%',
               height: '100%',
