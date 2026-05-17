@@ -334,9 +334,15 @@ export default function CollagePage() {
   // Drag state. Ref for the in-flight pointer data (avoids closures on
   // pointermove); state mirrors for the React-rendered hover ring.
   const dragSrcRef = useRef<{ url: string; idx: number; startX: number; startY: number } | null>(null);
+  // Sticky flag — once the pointer travels far enough we lock this in
+  // until release, so a wobble back to (0,0) still counts as a drag.
+  const draggedRef = useRef(false);
   const [dragSrcUrl, setDragSrcUrl] = useState<string | null>(null);
   const [dragMoving, setDragMoving] = useState(false);
-  const [dragHoverIdx, setDragHoverIdx] = useState<number | null>(null);
+  /** URL of the photo currently under the cursor during drag. Drives the
+   *  hover ring. Using a URL instead of an index makes it template-agnostic
+   *  — Pinterest's DOM order doesn't match the array order. */
+  const [dragHoverUrl, setDragHoverUrl] = useState<string | null>(null);
   // Free-position text labels — apply to any template.
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
@@ -601,9 +607,10 @@ export default function CollagePage() {
       if (srcIdx < 0) return;
 
       dragSrcRef.current = { url, idx: srcIdx, startX: e.clientX, startY: e.clientY };
+      draggedRef.current = false;
       setDragSrcUrl(url);
       setDragMoving(false);
-      setDragHoverIdx(null);
+      setDragHoverUrl(null);
 
       // Document-level listeners so events keep flowing while cursor moves
       // across template boundaries / transforms.
@@ -612,30 +619,31 @@ export default function CollagePage() {
         if (!src) return;
         const dx = ev.clientX - src.startX;
         const dy = ev.clientY - src.startY;
-        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-        setDragMoving(true);
+        if (!draggedRef.current && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        if (!draggedRef.current) {
+          draggedRef.current = true;
+          setDragMoving(true);
+        }
         const hit = slotInfoAtPoint(ev.clientX, ev.clientY, src.url);
-        setDragHoverIdx(hit ? hit.idx : null);
+        setDragHoverUrl(hit ? hit.url : null);
+        // Suppress browser scroll / selection while dragging.
+        ev.preventDefault();
       };
+      let removeUp = () => {};
       const cleanup = () => {
         document.removeEventListener('pointermove', onDocMove);
-        document.removeEventListener('pointerup', onDocUp);
-        document.removeEventListener('pointercancel', onDocUp);
+        removeUp();
       };
       const onDocUp = (ev: PointerEvent) => {
         const src = dragSrcRef.current;
-        if (!src) {
-          cleanup();
-          return;
-        }
-        const dx = ev.clientX - src.startX;
-        const dy = ev.clientY - src.startY;
-        const wasDragging = Math.hypot(dx, dy) >= DRAG_THRESHOLD;
+        const wasDragging = draggedRef.current;
         dragSrcRef.current = null;
+        draggedRef.current = false;
         setDragSrcUrl(null);
         setDragMoving(false);
-        setDragHoverIdx(null);
+        setDragHoverUrl(null);
         cleanup();
+        if (!src) return;
         if (wasDragging) {
           const hit = slotInfoAtPoint(ev.clientX, ev.clientY, src.url);
           if (hit) swapSlots(src.idx, hit.idx);
@@ -646,7 +654,11 @@ export default function CollagePage() {
           setSelectedOverlayId(null);
         }
       };
-      document.addEventListener('pointermove', onDocMove);
+      removeUp = () => {
+        document.removeEventListener('pointerup', onDocUp);
+        document.removeEventListener('pointercancel', onDocUp);
+      };
+      document.addEventListener('pointermove', onDocMove, { passive: false });
       document.addEventListener('pointerup', onDocUp);
       document.addEventListener('pointercancel', onDocUp);
     },
@@ -848,6 +860,12 @@ export default function CollagePage() {
                 transform: `scale(${previewScale})`,
                 width: 1080,
                 height: 1080,
+                // touchAction: 'none' stops mobile browsers from
+                // scrolling/zooming while the user is dragging a photo,
+                // so pointermove events keep firing.
+                touchAction: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
               }}
               onPointerDown={handleStagePointerDown}
             >
@@ -939,23 +957,29 @@ export default function CollagePage() {
                     />
                   );
                 })}
-            {/* Drag-target hover ring — shows where the dragged photo will land. */}
-            {dragMoving && dragHoverIdx !== null && slotMeasures[dragHoverIdx] && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: slotMeasures[dragHoverIdx].left,
-                  top: slotMeasures[dragHoverIdx].top,
-                  width: slotMeasures[dragHoverIdx].width,
-                  height: slotMeasures[dragHoverIdx].height,
-                  border: '4px solid rgba(34,197,94,0.95)',
-                  borderRadius: 6,
-                  pointerEvents: 'none',
-                  boxShadow: '0 0 0 2px rgba(0,0,0,0.4), 0 8px 24px rgba(34,197,94,0.55)',
-                  zIndex: 80,
-                }}
-              />
-            )}
+            {/* Drag-target hover ring — find the slot measure by URL so
+                this works on templates whose DOM order differs from the
+                array order (Pinterest masonry, Big Hero's hero slot, etc). */}
+            {dragMoving && dragHoverUrl && slotMeasures
+              .filter((s) => s.url === dragHoverUrl)
+              .slice(0, 1)
+              .map((s) => (
+                <div
+                  key="drag-hover"
+                  style={{
+                    position: 'absolute',
+                    left: s.left,
+                    top: s.top,
+                    width: s.width,
+                    height: s.height,
+                    border: '4px solid rgba(34,197,94,0.95)',
+                    borderRadius: 6,
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 0 2px rgba(0,0,0,0.4), 0 8px 24px rgba(34,197,94,0.55)',
+                    zIndex: 80,
+                  }}
+                />
+              ))}
             {/* Manual mode preview hint — show a subtle X badge on each filled photo */}
             {mode === 'manual' && slotMeasures.map((s, i) => (
               <div
