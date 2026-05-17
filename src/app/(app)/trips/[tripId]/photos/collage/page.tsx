@@ -21,6 +21,12 @@ const CinemaGridTemplate = dynamic(() => import('@/components/trips/photos/colla
 const BigHeroTemplate = dynamic(() => import('@/components/trips/photos/collage/BigHeroTemplate'), { ssr: false, loading: () => null });
 const FilmstripGridTemplate = dynamic(() => import('@/components/trips/photos/collage/FilmstripGridTemplate'), { ssr: false, loading: () => null });
 const TiltedStackTemplate = dynamic(() => import('@/components/trips/photos/collage/TiltedStackTemplate'), { ssr: false, loading: () => null });
+const BentoTemplate = dynamic(() => import('@/components/trips/photos/collage/BentoTemplate'), { ssr: false, loading: () => null });
+const Y2KPopTemplate = dynamic(() => import('@/components/trips/photos/collage/Y2KPopTemplate'), { ssr: false, loading: () => null });
+const MoodBoardTemplate = dynamic(() => import('@/components/trips/photos/collage/MoodBoardTemplate'), { ssr: false, loading: () => null });
+const MinimalKinfolkTemplate = dynamic(() => import('@/components/trips/photos/collage/MinimalKinfolkTemplate'), { ssr: false, loading: () => null });
+const DiamondTemplate = dynamic(() => import('@/components/trips/photos/collage/DiamondTemplate'), { ssr: false, loading: () => null });
+const PhotoboothTemplate = dynamic(() => import('@/components/trips/photos/collage/PhotoboothTemplate'), { ssr: false, loading: () => null });
 
 type TemplateId =
   | 'mosaic'
@@ -30,17 +36,29 @@ type TemplateId =
   | 'cinema'
   | 'bighero'
   | 'filmstrip'
-  | 'tilted';
+  | 'tilted'
+  | 'bento'
+  | 'y2k'
+  | 'moodboard'
+  | 'minimal'
+  | 'diamond'
+  | 'photobooth';
 
 const TEMPLATES: { id: TemplateId; label: string; maxPhotos: number; subtitle: string }[] = [
-  { id: 'mosaic',    label: 'Mosaic',    maxPhotos: 48, subtitle: 'Auto-split mosaico' },
-  { id: 'cinema',    label: 'Cinema',    maxPhotos: 48, subtitle: 'Grilla simétrica' },
-  { id: 'pinterest', label: 'Pinterest', maxPhotos: 48, subtitle: 'Columnas masonry' },
-  { id: 'bighero',   label: 'Big Hero',  maxPhotos: 48, subtitle: '1 grande + resto' },
-  { id: 'tilted',    label: 'Tilted',    maxPhotos: 48, subtitle: 'Cards inclinadas' },
-  { id: 'filmstrip', label: 'Filmstrip', maxPhotos: 48, subtitle: 'Cintas de película' },
-  { id: 'polaroid',  label: 'Polaroid',  maxPhotos: 24, subtitle: 'Pared cork-board' },
-  { id: 'scrapbook', label: 'Scrapbook', maxPhotos: 10, subtitle: 'Página de diario' },
+  { id: 'bento',      label: 'Bento',      maxPhotos: 24, subtitle: 'Apple asimétrico' },
+  { id: 'mosaic',     label: 'Mosaic',     maxPhotos: 48, subtitle: 'Auto-split mosaico' },
+  { id: 'moodboard',  label: 'Mood Board', maxPhotos: 18, subtitle: 'Pinterest editorial' },
+  { id: 'y2k',        label: 'Y2K Pop',    maxPhotos: 24, subtitle: 'Maximalista neón' },
+  { id: 'minimal',    label: 'Minimal',    maxPhotos: 8,  subtitle: 'Kinfolk sereno' },
+  { id: 'cinema',     label: 'Cinema',     maxPhotos: 48, subtitle: 'Grilla simétrica' },
+  { id: 'pinterest',  label: 'Pinterest',  maxPhotos: 48, subtitle: 'Columnas masonry' },
+  { id: 'bighero',    label: 'Big Hero',   maxPhotos: 48, subtitle: '1 grande + resto' },
+  { id: 'diamond',    label: 'Diamond',    maxPhotos: 24, subtitle: 'Patrón rombos' },
+  { id: 'tilted',     label: 'Tilted',     maxPhotos: 48, subtitle: 'Cards inclinadas' },
+  { id: 'photobooth', label: 'Photobooth', maxPhotos: 24, subtitle: 'Tiras retro' },
+  { id: 'filmstrip',  label: 'Filmstrip',  maxPhotos: 48, subtitle: 'Cintas de película' },
+  { id: 'polaroid',   label: 'Polaroid',   maxPhotos: 24, subtitle: 'Pared cork-board' },
+  { id: 'scrapbook',  label: 'Scrapbook',  maxPhotos: 10, subtitle: 'Página de diario' },
 ];
 
 const COUNT_OPTIONS = [6, 12, 24, 36, 48] as const;
@@ -88,7 +106,7 @@ export default function CollagePage() {
   const { albumPhotos } = useAlbum(tripId, trip);
   const { toast } = useToast();
 
-  const [template, setTemplate] = useState<TemplateId>('mosaic');
+  const [template, setTemplate] = useState<TemplateId>('bento');
   const [photoCount, setPhotoCount] = useState<number>(12);
   const [shuffleSeed, setShuffleSeed] = useState(1);
   const [pinnedUrls, setPinnedUrls] = useState<Set<string>>(new Set());
@@ -222,14 +240,20 @@ export default function CollagePage() {
       );
     }
     switch (template) {
-      case 'mosaic':    return <MosaicAutoTemplate {...commonProps} />;
-      case 'pinterest': return <PinterestWallTemplate {...commonProps} />;
-      case 'polaroid':  return <PolaroidWallTemplate {...commonProps} />;
-      case 'scrapbook': return <ScrapbookTemplate {...commonProps} />;
-      case 'cinema':    return <CinemaGridTemplate {...commonProps} />;
-      case 'bighero':   return <BigHeroTemplate {...commonProps} />;
-      case 'filmstrip': return <FilmstripGridTemplate {...commonProps} />;
-      case 'tilted':    return <TiltedStackTemplate {...commonProps} />;
+      case 'mosaic':     return <MosaicAutoTemplate {...commonProps} />;
+      case 'pinterest':  return <PinterestWallTemplate {...commonProps} />;
+      case 'polaroid':   return <PolaroidWallTemplate {...commonProps} />;
+      case 'scrapbook':  return <ScrapbookTemplate {...commonProps} />;
+      case 'cinema':     return <CinemaGridTemplate {...commonProps} />;
+      case 'bighero':    return <BigHeroTemplate {...commonProps} />;
+      case 'filmstrip':  return <FilmstripGridTemplate {...commonProps} />;
+      case 'tilted':     return <TiltedStackTemplate {...commonProps} />;
+      case 'bento':      return <BentoTemplate {...commonProps} />;
+      case 'y2k':        return <Y2KPopTemplate {...commonProps} />;
+      case 'moodboard':  return <MoodBoardTemplate {...commonProps} />;
+      case 'minimal':    return <MinimalKinfolkTemplate {...commonProps} />;
+      case 'diamond':    return <DiamondTemplate {...commonProps} />;
+      case 'photobooth': return <PhotoboothTemplate {...commonProps} />;
     }
   };
 
