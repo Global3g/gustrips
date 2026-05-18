@@ -22,6 +22,9 @@ import {
   CheckSquare,
   ArrowUpDown,
   LayoutGrid,
+  Play,
+  Film,
+  BookOpen,
 } from 'lucide-react';
 import {
   DndContext,
@@ -1093,7 +1096,16 @@ export default function PhotosPage() {
                 <p className="text-white/55 text-xs font-medium">
                   {photoGroups.length} {photoGroups.length === 1 ? 'grupo' : 'grupos'} · {stats.total} {stats.total === 1 ? 'foto' : 'fotos'}
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/trips/${tripId}/photos/show`)}
+                    disabled={allPhotos.length < 1}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-400/15 to-teal-500/15 hover:from-emerald-400/25 hover:to-teal-500/25 border border-emerald-300/30 text-emerald-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    Slideshow
+                  </button>
                   <button
                     type="button"
                     onClick={() => router.push(`/trips/${tripId}/photos/collage`)}
@@ -1101,7 +1113,25 @@ export default function PhotosPage() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/15 to-rose-500/15 hover:from-amber-400/25 hover:to-rose-500/25 border border-amber-300/30 text-amber-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
                   >
                     <LayoutGrid className="w-3.5 h-3.5" />
-                    Crear collage
+                    Collage
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/trips/${tripId}/photos/reel`)}
+                    disabled={allPhotos.length < 4}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-400/15 to-purple-500/15 hover:from-indigo-400/25 hover:to-purple-500/25 border border-indigo-300/30 text-indigo-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
+                  >
+                    <Film className="w-3.5 h-3.5" />
+                    Reel video
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/trips/${tripId}/photos/book`)}
+                    disabled={allPhotos.length < 2}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-sky-400/15 to-blue-500/15 hover:from-sky-400/25 hover:to-blue-500/25 border border-sky-300/30 text-sky-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    Photo book
                   </button>
                 <div className="relative">
                   <button
