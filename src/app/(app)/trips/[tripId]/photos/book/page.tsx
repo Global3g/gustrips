@@ -88,7 +88,13 @@ export default function PhotoBookPage() {
   }
 
   return (
-    <div className="p-3 sm:p-6 pb-32 space-y-6 max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto pb-16">
+      {/* Dark glass stage — the trip layout uses a light pastel background;
+          without this wrapper the white-on-white controls are invisible. */}
+      <div
+        className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30 p-5 sm:p-7 space-y-6"
+        style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
+      >
       {/* ─── Top bar ─── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button
@@ -237,6 +243,7 @@ export default function PhotoBookPage() {
           </div>
         </div>
       </section>
+      </div>
     </div>
   );
 }
