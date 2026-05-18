@@ -1,156 +1,67 @@
 /**
- * Photo Book PDF generator.
+ * Photo Book PDF generator (editor-driven).
  *
- * Produces a multi-page "photo book" style export of a trip: a hero cover, an
- * intro page, one spread per event, an optional rough GPS map, and a closing
- * stats page. Three visual styles are supported (Editorial / Magazine /
- * Vintage) and two page sizes (A4 portrait or square).
+ * This module consumes a `BookState` (built by the editor at
+ * /trips/[id]/photos/book) and renders it to a multi-page jsPDF document.
  *
- * This file is intentionally self-contained and does NOT depend on
- * exportRecapPdf.ts — the recap export has a fixed layout tuned for the
- * recap screen, while this one is its own thing. Some helpers (fetch via
- * /api/photo-proxy, hex parsing, filename sanitization, etc.) are
- * reimplemented locally to keep that contract.
+ * Architecture:
+ *  - Page geometry is derived from `state.size` (a4/square/letter).
+ *  - Layout: `LAYOUTS[page.layoutId]` provides slot rectangles + text
+ *    zones in 0-1 relative coords. We translate those to mm for jsPDF.
+ *  - Theme: `getTheme(state.theme)` provides colours, decorations, sepia
+ *    toggle, and which jsPDF built-in font to use.
+ *  - Image fetching uses /api/photo-proxy for Firebase URLs (same pattern
+ *    as exportRecapPdf.ts) and applies a pixel-level sepia for vintage.
+ *
+ * Browser-only: depends on `document` (canvas), `Image`, and `fetch`.
  */
 
 import jsPDF from 'jspdf';
-import type { Trip, TripEvent, AlbumPhoto } from '@/types';
-
-// ─── Public types ──────────────────────────────────
-
-export type PhotoBookSize = 'a4' | 'square';
-export type PhotoBookStyle = 'editorial' | 'magazine' | 'vintage';
-
-export interface PhotoBookOptions {
-  size: PhotoBookSize;
-  style: PhotoBookStyle;
-}
-
-export interface ExportPhotoBookInput {
-  trip: Trip;
-  albumPhotos: AlbumPhoto[];
-  events: TripEvent[];
-  options: PhotoBookOptions;
-}
+import type { BookPage, BookState, BookTheme, LayoutDefinition, ThemeId } from '@/lib/photobook/types';
+import { LAYOUTS } from '@/lib/photobook/layouts';
+import { getTheme } from '@/lib/photobook/themes';
 
 type RGB = [number, number, number];
 
-// ─── Style theme ───────────────────────────────────
+// ─── Page geometry ────────────────────────────────────────
 
-interface BookTheme {
-  background: RGB;        // page background fill
-  paper: RGB;             // inner "paper" surface (where photos sit)
-  ink: RGB;               // primary text
-  inkSoft: RGB;           // secondary text
-  accent: RGB;            // titles, decorations
-  rule: RGB;              // hairline rules / borders
-  // Font family identifier mapped to jsPDF built-ins.
-  titleFont: 'helvetica' | 'times' | 'courier';
-  bodyFont: 'helvetica' | 'times' | 'courier';
-  // Whether to draw a sepia-tone overlay on photos (vintage).
-  sepia: boolean;
-  // Whether to draw decorative dots/lines in margins.
-  decorative: boolean;
-}
+/** Each book size mapped to mm dimensions. */
+const SIZE_MM: Record<BookState['size'], [number, number]> = {
+  a4: [210, 297],
+  square: [200, 200],
+  letter: [216, 279],
+};
 
-function getTheme(style: PhotoBookStyle): BookTheme {
-  switch (style) {
-    case 'magazine':
-      return {
-        background: [255, 255, 255],
-        paper: [248, 248, 248],
-        ink: [15, 15, 15],
-        inkSoft: [90, 90, 90],
-        accent: [232, 65, 80],
-        rule: [220, 220, 220],
-        titleFont: 'helvetica',
-        bodyFont: 'helvetica',
-        sepia: false,
-        decorative: false,
-      };
-    case 'vintage':
-      return {
-        background: [245, 235, 215],
-        paper: [252, 244, 224],
-        ink: [60, 40, 20],
-        inkSoft: [120, 90, 60],
-        accent: [150, 80, 30],
-        rule: [200, 180, 140],
-        titleFont: 'times',
-        bodyFont: 'times',
-        sepia: true,
-        decorative: true,
-      };
-    case 'editorial':
-    default:
-      return {
-        background: [253, 250, 246],
-        paper: [255, 255, 255],
-        ink: [30, 30, 35],
-        inkSoft: [115, 115, 125],
-        accent: [180, 100, 60],
-        rule: [220, 215, 205],
-        titleFont: 'times',
-        bodyFont: 'times',
-        sepia: false,
-        decorative: true,
-      };
+// ─── Colour helpers ───────────────────────────────────────
+
+function hexToRgb(hex: string): RGB {
+  let h = hex.replace('#', '').trim();
+  if (h.length === 3) {
+    h = h.split('').map((c) => c + c).join('');
   }
+  const n = parseInt(h, 16);
+  if (Number.isNaN(n)) return [0, 0, 0];
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
-// ─── Misc helpers ──────────────────────────────────
+// ─── Font mapping ─────────────────────────────────────────
 
-const SHORT_MONTHS_ES = [
-  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
-];
+type PdfFontFamily = 'helvetica' | 'times' | 'courier';
 
-function formatShortDateES(dateStr: string): string {
-  try {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
-    if (!m) return dateStr;
-    const day = m[3];
-    const monthIdx = parseInt(m[2], 10) - 1;
-    return `${day} ${SHORT_MONTHS_ES[monthIdx] ?? ''}`.trim();
-  } catch {
-    return dateStr;
-  }
+/**
+ * Map the theme's CSS font key to one of jsPDF's three built-in families.
+ * We don't embed custom fonts (yet) — the editor preview uses real custom
+ * faces, but the PDF leans on the universally-available builtins to keep
+ * the bundle small and the output portable.
+ */
+function pdfFontFor(theme: BookTheme, kind: 'title' | 'body'): PdfFontFamily {
+  const key = kind === 'title' ? theme.titleFontKey : theme.bodyFontKey;
+  if (key === 'sans') return 'helvetica';
+  if (key === 'serif') return 'times';
+  return 'times'; // 'script' has no PDF builtin; fall back to times-italic-ish.
 }
 
-function formatHeroDateRange(startDate: string, endDate: string): string {
-  const start = formatShortDateES(startDate);
-  const end = formatShortDateES(endDate);
-  let year = '';
-  const m = /^(\d{4})-/.exec(endDate);
-  if (m) year = m[1];
-  return `${start} — ${end}${year ? ` ${year}` : ''}`;
-}
-
-function sanitizeForFilename(input: string): string {
-  return input
-    .replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '')
-    .trim()
-    .replace(/\s+/g, '_')
-    .toLowerCase();
-}
-
-function daysBetweenInclusive(startDate: string, endDate: string): number {
-  const startMs = Date.parse(startDate);
-  const endMs = Date.parse(endDate);
-  if (isNaN(startMs) || isNaN(endMs)) return 0;
-  return Math.max(0, Math.round((endMs - startMs) / 86400000)) + 1;
-}
-
-function uniqueCities(events: TripEvent[]): number {
-  const set = new Set<string>();
-  for (const ev of events) {
-    const head = (ev.city || ev.location?.split(',')[0] || '').trim().toLowerCase();
-    if (head) set.add(head);
-  }
-  return set.size;
-}
-
-// ─── Image fetching ────────────────────────────────
+// ─── Image fetching ───────────────────────────────────────
 
 async function fetchImageAsDataUrl(url: string): Promise<string | null> {
   try {
@@ -161,13 +72,12 @@ async function fetchImageAsDataUrl(url: string): Promise<string | null> {
     const res = await fetch(fetchUrl);
     if (!res.ok) return null;
     const blob = await res.blob();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result as string);
       r.onerror = () => reject(r.error);
       r.readAsDataURL(blob);
     });
-    return dataUrl;
   } catch {
     return null;
   }
@@ -181,9 +91,8 @@ function imageFormatFromDataUrl(dataUrl: string): 'JPEG' | 'PNG' | 'WEBP' {
 }
 
 /**
- * Apply a quick sepia transform to a data URL using a hidden canvas. Used by
- * the vintage style. Best-effort: if anything fails we just return the
- * original data URL.
+ * Apply a quick sepia transform via a hidden canvas. Used by vintage.
+ * Best-effort: if anything fails we return the original data URL.
  */
 async function sepiaTone(dataUrl: string): Promise<string> {
   try {
@@ -210,7 +119,7 @@ async function sepiaTone(dataUrl: string): Promise<string> {
       const r = px[i];
       const g = px[i + 1];
       const b = px[i + 2];
-      px[i]     = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+      px[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
       px[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
       px[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
     }
@@ -221,491 +130,390 @@ async function sepiaTone(dataUrl: string): Promise<string> {
   }
 }
 
-// ─── Event-aware photo grouping ────────────────────
+// ─── Drawing primitives ───────────────────────────────────
 
-interface EventGroup {
-  event: TripEvent;
-  photos: AlbumPhoto[];
+interface DrawCtx {
+  pdf: jsPDF;
+  theme: BookTheme;
+  pageW: number;
+  pageH: number;
 }
 
-function groupPhotosByEvent(events: TripEvent[], album: AlbumPhoto[]): EventGroup[] {
-  const groups: EventGroup[] = [];
-  const sortedEvents = [...events].sort((a, b) => {
-    if (a.date < b.date) return -1;
-    if (a.date > b.date) return 1;
-    return (a.startTime || '').localeCompare(b.startTime || '');
-  });
-  for (const ev of sortedEvents) {
-    const linked = album.filter((p) => p.eventId === ev.id);
-    if (linked.length > 0) groups.push({ event: ev, photos: linked });
+function drawBackground(ctx: DrawCtx, override?: string) {
+  const { pdf, theme, pageW, pageH } = ctx;
+  const rgb = hexToRgb(override || theme.background);
+  pdf.setFillColor(rgb[0], rgb[1], rgb[2]);
+  pdf.rect(0, 0, pageW, pageH, 'F');
+}
+
+function drawDecorations(ctx: DrawCtx) {
+  const { pdf, theme, pageW, pageH } = ctx;
+  if (theme.decorations === 'none') return;
+
+  if (theme.decorations === 'dashed-borders') {
+    // Hand-drawn dashed border using short line segments. jsPDF exposes a
+    // setLineDashPattern at runtime but it isn't in the type defs, so we
+    // approximate to avoid an `any` cast.
+    const [r, g, b] = hexToRgb(theme.rule);
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.2);
+    const dash = 1.6;
+    const gap = 1.2;
+    const step = dash + gap;
+    const inset = 4;
+    // Top and bottom
+    for (let x = inset; x < pageW - inset; x += step) {
+      const x2 = Math.min(x + dash, pageW - inset);
+      pdf.line(x, inset, x2, inset);
+      pdf.line(x, pageH - inset, x2, pageH - inset);
+    }
+    // Left and right
+    for (let y = inset; y < pageH - inset; y += step) {
+      const y2 = Math.min(y + dash, pageH - inset);
+      pdf.line(inset, y, inset, y2);
+      pdf.line(pageW - inset, y, pageW - inset, y2);
+    }
+    return;
   }
-  return groups;
-}
 
-// ─── Main export ───────────────────────────────────
+  if (theme.decorations === 'corner-flourish') {
+    const [r, g, b] = hexToRgb(theme.accent);
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.4);
+    const inset = 6;
+    const len = 14;
+    // Top-left
+    pdf.line(inset, inset, inset + len, inset);
+    pdf.line(inset, inset, inset, inset + len);
+    // Top-right
+    pdf.line(pageW - inset - len, inset, pageW - inset, inset);
+    pdf.line(pageW - inset, inset, pageW - inset, inset + len);
+    // Bottom-left
+    pdf.line(inset, pageH - inset, inset + len, pageH - inset);
+    pdf.line(inset, pageH - inset - len, inset, pageH - inset);
+    // Bottom-right
+    pdf.line(pageW - inset - len, pageH - inset, pageW - inset, pageH - inset);
+    pdf.line(pageW - inset, pageH - inset - len, pageW - inset, pageH - inset);
+    return;
+  }
+
+  if (theme.decorations === 'geometric-bars') {
+    const [r, g, b] = hexToRgb(theme.accent);
+    pdf.setFillColor(r, g, b);
+    pdf.rect(0, 0, 2.5, pageH, 'F');
+    pdf.rect(pageW * 0.7, pageH - 2, pageW * 0.3, 2, 'F');
+    return;
+  }
+
+  if (theme.decorations === 'paper-noise') {
+    // Sparse, deterministic dot pattern stands in for paper texture in PDF.
+    const [r, g, b] = hexToRgb(theme.rule);
+    pdf.setFillColor(r, g, b);
+    const dots = 70;
+    // Use a simple LCG seeded by a constant for stable output.
+    let s = 1234567;
+    for (let i = 0; i < dots; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const x = (s % 1000) / 1000 * pageW;
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const y = (s % 1000) / 1000 * pageH;
+      pdf.circle(x, y, 0.15, 'F');
+    }
+  }
+}
 
 /**
- * Generates the Photo Book and returns it as a Blob. The caller decides what
- * to do with the blob (download via `URL.createObjectURL`, share, etc.).
+ * Place an image inside a slot rectangle. Maintains aspect ratio using
+ * "cover" semantics (the image fills the slot and we crop the overflow).
  *
- * NOTE: This function is browser-only — it depends on `document` (canvas for
- * sepia) and `fetch` (for the proxy). Do not call from a Server Component.
+ * jsPDF's `addImage` doesn't natively do cover-fit, so we compute the
+ * cropped portion ourselves via an offscreen canvas.
  */
-export async function exportPhotoBookPdf(input: ExportPhotoBookInput): Promise<Blob> {
-  const { trip, albumPhotos, events, options } = input;
-  const theme = getTheme(options.style);
+async function placeImageCover(
+  pdf: jsPDF,
+  rawUrl: string | null,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  theme: BookTheme,
+) {
+  const fallbackFill = () => {
+    const [pr, pg, pb] = hexToRgb(theme.paper);
+    const [rr, rg, rb] = hexToRgb(theme.rule);
+    pdf.setFillColor(pr, pg, pb);
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.2);
+    pdf.rect(x, y, w, h, 'FD');
+  };
 
-  // Page geometry. jsPDF accepts a [w, h] format array in millimetres when
-  // we use unit: 'mm'.
-  const pageDims: [number, number] = options.size === 'square' ? [200, 200] : [210, 297];
+  if (!rawUrl) {
+    fallbackFill();
+    return;
+  }
+
+  const dataUrl = await fetchImageAsDataUrl(rawUrl);
+  if (!dataUrl) {
+    fallbackFill();
+    return;
+  }
+
+  try {
+    // Load into Image so we know its natural size and can crop.
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('img load failed'));
+      i.src = dataUrl;
+    });
+
+    // Compute cover-fit crop.
+    const slotRatio = w / h;
+    const imgRatio = img.naturalWidth / img.naturalHeight;
+    let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+    if (imgRatio > slotRatio) {
+      // Image is wider — crop horizontally.
+      sw = img.naturalHeight * slotRatio;
+      sx = (img.naturalWidth - sw) / 2;
+    } else {
+      // Image is taller — crop vertically.
+      sh = img.naturalWidth / slotRatio;
+      sy = (img.naturalHeight - sh) / 2;
+    }
+
+    // Render the cropped region to a canvas, optionally sepia.
+    const canvas = document.createElement('canvas');
+    // Target ~150 DPI at the slot size — overkill for small slots, but
+    // keeps large heroes crisp. Clamp to avoid runaway canvases.
+    const targetW = Math.min(Math.round(w * 6), 2400);
+    const targetH = Math.min(Math.round(h * 6), 2400);
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const cctx = canvas.getContext('2d');
+    if (!cctx) {
+      fallbackFill();
+      return;
+    }
+    cctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+    if (theme.sepia) {
+      const data = cctx.getImageData(0, 0, targetW, targetH);
+      const px = data.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const r = px[i];
+        const g = px[i + 1];
+        const b = px[i + 2];
+        px[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+        px[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+        px[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+      }
+      cctx.putImageData(data, 0, 0);
+    }
+
+    const out = canvas.toDataURL('image/jpeg', 0.86);
+    const fmt = imageFormatFromDataUrl(out);
+    pdf.addImage(out, fmt, x, y, w, h, undefined, 'FAST');
+
+    // Thin frame for definition.
+    const [rr, rg, rb] = hexToRgb(theme.rule);
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.15);
+    pdf.rect(x, y, w, h, 'S');
+  } catch {
+    fallbackFill();
+  }
+}
+
+/**
+ * Draw a soft dark scrim at the bottom of the page — used on the cover so
+ * the title (white) stays readable over arbitrary photos.
+ *
+ * jsPDF's GState-based opacity isn't in the type defs, so we render the
+ * scrim into an offscreen canvas (where we DO have alpha) and embed it as
+ * an image. Same visual result, cleaner types.
+ */
+function drawCoverScrim(pdf: jsPDF, w: number, h: number) {
+  if (typeof document === 'undefined') return;
+  const scrimH = h * 0.5;
+  // Use a moderate resolution — gradients don't need DPI to look smooth.
+  const pxW = Math.max(200, Math.round(w * 4));
+  const pxH = Math.max(100, Math.round(scrimH * 4));
+  const canvas = document.createElement('canvas');
+  canvas.width = pxW;
+  canvas.height = pxH;
+  const cctx = canvas.getContext('2d');
+  if (!cctx) return;
+  const grad = cctx.createLinearGradient(0, 0, 0, pxH);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.65)');
+  cctx.fillStyle = grad;
+  cctx.fillRect(0, 0, pxW, pxH);
+  const png = canvas.toDataURL('image/png');
+  pdf.addImage(png, 'PNG', 0, h - scrimH, w, scrimH, undefined, 'FAST');
+}
+
+/**
+ * Render the text zones of a page.
+ *
+ * Note: text colour rules
+ *  - On the cover, title/subtitle render in white (high contrast over
+ *    the photo).
+ *  - On regular pages, titles use `theme.ink`, body/caption use
+ *    `theme.inkSoft`.
+ */
+function drawTextZones(
+  pdf: jsPDF,
+  page: BookPage,
+  layout: LayoutDefinition,
+  theme: BookTheme,
+  pageW: number,
+  pageH: number,
+) {
+  const isCover = page.layoutId === 'cover';
+
+  for (const zone of layout.textZones) {
+    const value = textValueFor(page, zone.kind);
+    if (!value) continue;
+    const x = zone.x * pageW;
+    const y = zone.y * pageH;
+    const w = zone.w * pageW;
+    const sizePt = zone.size ?? 12;
+
+    const isTitle = zone.kind === 'title' || zone.kind === 'subtitle';
+    const family = pdfFontFor(theme, isTitle ? 'title' : 'body');
+    const style: 'normal' | 'italic' | 'bold' | 'bolditalic' =
+      zone.kind === 'title'
+        ? (zone.italic ? 'bolditalic' : 'bold')
+        : zone.italic
+          ? 'italic'
+          : 'normal';
+
+    pdf.setFont(family, style);
+    pdf.setFontSize(sizePt);
+
+    const color = isCover
+      ? ([255, 255, 255] as RGB)
+      : zone.kind === 'title' || zone.kind === 'subtitle'
+        ? hexToRgb(theme.ink)
+        : hexToRgb(theme.inkSoft);
+    pdf.setTextColor(color[0], color[1], color[2]);
+
+    let display = value;
+    if (zone.upper) display = display.toUpperCase();
+
+    // Wrap text. The font baseline sits a bit below `y`, so use `y` as the
+    // first-line baseline. jsPDF text() uses baseline by default when no
+    // baseline option is given.
+    const lines = pdf.splitTextToSize(display, w);
+    // Restrict to the height of the zone (rough: line height ≈ size * 1.2 / pt-to-mm ≈ size * 0.42).
+    const lineMm = sizePt * 0.42;
+    const maxLines = Math.max(1, Math.floor((zone.h * pageH) / lineMm));
+    const visible = lines.slice(0, maxLines);
+
+    const align = zone.align ?? 'left';
+    const textX = align === 'center' ? x + w / 2 : align === 'right' ? x + w : x;
+
+    pdf.text(visible, textX, y + lineMm, {
+      align: align as 'left' | 'center' | 'right',
+      maxWidth: w,
+      lineHeightFactor: 1.2,
+    });
+  }
+}
+
+function textValueFor(page: BookPage, kind: 'title' | 'subtitle' | 'caption' | 'body' | 'date' | 'location'): string | undefined {
+  switch (kind) {
+    case 'title': return page.title;
+    case 'subtitle': return page.subtitle;
+    case 'caption': return page.caption;
+    case 'body': return page.body;
+    case 'date': return page.date;
+    case 'location': return page.location;
+  }
+}
+
+// ─── Render a single page ─────────────────────────────────
+
+async function renderPage(ctx: DrawCtx, page: BookPage) {
+  const layout = LAYOUTS[page.layoutId];
+  const { pdf, theme, pageW, pageH } = ctx;
+
+  drawBackground(ctx, page.background);
+
+  // Cover photo: full bleed, no slot frame.
+  const isCover = page.layoutId === 'cover';
+
+  for (let i = 0; i < layout.slots.length; i++) {
+    const slot = layout.slots[i];
+    const x = slot.x * pageW;
+    const y = slot.y * pageH;
+    const w = slot.w * pageW;
+    const h = slot.h * pageH;
+    const url = page.photoUrls[i] ?? null;
+    await placeImageCover(pdf, url, x, y, w, h, theme);
+  }
+
+  if (isCover && page.photoUrls[0]) {
+    drawCoverScrim(pdf, pageW, pageH);
+  }
+
+  // Decorations under the text but above the photo (covers excluded).
+  if (!isCover) drawDecorations(ctx);
+
+  drawTextZones(pdf, page, layout, theme, pageW, pageH);
+}
+
+// ─── Public API ───────────────────────────────────────────
+
+export type { BookState } from '@/lib/photobook/types';
+export type PhotoBookSize = BookState['size'];
+export type PhotoBookStyle = ThemeId;
+
+/**
+ * Generate the Photo Book and return it as a Blob.
+ * Browser-only.
+ */
+export async function exportPhotoBookPdf(state: BookState): Promise<Blob> {
+  const theme = getTheme(state.theme);
+  const [w, h] = SIZE_MM[state.size];
+
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
-    format: pageDims,
+    format: [w, h],
     compress: true,
   });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = options.size === 'square' ? 12 : 16;
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const ctx: DrawCtx = { pdf, theme, pageW, pageH };
 
-  const setText = (rgb: RGB) => pdf.setTextColor(rgb[0], rgb[1], rgb[2]);
-  const setFill = (rgb: RGB) => pdf.setFillColor(rgb[0], rgb[1], rgb[2]);
-  const setStroke = (rgb: RGB) => pdf.setDrawColor(rgb[0], rgb[1], rgb[2]);
+  // Cover first.
+  await renderPage(ctx, state.cover);
 
-  const drawBackground = () => {
-    setFill(theme.background);
-    pdf.rect(0, 0, pageWidth, pageHeight, 'F');
-  };
-
-  const drawFooter = (pageLabel: string) => {
-    pdf.setFont(theme.bodyFont, 'italic');
-    pdf.setFontSize(8);
-    setText(theme.inkSoft);
-    pdf.text(pageLabel, pageWidth / 2, pageHeight - 8, { align: 'center' });
-  };
-
-  // Tiny decorative trio of dots; used by editorial + vintage styles.
-  const drawDotsRow = (cx: number, y: number, color: RGB) => {
-    setFill(color);
-    pdf.circle(cx - 3, y, 0.6, 'F');
-    pdf.circle(cx, y, 0.9, 'F');
-    pdf.circle(cx + 3, y, 0.6, 'F');
-  };
-
-  // Draw a horizontal hairline with side accents.
-  const drawAccentRule = (y: number) => {
-    setStroke(theme.rule);
-    pdf.setLineWidth(0.3);
-    pdf.line(margin, y, pageWidth - margin, y);
-  };
-
-  /**
-   * Image placement helper. Maintains aspect ratio inside the given box and
-   * supports the vintage sepia transform. If the image cannot be fetched we
-   * fall back to a soft "paper" rectangle so the layout still feels intact.
-   */
-  const placeImage = async (
-    rawUrl: string | null,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ) => {
-    if (!rawUrl) {
-      setFill(theme.paper);
-      setStroke(theme.rule);
-      pdf.setLineWidth(0.3);
-      pdf.rect(x, y, w, h, 'FD');
-      pdf.setFont(theme.bodyFont, 'italic');
-      pdf.setFontSize(8);
-      setText(theme.inkSoft);
-      pdf.text('sin foto', x + w / 2, y + h / 2 + 1, { align: 'center' });
-      return;
-    }
-    let dataUrl = await fetchImageAsDataUrl(rawUrl);
-    if (!dataUrl) {
-      setFill(theme.paper);
-      setStroke(theme.rule);
-      pdf.setLineWidth(0.3);
-      pdf.rect(x, y, w, h, 'FD');
-      pdf.setFont(theme.bodyFont, 'italic');
-      pdf.setFontSize(8);
-      setText(theme.inkSoft);
-      pdf.text('foto no disponible', x + w / 2, y + h / 2 + 1, { align: 'center' });
-      return;
-    }
-    if (theme.sepia) dataUrl = await sepiaTone(dataUrl);
-    try {
-      const fmt = imageFormatFromDataUrl(dataUrl);
-      // Paper backing so any transparency lands on theme-correct white-ish.
-      setFill(theme.paper);
-      pdf.rect(x, y, w, h, 'F');
-      pdf.addImage(dataUrl, fmt, x, y, w, h, undefined, 'FAST');
-      // Thin frame.
-      setStroke(theme.rule);
-      pdf.setLineWidth(0.2);
-      pdf.rect(x, y, w, h, 'S');
-    } catch {
-      setFill(theme.paper);
-      pdf.rect(x, y, w, h, 'F');
-    }
-  };
-
-  // ═══════════════════════════════════════════════════
-  // COVER PAGE
-  // ═══════════════════════════════════════════════════
-
-  drawBackground();
-
-  // Hero photo background — pick the first album photo if present.
-  const heroPhoto = albumPhotos[0];
-  if (heroPhoto) {
-    // Frame in the upper 60% of the page, full-bleed-ish with margin.
-    const heroX = margin;
-    const heroY = margin + 18;
-    const heroW = pageWidth - margin * 2;
-    const heroH = pageHeight * 0.5;
-    await placeImage(heroPhoto.fullUrl || heroPhoto.url, heroX, heroY, heroW, heroH);
-  }
-
-  // Eyebrow
-  pdf.setFont(theme.titleFont, 'bold');
-  pdf.setFontSize(10);
-  setText(theme.accent);
-  pdf.text('PHOTO BOOK', pageWidth / 2, margin + 8, { align: 'center' });
-
-  if (theme.decorative) {
-    drawDotsRow(pageWidth / 2, margin + 12.5, theme.accent);
-  }
-
-  // Title block below the hero.
-  const titleY = heroPhoto ? margin + 18 + pageHeight * 0.5 + 18 : pageHeight / 2 - 12;
-  pdf.setFont(theme.titleFont, 'bold');
-  pdf.setFontSize(options.size === 'square' ? 28 : 34);
-  setText(theme.ink);
-  const titleLines = pdf.splitTextToSize(trip.title, pageWidth - margin * 2);
-  pdf.text(titleLines, pageWidth / 2, titleY, { align: 'center' });
-
-  // Subtitle
-  const subtitleParts: string[] = [];
-  if (trip.destination) subtitleParts.push(trip.destination);
-  if (trip.startDate && trip.endDate) {
-    subtitleParts.push(formatHeroDateRange(trip.startDate, trip.endDate));
-  }
-  if (subtitleParts.length > 0) {
-    pdf.setFont(theme.bodyFont, 'normal');
-    pdf.setFontSize(12);
-    setText(theme.inkSoft);
-    const subY = titleY + titleLines.length * (options.size === 'square' ? 10 : 12) + 4;
-    pdf.text(subtitleParts.join('  ·  '), pageWidth / 2, subY, { align: 'center' });
-  }
-
-  drawFooter('GusTrips · Photo Book');
-
-  // ═══════════════════════════════════════════════════
-  // INTRO PAGE
-  // ═══════════════════════════════════════════════════
-
-  pdf.addPage();
-  drawBackground();
-
-  const totalDays = trip.startDate && trip.endDate ? daysBetweenInclusive(trip.startDate, trip.endDate) : 0;
-  const cityCount = uniqueCities(events);
-  const photoCount = albumPhotos.length;
-
-  // Decorative top
-  if (theme.decorative) {
-    drawAccentRule(margin + 4);
-    drawDotsRow(pageWidth / 2, margin + 9, theme.accent);
-  }
-
-  pdf.setFont(theme.titleFont, 'italic');
-  pdf.setFontSize(18);
-  setText(theme.accent);
-  pdf.text('Una historia', pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
-
-  pdf.setFont(theme.bodyFont, 'normal');
-  pdf.setFontSize(12);
-  setText(theme.ink);
-
-  const intro = [
-    trip.destination
-      ? `Un viaje a ${trip.destination}`
-      : `Un viaje`,
-    trip.startDate && trip.endDate
-      ? `entre ${formatShortDateES(trip.startDate)} y ${formatShortDateES(trip.endDate)}`
-      : '',
-    `con ${photoCount} ${photoCount === 1 ? 'foto' : 'fotos'}`,
-    cityCount > 0
-      ? `a través de ${cityCount} ${cityCount === 1 ? 'ciudad' : 'ciudades'}.`
-      : '.',
-  ].filter(Boolean).join(' ');
-
-  const introLines = pdf.splitTextToSize(intro, pageWidth - margin * 2 - 30);
-  pdf.text(introLines, pageWidth / 2, pageHeight / 2 - 4, { align: 'center' });
-
-  // Decorative bottom
-  if (theme.decorative) {
-    drawDotsRow(pageWidth / 2, pageHeight / 2 + 18, theme.accent);
-    drawAccentRule(pageHeight - margin - 4);
-  }
-
-  drawFooter('Introducción');
-
-  // ═══════════════════════════════════════════════════
-  // SPREADS PER EVENT
-  // ═══════════════════════════════════════════════════
-
-  const groups = groupPhotosByEvent(events, albumPhotos);
-
-  for (const group of groups) {
+  // Then each page in order.
+  for (const page of state.pages) {
     pdf.addPage();
-    drawBackground();
-
-    const ev = group.event;
-    const photos = group.photos;
-
-    // Header: small uppercase date/location and event title.
-    pdf.setFont(theme.bodyFont, 'bold');
-    pdf.setFontSize(8);
-    setText(theme.accent);
-    const eyebrow = [
-      ev.date ? formatShortDateES(ev.date) : '',
-      ev.city || ev.location?.split(',')[0] || '',
-    ].filter(Boolean).join('  ·  ').toUpperCase();
-    if (eyebrow) {
-      pdf.text(eyebrow, margin, margin + 4);
-    }
-
-    pdf.setFont(theme.titleFont, 'bold');
-    pdf.setFontSize(options.size === 'square' ? 18 : 22);
-    setText(theme.ink);
-    const eventTitleLines = pdf.splitTextToSize(ev.title || 'Sin título', pageWidth - margin * 2);
-    pdf.text(eventTitleLines, margin, margin + 12);
-    const titleBlockBottom = margin + 12 + eventTitleLines.length * (options.size === 'square' ? 6 : 8);
-
-    if (theme.decorative) {
-      drawAccentRule(titleBlockBottom + 2);
-    }
-
-    // Photo layout. The hero photo takes most of the page; up to 3 thumbs
-    // go in a strip below it. If there are fewer than 4 photos we keep the
-    // hero large and place the rest in a smaller row.
-    const heroY = titleBlockBottom + 7;
-    const stripHeight = options.size === 'square' ? 32 : 38;
-    const captionReserve = (ev.notes || '').trim() ? 18 : 8;
-    const heroH = pageHeight - heroY - stripHeight - captionReserve - margin - 4;
-    const heroW = pageWidth - margin * 2;
-
-    await placeImage(
-      photos[0]?.fullUrl || photos[0]?.url || null,
-      margin,
-      heroY,
-      heroW,
-      heroH,
-    );
-
-    // Optional photo caption beneath hero.
-    if (photos[0]?.caption) {
-      pdf.setFont(theme.bodyFont, 'italic');
-      pdf.setFontSize(9);
-      setText(theme.inkSoft);
-      const cap = pdf.splitTextToSize(photos[0].caption, heroW - 10)[0] || photos[0].caption;
-      pdf.text(cap, margin + 2, heroY + heroH + 5);
-    }
-
-    // Thumbnail strip.
-    const thumbs = photos.slice(1, 4);
-    if (thumbs.length > 0) {
-      const stripY = heroY + heroH + 8;
-      const gap = 3;
-      const thumbW = (heroW - gap * (thumbs.length - 1)) / Math.max(thumbs.length, 1);
-      for (let i = 0; i < thumbs.length; i++) {
-        const tx = margin + i * (thumbW + gap);
-        await placeImage(
-          thumbs[i].fullUrl || thumbs[i].url,
-          tx,
-          stripY,
-          thumbW,
-          stripHeight,
-        );
-      }
-    }
-
-    // Event notes (small, bottom of page).
-    if ((ev.notes || '').trim()) {
-      pdf.setFont(theme.bodyFont, 'italic');
-      pdf.setFontSize(9);
-      setText(theme.inkSoft);
-      const noteLines = pdf.splitTextToSize(ev.notes, pageWidth - margin * 2);
-      const noteTop = pageHeight - margin - 4 - Math.min(noteLines.length, 3) * 4;
-      pdf.text(noteLines.slice(0, 3), margin, noteTop);
-    }
-
-    drawFooter(ev.location || ev.title || '');
+    await renderPage(ctx, page);
   }
 
-  // ═══════════════════════════════════════════════════
-  // MAP PAGE (only if at least one event has coordinates)
-  // ═══════════════════════════════════════════════════
-
-  const geoEvents = events.filter(
-    (e) => typeof e.latitude === 'number' && typeof e.longitude === 'number',
-  );
-  if (geoEvents.length >= 2) {
-    pdf.addPage();
-    drawBackground();
-
-    pdf.setFont(theme.titleFont, 'bold');
-    pdf.setFontSize(options.size === 'square' ? 22 : 26);
-    setText(theme.ink);
-    pdf.text('El recorrido', margin, margin + 10);
-
-    pdf.setFont(theme.bodyFont, 'normal');
-    pdf.setFontSize(10);
-    setText(theme.inkSoft);
-    pdf.text(
-      `${geoEvents.length} puntos en el mapa`,
-      margin,
-      margin + 17,
-    );
-
-    // Compute bounding box of coordinates.
-    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
-    for (const ev of geoEvents) {
-      const lat = ev.latitude as number;
-      const lon = ev.longitude as number;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-      if (lon < minLon) minLon = lon;
-      if (lon > maxLon) maxLon = lon;
-    }
-    // Pad the bbox so points don't touch edges.
-    const latPad = Math.max((maxLat - minLat) * 0.1, 0.01);
-    const lonPad = Math.max((maxLon - minLon) * 0.1, 0.01);
-    minLat -= latPad; maxLat += latPad;
-    minLon -= lonPad; maxLon += lonPad;
-
-    const mapX = margin;
-    const mapY = margin + 24;
-    const mapW = pageWidth - margin * 2;
-    const mapH = pageHeight - mapY - margin - 12;
-
-    // Map "paper" rectangle.
-    setFill(theme.paper);
-    setStroke(theme.rule);
-    pdf.setLineWidth(0.3);
-    pdf.rect(mapX, mapY, mapW, mapH, 'FD');
-
-    // Project lat/lon → x/y. Lat is inverted because PDF y grows downward.
-    const project = (lat: number, lon: number): { x: number; y: number } => {
-      const tx = (lon - minLon) / Math.max(maxLon - minLon, 1e-6);
-      const ty = (lat - minLat) / Math.max(maxLat - minLat, 1e-6);
-      return {
-        x: mapX + tx * mapW,
-        y: mapY + (1 - ty) * mapH,
-      };
-    };
-
-    // Connecting line (in event chronological order).
-    const sortedGeo = [...geoEvents].sort((a, b) => {
-      if (a.date < b.date) return -1;
-      if (a.date > b.date) return 1;
-      return (a.startTime || '').localeCompare(b.startTime || '');
-    });
-    setStroke(theme.accent);
-    pdf.setLineWidth(0.4);
-    for (let i = 1; i < sortedGeo.length; i++) {
-      const a = project(sortedGeo[i - 1].latitude!, sortedGeo[i - 1].longitude!);
-      const b = project(sortedGeo[i].latitude!, sortedGeo[i].longitude!);
-      pdf.line(a.x, a.y, b.x, b.y);
-    }
-
-    // Dots.
-    setFill(theme.accent);
-    for (const ev of sortedGeo) {
-      const p = project(ev.latitude!, ev.longitude!);
-      pdf.circle(p.x, p.y, 1.4, 'F');
-    }
-
-    drawFooter('Mapa del viaje');
-  }
-
-  // ═══════════════════════════════════════════════════
-  // CLOSING PAGE
-  // ═══════════════════════════════════════════════════
-
-  pdf.addPage();
-  drawBackground();
-
-  if (theme.decorative) {
-    drawAccentRule(margin + 4);
-    drawDotsRow(pageWidth / 2, margin + 9, theme.accent);
-  }
-
-  pdf.setFont(theme.titleFont, 'bold');
-  pdf.setFontSize(options.size === 'square' ? 22 : 26);
-  setText(theme.ink);
-  pdf.text('El viaje en números', pageWidth / 2, pageHeight / 2 - 28, { align: 'center' });
-
-  // Three line stats — keep it minimal.
-  pdf.setFont(theme.bodyFont, 'normal');
-  pdf.setFontSize(13);
-  setText(theme.inkSoft);
-  const statLines = [
-    `Ciudades visitadas: ${cityCount}`,
-    `Fotos: ${photoCount}`,
-    `Días: ${totalDays}`,
-  ];
-  let cursorY = pageHeight / 2 - 12;
-  for (const line of statLines) {
-    pdf.text(line, pageWidth / 2, cursorY, { align: 'center' });
-    cursorY += 8;
-  }
-
-  // Final phrase.
-  pdf.setFont(theme.titleFont, 'italic');
-  pdf.setFontSize(14);
-  setText(theme.accent);
-  pdf.text(
-    'Cada foto, un instante guardado.',
-    pageWidth / 2,
-    cursorY + 12,
-    { align: 'center' },
-  );
-
-  if (theme.decorative) {
-    drawDotsRow(pageWidth / 2, cursorY + 22, theme.accent);
-    drawAccentRule(pageHeight - margin - 4);
-  }
-
-  drawFooter('GusTrips · Photo Book');
-
-  // ─── Output ──────────────────────────────────────
-  const blob: Blob = pdf.output('blob');
-  return blob;
+  return pdf.output('blob');
 }
 
 /**
- * Convenience wrapper: generate the book and trigger a browser download.
- * Returns the filename used (callers may want it for analytics).
+ * Generate and trigger a download.
  */
 export async function exportAndDownloadPhotoBookPdf(
-  input: ExportPhotoBookInput,
-): Promise<string> {
-  const blob = await exportPhotoBookPdf(input);
-  const slug = sanitizeForFilename(input.trip.title) || 'viaje';
-  const start = (input.trip.startDate || '').slice(0, 10);
-  const fileName = `photobook_${slug}${start ? `_${start}` : ''}.pdf`;
-
+  state: BookState,
+  filename: string,
+): Promise<void> {
+  const blob = await exportPhotoBookPdf(state);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = fileName;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  // Revoke on next tick so the click handler doesn't choke.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return fileName;
 }
