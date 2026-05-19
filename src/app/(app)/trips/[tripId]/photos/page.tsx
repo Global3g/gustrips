@@ -25,6 +25,8 @@ import {
   Play,
   Film,
   BookOpen,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import {
   DndContext,
@@ -112,6 +114,52 @@ export default function PhotosPage() {
 
   const [uploading, setUploading] = useState(false);
   const [canShare, setCanShare] = useState(false);
+  // Scrolled state for the floating up/down nav button. Reads the
+  // nearest overflow-y-auto ancestor (provided by the trip layout).
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    // Find the scroll container — the trip layout wraps content in a div
+    // with overflow-y-auto. Walk up until we find one.
+    let node: HTMLElement | null = document.querySelector('main, [data-trip-scroll]');
+    if (!node) {
+      // Fallback: scan the DOM for the trip layout's scrolling wrapper.
+      const els = document.querySelectorAll('div');
+      for (const el of els) {
+        if ((el as HTMLElement).className.includes('overflow-y-auto') && el.parentElement?.className.includes('flex')) {
+          node = el as HTMLElement;
+          break;
+        }
+      }
+    }
+    if (!node) {
+      // Last resort: use the window
+      const onWin = () => setScrolled(window.scrollY > 200);
+      window.addEventListener('scroll', onWin, { passive: true });
+      onWin();
+      return () => window.removeEventListener('scroll', onWin);
+    }
+    const onScroll = () => setScrolled((node as HTMLElement).scrollTop > 200);
+    node.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => node?.removeEventListener('scroll', onScroll);
+  }, []);
+  const handleQuickScroll = useCallback(() => {
+    const candidates = document.querySelectorAll('div');
+    let scrollEl: HTMLElement | null = null;
+    for (const el of candidates) {
+      const html = el as HTMLElement;
+      if (html.className.includes('overflow-y-auto') && html.parentElement?.className.includes('flex')) {
+        scrollEl = html;
+        break;
+      }
+    }
+    const target = scrollEl ?? document.scrollingElement ?? document.documentElement;
+    if (scrolled) {
+      target.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      target.scrollTo({ top: target.scrollHeight, behavior: 'smooth' });
+    }
+  }, [scrolled]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
   const [captionText, setCaptionText] = useState('');
@@ -1089,9 +1137,10 @@ export default function PhotosPage() {
             </div>
           ) : (
             <div className="space-y-7">
-              {/* Sort filter — lets the user flip the order of the day/event
-                  sections. Persisted per-trip so the choice survives reloads. */}
-              <div className="flex items-center justify-between gap-3 -mt-2 flex-wrap">
+              {/* Sort filter — sticky at the top of the photo content so the
+                  4 outputs (Slideshow / Collage / Reel / Photo book) stay
+                  reachable while the user scrolls through long photo lists. */}
+              <div className="sticky top-0 z-30 -mx-5 sm:-mx-7 px-5 sm:px-7 py-3 backdrop-blur-xl border-b border-white/[0.08] flex items-center justify-between gap-3 flex-wrap" style={{ background: 'rgba(13,27,46,0.85)' }}>
                 <p className="text-white/55 text-xs font-medium">
                   {photoGroups.length} {photoGroups.length === 1 ? 'grupo' : 'grupos'} · {stats.total} {stats.total === 1 ? 'foto' : 'fotos'}
                 </p>
@@ -1939,6 +1988,20 @@ export default function PhotosPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Floating quick-scroll button — opposite side of the chatbot
+          (which lives bottom-right). Toggles between scroll-to-bottom
+          (when at top) and scroll-to-top (when scrolled). */}
+      {allPhotos.length > 6 && (
+        <button
+          type="button"
+          onClick={handleQuickScroll}
+          aria-label={scrolled ? 'Volver arriba' : 'Ir al final'}
+          className="fixed bottom-24 left-6 lg:bottom-8 lg:left-8 z-40 w-12 h-12 rounded-full bg-amber-400 hover:bg-amber-300 text-amber-950 flex items-center justify-center shadow-[0_8px_24px_rgba(245,158,11,0.5)] active:scale-95 transition-all"
+        >
+          {scrolled ? <ChevronUp className="w-5 h-5" strokeWidth={3} /> : <ChevronDown className="w-5 h-5" strokeWidth={3} />}
+        </button>
+      )}
 
       {/* ── Lightbox (zoom + pan + rotate via react-zoom-pan-pinch) ── */}
       <PhotoLightbox
