@@ -138,10 +138,13 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
             <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(240,244,255,0.5) 0%, rgba(232,238,255,0.4) 50%, rgba(237,233,254,0.5) 100%)' }} />
           </div>
         )}
-        {/* Decorative gradient orbs */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-1/3 left-0 w-80 h-80 bg-violet-200/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-rose-200/10 rounded-full blur-3xl pointer-events-none" />
+        {/* Decorative gradient orbs.
+            blur-3xl (96px) is expensive on the GPU when stacked — the photos
+            page already paints its own orb layer inside the dark glass stage.
+            Cut from 3 to 2 and step the blur radius down to keep the
+            overall composite cheap. */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200/20 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute top-1/3 left-0 w-80 h-80 bg-violet-200/15 rounded-full blur-2xl pointer-events-none" />
         <NotificationBanner />
         {/* Back to dashboard — mobile only */}
         <div className="lg:hidden sticky top-0 z-40 backdrop-blur-md bg-white/75 border-b border-gray-200/40 px-4 py-2.5 flex items-center gap-3">

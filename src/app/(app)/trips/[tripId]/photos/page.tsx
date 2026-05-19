@@ -194,13 +194,23 @@ export default function PhotosPage() {
     }
   }, [selectedEventId, events]);
 
+  // Build a fast O(1) lookup from eventId → event once. Declared BEFORE
+  // allPhotos so the merge below can use it instead of events.find() inside
+  // a loop. With 300 photos × 50 events that previously cost ~15k array
+  // scans per render.
+  const eventsById = useMemo(() => {
+    const m = new Map<string, typeof events[number]>();
+    for (const e of events) m.set(e.id, e);
+    return m;
+  }, [events]);
+
   /* ── All photos: album + event photos deduplicated ── */
   const allPhotos = useMemo(() => {
     const photos: (AlbumPhoto & { source: 'album' | 'event'; eventTitle?: string })[] = [];
     const albumUrls = new Set<string>();
     for (const p of albumPhotos) {
       albumUrls.add(p.url);
-      const linkedEvent = p.eventId ? events.find((e) => e.id === p.eventId) : undefined;
+      const linkedEvent = p.eventId ? eventsById.get(p.eventId) : undefined;
       photos.push({ ...p, source: 'album', eventTitle: linkedEvent?.title });
     }
     for (const event of events) {
@@ -223,16 +233,7 @@ export default function PhotosPage() {
       if (dateCmp !== 0) return dateCmp;
       return a.uploadedAt.localeCompare(b.uploadedAt);
     });
-  }, [albumPhotos, events]);
-
-  // Build a fast O(1) lookup from eventId → event once, instead of doing
-  // events.find() inside every iteration below — that turned a 300-photo /
-  // 50-event trip into ~15k array scans per render and made mobile janky.
-  const eventsById = useMemo(() => {
-    const m = new Map<string, typeof events[number]>();
-    for (const e of events) m.set(e.id, e);
-    return m;
-  }, [events]);
+  }, [albumPhotos, events, eventsById]);
 
   /* ── Group photos by day → event ── */
   const photoGroups = useMemo(() => {
@@ -361,22 +362,22 @@ export default function PhotosPage() {
     }
   }, [trip]);
 
-  /* ── Stats ── */
+  /* ── Stats ──
+     Use the eventsById map (already built once above) so this is O(N)
+     instead of O(N×E). With 300 photos × 50 events that's ~15k array
+     scans on the previous shape — each render. */
   const stats = useMemo(() => {
-    const dates = new Set(allPhotos.map((p) => p.date));
-    const cities = new Set(
-      allPhotos
-        .map((p) => {
-          if (p.eventId) {
-            const ev = events.find((e) => e.id === p.eventId);
-            return ev?.city || '';
-          }
-          return '';
-        })
-        .filter(Boolean),
-    );
+    const dates = new Set<string>();
+    const cities = new Set<string>();
+    for (const p of allPhotos) {
+      if (p.date) dates.add(p.date);
+      if (p.eventId) {
+        const ev = eventsById.get(p.eventId);
+        if (ev?.city) cities.add(ev.city);
+      }
+    }
     return { total: allPhotos.length, days: dates.size, cities: cities.size };
-  }, [allPhotos, events]);
+  }, [allPhotos, eventsById]);
 
   /* ── Per-day photo counts for distribution chart ── */
   const dayCounts = useMemo(() => {
@@ -389,8 +390,11 @@ export default function PhotosPage() {
 
   const maxDayCount = useMemo(() => Math.max(1, ...dayCounts.map((d) => d.count)), [dayCounts]);
 
-  /* ── Flat photo list for lightbox ── */
-  const flatPhotos = useMemo(() => allPhotos, [allPhotos]);
+  /* ── Flat photo list for lightbox ──
+     Alias for clarity; no transformation needed so we avoid the useMemo
+     overhead. allPhotos is already stable across renders thanks to its
+     own memo. */
+  const flatPhotos = allPhotos;
 
   /* ── Auto-open the file picker when navigated with ?upload=1 ── */
   useEffect(() => {
@@ -813,24 +817,22 @@ export default function PhotosPage() {
         className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30"
         style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
       >
-        {/* Visual layer */}
+        {/* Visual layer.
+            Heavy decoration kept to ~2 blur layers + a low-count particle
+            canvas. Earlier this had 4× blur-3xl orbs stacked behind a
+            32-particle animated canvas — 7 blur layers when you counted the
+            trip layout's 3 background orbs, all repainting during the photo
+            grid mount/scroll. Cut to the essentials so the GPU has budget
+            for thumbnail decoding. */}
         <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-          <Particles count={32} />
+          <Particles count={12} />
           <div
-            className="absolute -top-12 left-1/4 w-96 h-96 rounded-full blur-3xl"
+            className="absolute -top-12 left-1/4 w-96 h-96 rounded-full blur-2xl"
             style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.20), transparent 70%)' }}
           />
           <div
-            className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-3xl"
+            className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-2xl"
             style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%)' }}
-          />
-          <div
-            className="absolute bottom-12 left-1/4 w-72 h-72 rounded-full blur-3xl"
-            style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.16), transparent 70%)' }}
-          />
-          <div
-            className="absolute top-2/3 right-1/3 w-64 h-64 rounded-full blur-3xl"
-            style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.14), transparent 70%)' }}
           />
         </div>
 
@@ -1301,8 +1303,15 @@ export default function PhotosPage() {
                     {(() => {
                       const reorderable = !selectionMode && !!group.eventId && group.photos.length > 1;
                       const photoIds = group.photos.map((p) => p.url);
-                      const photoCards = group.photos.map((photo) => {
+                      const photoCards = group.photos.map((photo, photoIdx) => {
                         const isSelected = selectedUrls.has(photo.url);
+                        // First ~8 photos of the first group are likely above
+                        // the fold on a desktop 6-col grid (2 rows). Hint the
+                        // browser to fetch them eagerly with high priority,
+                        // and lazy/auto for the rest. Without this the first
+                        // group's images all compete equally and the visible
+                        // ones aren't prioritized.
+                        const isAboveFold = eager && photoIdx < 8;
                         // Plain card body shared by both render paths. Hover
                         // uses CSS-only transforms (no framer-motion
                         // subscriptions per photo) and dnd-kit only wraps
@@ -1340,7 +1349,8 @@ export default function PhotosPage() {
                                     ? 'scale-95 brightness-75'
                                     : 'group-hover:scale-110',
                                 )}
-                                loading="lazy"
+                                loading={isAboveFold ? 'eager' : 'lazy'}
+                                fetchPriority={isAboveFold ? 'high' : 'low'}
                                 decoding="async"
                               />
                               {/* Gradient overlay on hover */}
@@ -1535,10 +1545,16 @@ export default function PhotosPage() {
         </AnimatePresence>
       </motion.div>
 
-      {/* ── Trip insights (relocated from overview) ── */}
+      {/* ── Trip insights (relocated from overview) ──
+          Always lives below all photo groups. Wrap in a LazySection so the
+          dynamic chunk only fetches/mounts when the user actually scrolls
+          near it — otherwise it competed with the first photo paint for
+          parse time on slower devices. */}
       {trip && (
         <div className="mt-5">
-          <TripInsights trip={trip} events={events} albumPhotos={albumPhotos} />
+          <LazySection placeholderHeight={420}>
+            <TripInsights trip={trip} events={events} albumPhotos={albumPhotos} />
+          </LazySection>
         </div>
       )}
 
