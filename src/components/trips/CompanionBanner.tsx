@@ -13,8 +13,12 @@ import {
   isEqual,
   format,
 } from 'date-fns';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip + events from the layout-level TripDataProvider — banner is only
+// mounted inside `/trips/[tripId]/page.tsx`.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { useUserLocation } from '@/hooks/useUserLocation';
 import { haversineMeters } from '@/lib/utils/geo';
 import { ROUTES } from '@/config/constants';
@@ -117,8 +121,8 @@ function buildCountdown(target: Date, now: Date): string {
 }
 
 export default function CompanionBanner({ tripId }: Props) {
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
+  const { trip } = useTrip();
+  const { events } = useEvents();
   const [now, setNow] = useState<Date>(() => new Date());
   const { location, permission, request } = useUserLocation({ enabled: true });
 

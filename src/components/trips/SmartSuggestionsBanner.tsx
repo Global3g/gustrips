@@ -5,8 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Sparkles, X, ChevronDown, ChevronRight } from 'lucide-react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip + events from layout-level TripDataProvider — banner is only mounted
+// inside `/trips/[tripId]/page.tsx`.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { useExpenses } from '@/hooks/useExpenses';
 import { classNames } from '@/lib/utils/helpers';
 
@@ -68,8 +72,8 @@ function dispatchAssistantOpen(prompt: string) {
 }
 
 export default function SmartSuggestionsBanner({ tripId }: Props) {
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
+  const { trip } = useTrip();
+  const { events } = useEvents();
   const { expenses } = useExpenses(tripId);
 
   const [expanded, setExpanded] = useState(false);

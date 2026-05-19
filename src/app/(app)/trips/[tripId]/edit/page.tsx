@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import TripForm from '@/components/trips/TripForm';
-import { useTrip } from '@/hooks/useTrip';
+// Trip comes from the layout-level TripDataProvider.
+import { useTripFromContext as useTrip } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import { ROUTES } from '@/config/constants';
 
@@ -14,7 +15,7 @@ export default function EditTripPage() {
   const params = useParams();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip, loading, updateTrip } = useTrip(tripId);
+  const { trip, loading, updateTrip } = useTrip();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
 

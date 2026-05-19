@@ -23,7 +23,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
-import { useTrip } from '@/hooks/useTrip';
+// Trip comes from the layout-level TripDataProvider.
+import { useTripFromContext as useTrip } from '@/context/TripDataContext';
 import { useMembers } from '@/hooks/useMembers';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useAuth } from '@/hooks/useAuth';
@@ -343,7 +344,7 @@ function TravelerSelector({ open, onClose, allTravelers, selectedIds, onSave }: 
 export default function MembersPage() {
   const params = useParams();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
+  const { trip } = useTrip();
   const { members, invites, loading: membersLoading, inviteMember } = useMembers(tripId);
   const { travelers: allGlobalTravelers, loading: travelersLoading } = useGlobalTravelers();
   const { user } = useAuth();

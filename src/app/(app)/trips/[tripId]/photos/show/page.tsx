@@ -4,9 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Loader2, Play, RotateCcw } from 'lucide-react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
-import { useAlbum } from '@/hooks/useAlbum';
+// Trip / events / album come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import {
   DEFAULT_SETTINGS,
   formatRuntime,
@@ -70,9 +73,9 @@ export default function SlideshowShowPage() {
   const router = useRouter();
   const tripId = params.tripId as string;
 
-  const { trip, loading: tripLoading } = useTrip(tripId);
-  const { events, loading: eventsLoading } = useEvents(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { trip, loading: tripLoading } = useTrip();
+  const { events, loading: eventsLoading } = useEvents();
+  const { albumPhotos } = useAlbum();
 
   /* ── Build the trip's flat photo pool ──
      Same dedup logic the old viewer used: album first, then unique

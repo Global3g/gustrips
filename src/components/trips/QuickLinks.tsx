@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plane,
@@ -21,7 +20,9 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { classNames, generateId, nowISO } from '@/lib/utils/helpers';
-import { useTrip } from '@/hooks/useTrip';
+// Trip from layout-level TripDataProvider — QuickLinks is mounted in
+// `/trips/[tripId]/links/page.tsx`.
+import { useTripFromContext as useTrip } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import type { CustomLink, CustomLinkCategory } from '@/types';
 
@@ -420,9 +421,7 @@ function CategorySection({
 /* ─── Componente principal ─────────────────────── */
 
 export default function QuickLinks() {
-  const params = useParams();
-  const tripId = params.tripId as string;
-  const { trip, updateTrip } = useTrip(tripId);
+  const { trip, updateTrip } = useTrip();
   const { toast } = useToast();
 
   const customLinks = useMemo(() => trip?.customLinks ?? [], [trip?.customLinks]);

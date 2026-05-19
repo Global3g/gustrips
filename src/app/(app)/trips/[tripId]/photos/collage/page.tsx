@@ -24,9 +24,12 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
-import { useAlbum } from '@/hooks/useAlbum';
+// Trip / events / album come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import type { AlbumPhoto } from '@/types';
 
@@ -303,9 +306,9 @@ export default function CollagePage() {
   const params = useParams();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { trip } = useTrip();
+  const { events } = useEvents();
+  const { albumPhotos } = useAlbum();
   const { toast } = useToast();
 
   const [template, setTemplate] = useState<TemplateId>('bento');

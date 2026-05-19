@@ -6,9 +6,8 @@ import { ArrowLeft } from 'lucide-react';
 import TripSidebar from '@/components/trips/TripSidebar';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import NotificationBanner from '@/components/NotificationBanner';
-import { useEvents } from '@/hooks/useEvents';
-import { useDocuments } from '@/hooks/useDocuments';
-import { useTrip } from '@/hooks/useTrip';
+import { useUploadDocument } from '@/hooks/useDocuments';
+import { TripDataProvider, useTripData } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import { EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
 import type { ScannedEvent } from '@/lib/utils/aiScanner';
@@ -16,12 +15,28 @@ import type { DocumentCategory } from '@/types';
 
 export default function TripLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
+  const tripId = params.tripId as string;
+
+  // TripDataProvider owns the single set of `useTrip` / `useEvents` /
+  // `useAlbum` Firestore subscriptions for the whole `/trips/[tripId]`
+  // subtree. The inner shell consumes them via context — no extra listeners.
+  return (
+    <TripDataProvider tripId={tripId}>
+      <TripLayoutInner>{children}</TripLayoutInner>
+    </TripDataProvider>
+  );
+}
+
+function TripLayoutInner({ children }: { children: React.ReactNode }) {
+  const params = useParams();
   const pathname = usePathname();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip, updateTrip } = useTrip(tripId);
-  const { events, createEvent } = useEvents(tripId);
-  const { uploadDocument } = useDocuments(tripId);
+  const { trip, updateTrip, events, createEvent } = useTripData();
+  // The layout only needs the upload action — not the live documents list —
+  // so we use the write-only variant. Otherwise we'd pay for a permanent
+  // onSnapshot listener on the attachments subcollection on every trip page.
+  const { uploadDocument } = useUploadDocument(tripId);
   const { toast } = useToast();
 
   const [showSidebarScan, setShowSidebarScan] = useState(false);
@@ -103,14 +118,22 @@ export default function TripLayout({ children }: { children: React.ReactNode }) 
 
       {/* Main content - scrollable, full width */}
       <div className="flex-1 overflow-y-auto relative" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #e8eeff 30%, #dbeafe 60%, #ede9fe 100%)' }}>
-        {/* Background cover image — only on non-itinerary pages */}
+        {/* Background cover image — only on non-itinerary pages.
+            `loading="lazy"` + `decoding="async"` so the decorative image
+            doesn't block the initial paint of the page content. The image
+            is heavily faded (0.15 opacity, desaturated) so showing it a few
+            frames later than the chrome is not user-visible. */}
         {trip?.coverImage && !pathname.includes('/itinerary') && (
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={trip.coverImage}
               alt=""
               className="w-full h-full object-cover opacity-[0.15]"
               style={{ filter: 'saturate(0.4)' }}
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
             />
             <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(240,244,255,0.5) 0%, rgba(232,238,255,0.4) 50%, rgba(237,233,254,0.5) 100%)' }} />
           </div>

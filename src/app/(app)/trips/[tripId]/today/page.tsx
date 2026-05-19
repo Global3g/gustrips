@@ -28,8 +28,11 @@ import {
   Package,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip + events come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { EVENT_TYPES, ROUTES } from '@/config/constants';
 import { classNames, formatCurrency } from '@/lib/utils/helpers';
 import type { TripEvent, EventType } from '@/types';
@@ -88,8 +91,8 @@ export default function TodayPage() {
   const params = useParams();
   const tripId = params.tripId as string;
 
-  const { trip, loading: tripLoading } = useTrip(tripId);
-  const { events, loading: eventsLoading } = useEvents(tripId);
+  const { trip, loading: tripLoading } = useTrip();
+  const { events, loading: eventsLoading } = useEvents();
 
   const loading = tripLoading || eventsLoading;
 

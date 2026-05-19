@@ -25,8 +25,12 @@ import {
   TrendingUp,
   CalendarDays,
 } from 'lucide-react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip + events from layout-level TripDataProvider — this tab only renders
+// inside `/trips/[tripId]/expenses`.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
@@ -55,8 +59,8 @@ interface DailyBudgetTabProps {
 }
 
 export function DailyBudgetTab({ tripId }: DailyBudgetTabProps) {
-  const { trip } = useTrip(tripId);
-  const { events, updateEvent } = useEvents(tripId);
+  const { trip } = useTrip();
+  const { events, updateEvent } = useEvents();
   const { expenses } = useExpenses(tripId);
   const { toast } = useToast();
 

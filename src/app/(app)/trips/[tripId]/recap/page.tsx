@@ -21,10 +21,13 @@ import {
   X,
 } from 'lucide-react';
 import { differenceInDays, parseISO, isAfter } from 'date-fns';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip / events / album come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useExpenses } from '@/hooks/useExpenses';
-import { useAlbum } from '@/hooks/useAlbum';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
 import { useMembers } from '@/hooks/useMembers';
@@ -74,10 +77,10 @@ export default function TripRecapPage() {
   const params = useParams();
   const tripId = params.tripId as string;
 
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
+  const { trip } = useTrip();
+  const { events } = useEvents();
   const { expenses } = useExpenses(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { albumPhotos } = useAlbum();
   const { travelers: globalTravelers } = useGlobalTravelers();
   const { members } = useMembers(tripId);
   // Checklist hook is invoked for parity with previous export plumbing; not used by the recap PDF.

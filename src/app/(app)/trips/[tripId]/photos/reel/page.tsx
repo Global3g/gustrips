@@ -20,9 +20,12 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, Film, Download, Loader2, Music, Sparkles, RefreshCw, Play, AlertCircle } from 'lucide-react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
-import { useAlbum } from '@/hooks/useAlbum';
+// Trip / events / album come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import { MUSIC_LIBRARY, type ReelStyle, type ReelAspect, type ReelMusic, type ReelPhoto } from '@/lib/shotstack';
 import { classNames } from '@/lib/utils/helpers';
@@ -57,9 +60,9 @@ export default function ReelPage() {
   const params = useParams();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { trip } = useTrip();
+  const { events } = useEvents();
+  const { albumPhotos } = useAlbum();
   const { toast } = useToast();
 
   /* ── Pool: same logic as the collage page (captions first, then

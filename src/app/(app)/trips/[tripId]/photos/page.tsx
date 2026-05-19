@@ -42,9 +42,13 @@ import {
   arrayMove,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
-import { useAlbum } from '@/hooks/useAlbum';
+// Trip/events/album come from the shared TripDataProvider mounted in the
+// layout. Subscribing here would double-open the onSnapshot listeners.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useToast } from '@/context/ToastContext';
 const Particles = dynamic(() => import('@/components/ui/Particles'), { ssr: false, loading: () => null });
@@ -102,9 +106,9 @@ export default function PhotosPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
-  const { events, updateEvent, loading: eventsLoading } = useEvents(tripId);
-  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum(tripId, trip);
+  const { trip } = useTrip();
+  const { events, updateEvent, loading: eventsLoading } = useEvents();
+  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum();
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);

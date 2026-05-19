@@ -44,9 +44,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { useTrip } from '@/hooks/useTrip';
-import { useAlbum } from '@/hooks/useAlbum';
-import { useEvents } from '@/hooks/useEvents';
+// Trip / events / album come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 
 import PagePreview from '@/components/trips/photos/book/PagePreview';
@@ -128,9 +131,9 @@ export default function PhotoBookPage() {
   const router = useRouter();
   const tripId = params.tripId as string;
 
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { trip } = useTrip();
+  const { events } = useEvents();
+  const { albumPhotos } = useAlbum();
   const { toast } = useToast();
 
   const [state, setState] = useState<BookState | null>(null);

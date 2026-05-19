@@ -24,6 +24,56 @@ interface UploadOptions {
   name?: string;
 }
 
+/**
+ * Lightweight write-only variant — exposes `uploadDocument` without opening
+ * the live attachments subscription. Use this in components/layouts that
+ * only need to upload (not display) docs; calling the full `useDocuments`
+ * unnecessarily costs a permanent onSnapshot listener.
+ */
+export function useUploadDocument(tripId: string) {
+  const { user } = useAuth();
+
+  const uploadDocument = useCallback(
+    async (file: File, options?: UploadOptions) => {
+      if (!user) throw new Error('Usuario no autenticado');
+
+      const storage = getClientStorage();
+      const timestamp = Date.now();
+      const storageRef = ref(storage, `trips/${tripId}/${timestamp}_${file.name}`);
+
+      const snapshot = await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+
+      const db = getClientDb();
+      const attachmentsRef = collection(db, `trips/${tripId}/attachments`);
+
+      const docData: Record<string, unknown> = {
+        name: options?.name?.trim() || file.name,
+        url,
+        type: file.type,
+        size: file.size,
+        uploadedBy: user.uid,
+        createdAt: nowISO(),
+      };
+
+      if (options?.eventId) {
+        docData.eventId = options.eventId;
+      }
+      if (options?.category) {
+        docData.category = options.category;
+      }
+
+      await addDoc(attachmentsRef, docData);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+
+      return url;
+    },
+    [tripId, user],
+  );
+
+  return { uploadDocument };
+}
+
 export function useDocuments(tripId: string) {
   const [documents, setDocuments] = useState<TripAttachment[]>([]);
   const [loading, setLoading] = useState(true);

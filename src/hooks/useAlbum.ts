@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import {
@@ -199,20 +199,26 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
   }, [tripId]);
 
   // Legacy: photos still living in the trip.albumPhotos[] array.
-  const legacyPhotos: AlbumPhoto[] = trip?.albumPhotos ?? [];
-
-  // Merge: subcollection wins on conflict (= it's the authoritative source).
-  const albumPhotos: AlbumPhoto[] = (() => {
+  // Memoize the merge — without this, a single render anywhere upstream
+  // (e.g. a parent re-rendering because of an unrelated state change) rebuilt
+  // the Map on every render and invalidated every downstream useMemo that
+  // depends on `albumPhotos` (and there are big ones: photoGroups, allPhotos,
+  // dayCounts, etc. on the photos page). With 300+ photos the Map build
+  // itself wasn't free, and the new array identity cascaded everywhere.
+  const legacyPhotos: AlbumPhoto[] | undefined = trip?.albumPhotos;
+  const albumPhotos: AlbumPhoto[] = useMemo(() => {
     const byUrl = new Map<string, AlbumPhoto>();
-    for (const p of legacyPhotos) {
-      if (!p?.url) continue;
-      byUrl.set(p.url, p);
+    if (legacyPhotos) {
+      for (const p of legacyPhotos) {
+        if (!p?.url) continue;
+        byUrl.set(p.url, p);
+      }
     }
     for (const p of subPhotos) {
       byUrl.set(p.url, p);
     }
     return Array.from(byUrl.values());
-  })();
+  }, [legacyPhotos, subPhotos]);
 
   const addPhoto = useCallback(
     async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {

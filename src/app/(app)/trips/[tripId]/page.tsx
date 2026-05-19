@@ -50,10 +50,15 @@ import {
   orderBy,
 } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
-import { useTrip } from '@/hooks/useTrip';
+// `useTrip`/`useEvents`/`useAlbum` come from the layout-level
+// TripDataProvider — calling the underlying hooks here would double-mount
+// the Firestore onSnapshot listeners.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useTrips } from '@/hooks/useTrips';
-import { useEvents } from '@/hooks/useEvents';
-import { useAlbum } from '@/hooks/useAlbum';
 import { useMembers } from '@/hooks/useMembers';
 import { useChecklist } from '@/hooks/useChecklist';
 import { useMilestones } from '@/hooks/useMilestones';
@@ -522,8 +527,8 @@ export default function TripDetailPage() {
   const params = useParams();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip, loading, updateTrip, generateShareToken } = useTrip(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { trip, loading, updateTrip, generateShareToken } = useTrip();
+  const { albumPhotos } = useAlbum();
   useMilestones(tripId);
 
   // One-time cleanup: legacy done notes (from before the toggle-deletes
@@ -540,7 +545,7 @@ export default function TripDetailPage() {
     });
   }, [trip, updateTrip]);
   const { createTrip } = useTrips();
-  const { events } = useEvents(tripId);
+  const { events } = useEvents();
   const { members } = useMembers(tripId);
   const { items: checklistItems } = useChecklist(tripId);
   const { travelers: globalTravelers } = useGlobalTravelers();

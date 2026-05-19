@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { BookHeart, Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { tripshistoryApi, TripshistoryError } from '@/features/tripshistory';
-import { useTrip } from '@/hooks/useTrip';
+// Trip comes from the layout-level TripDataProvider.
+import { useTripFromContext as useTrip } from '@/context/TripDataContext';
 
 /**
  * Entry point to create a new Tripshistory story tied to this trip.
@@ -16,7 +17,7 @@ export default function NewTripshistoryPage() {
   const params = useParams();
   const router = useRouter();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
+  const { trip } = useTrip();
   const [error, setError] = useState<string | null>(null);
   const createdRef = useRef(false);
 

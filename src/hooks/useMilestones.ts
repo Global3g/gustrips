@@ -1,10 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Pull live trip data from the layout-level TripDataProvider so the
+// milestone watcher reuses the existing onSnapshot subscriptions instead of
+// opening a duplicate set.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useExpenses } from '@/hooks/useExpenses';
-import { useAlbum } from '@/hooks/useAlbum';
 import { fireMilestone } from '@/lib/confetti';
 
 type MilestoneKey =
@@ -47,10 +52,10 @@ function markFired(tripId: string, key: MilestoneKey): void {
  * `localStorage` under `gustrips:milestone:<tripId>:<milestoneKey>`.
  */
 export function useMilestones(tripId: string): void {
-  const { trip } = useTrip(tripId);
-  const { events } = useEvents(tripId);
+  const { trip } = useTrip();
+  const { events } = useEvents();
   const { expenses } = useExpenses(tripId);
-  const { albumPhotos } = useAlbum(tripId, trip);
+  const { albumPhotos } = useAlbum();
 
   useEffect(() => {
     if (!tripId || !trip) return;

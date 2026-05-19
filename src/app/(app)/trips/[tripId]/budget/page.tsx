@@ -32,8 +32,12 @@ import {
   Fuel,
   Package,
 } from 'lucide-react';
-import { useEvents } from '@/hooks/useEvents';
-import { useTrip } from '@/hooks/useTrip';
+// Trip + events come from the layout-level TripDataProvider so we don't
+// double-mount their Firestore listeners.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { useMembers } from '@/hooks/useMembers';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
@@ -590,8 +594,8 @@ export default function BudgetPage() {
   const params = useParams();
   const tripId = params.tripId as string;
 
-  const { trip, loading: tripLoading, updateTrip } = useTrip(tripId);
-  const { events, loading: eventsLoading } = useEvents(tripId);
+  const { trip, loading: tripLoading, updateTrip } = useTrip();
+  const { events, loading: eventsLoading } = useEvents();
   const { members, loading: membersLoading } = useMembers(tripId);
   const { travelers: allTravelers } = useGlobalTravelers();
   const {

@@ -22,7 +22,9 @@ import {
   Search,
 } from 'lucide-react';
 import { useDocuments } from '@/hooks/useDocuments';
-import { useEvents } from '@/hooks/useEvents';
+// Events come from the layout-level TripDataProvider — calling
+// `useEvents(tripId)` here would open a second onSnapshot subscription.
+import { useEventsFromContext as useEvents } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import DocumentUpload from '@/components/trips/DocumentUpload';
 import Particles from '@/components/ui/Particles';
@@ -73,7 +75,7 @@ export default function DocumentsPage() {
     deleteDocument,
     categoryCounts,
   } = useDocuments(tripId);
-  const { events } = useEvents(tripId);
+  const { events } = useEvents();
   const { toast } = useToast();
 
   // Sidebar reservation pills pass ?type=flight etc — initialize filter from URL

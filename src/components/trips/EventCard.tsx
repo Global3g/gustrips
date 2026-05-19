@@ -1012,7 +1012,11 @@ export default function EventCard({
       </AnimatePresence>
     </motion.div>
 
-    {tripId && (
+    {tripId && showExpenseModal && (
+      // Only mount the modal when it's actually open. Each instance subscribes
+      // to `useTrip` and `useExpenses`, so leaving 50+ closed modals mounted
+      // (one per event in a long itinerary) opens 50+ duplicate Firestore
+      // onSnapshot listeners against the same docs.
       <QuickExpenseModal
         open={showExpenseModal}
         onClose={() => setShowExpenseModal(false)}

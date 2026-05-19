@@ -16,7 +16,11 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useEvents } from '@/hooks/useEvents';
+// Events come from the layout-level TripDataProvider — this banner is only
+// ever mounted inside `/trips/[tripId]/*` so the provider is guaranteed to be
+// present. Calling `useEvents(tripId)` here previously duplicated the
+// onSnapshot listener that the layout already opens.
+import { useEventsFromContext as useEvents } from '@/context/TripDataContext';
 import { useDocuments } from '@/hooks/useDocuments';
 import type { TripEvent, TripAttachment, EventType } from '@/types';
 
@@ -189,7 +193,7 @@ export default function NotificationBanner() {
         ? params.tripId[0]
         : '';
 
-  const { events } = useEvents(tripId);
+  const { events } = useEvents();
   const { documents } = useDocuments(tripId);
 
   // Push permission dismiss state (session-scoped)

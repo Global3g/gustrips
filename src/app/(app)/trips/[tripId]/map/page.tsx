@@ -27,8 +27,11 @@ import {
   Package,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip + events come from the layout-level TripDataProvider.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { useGeocode } from '@/hooks/useGeocode';
 import Particles from '@/components/ui/Particles';
 import { EVENT_TYPES } from '@/config/constants';
@@ -87,8 +90,8 @@ const MapView = dynamic(() => import('@/components/trips/MapView'), {
 export default function MapPage() {
   const params = useParams();
   const tripId = params.tripId as string;
-  const { trip } = useTrip(tripId);
-  const { events, loading: eventsLoading } = useEvents(tripId);
+  const { trip } = useTrip();
+  const { events, loading: eventsLoading } = useEvents();
   const { geocodedEvents, loading: geocoding } = useGeocode(events);
 
   /* ── Filter state ─── */

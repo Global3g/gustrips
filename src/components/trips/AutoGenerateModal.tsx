@@ -4,8 +4,12 @@ import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
+// Trip + events from the layout-level TripDataProvider — modal only opens
+// inside `/trips/[tripId]/itinerary`.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import { generateRecurringEvents } from '@/lib/utils/autoGenerateEvents';
 import type { MealPreferences } from '@/types';
@@ -17,8 +21,8 @@ interface AutoGenerateModalProps {
 }
 
 export default function AutoGenerateModal({ open, onClose, tripId }: AutoGenerateModalProps) {
-  const { trip, updateTrip } = useTrip(tripId);
-  const { events, createEvent } = useEvents(tripId);
+  const { trip, updateTrip } = useTrip();
+  const { events, createEvent } = useEvents();
   const { toast } = useToast();
 
   const existing = trip?.mealPreferences;

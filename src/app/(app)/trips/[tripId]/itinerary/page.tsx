@@ -11,9 +11,13 @@ import dynamic from 'next/dynamic';
 const AgendaView = dynamic(() => import('@/components/trips/AgendaView'), { ssr: false });
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage } from '@/lib/firebase/client';
-import { useEvents } from '@/hooks/useEvents';
-import { useAlbum } from '@/hooks/useAlbum';
-import { useTrip } from '@/hooks/useTrip';
+// Trip / events / album come from the layout-level TripDataProvider so we
+// don't double-mount Firestore listeners on every navigation.
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useAlbumFromContext as useAlbum,
+} from '@/context/TripDataContext';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useToast } from '@/context/ToastContext';
@@ -147,9 +151,9 @@ export default function ItineraryPage() {
   const pathname = usePathname();
   const tripId = params.tripId as string;
 
-  const { trip, updateTrip } = useTrip(tripId);
-  const { events, loading, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
-  const { realignEventPhotoDates } = useAlbum(tripId, trip);
+  const { trip, updateTrip } = useTrip();
+  const { events, loading, createEvent, updateEvent, deleteEvent } = useEvents();
+  const { realignEventPhotoDates } = useAlbum();
 
   const { expenses } = useExpenses(tripId);
   const expensesByEvent = useMemo(() => {

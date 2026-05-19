@@ -5,7 +5,9 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Receipt, CalendarPlus, Camera } from 'lucide-react';
-import { useEvents } from '@/hooks/useEvents';
+// Events from layout-level TripDataProvider — this row is only mounted
+// inside `/trips/[tripId]/page.tsx`.
+import { useEventsFromContext as useEvents } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import type { Trip } from '@/types';
 
@@ -59,7 +61,7 @@ const ACTIONS: ActionConfig[] = [
 
 export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) {
   const router = useRouter();
-  const { createEvent } = useEvents(tripId);
+  const { createEvent } = useEvents();
   const { toast } = useToast();
 
   const [showEventForm, setShowEventForm] = useState(false);
