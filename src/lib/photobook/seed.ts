@@ -157,8 +157,9 @@ export function seedBookFromTrip(
 }
 
 /**
- * Resize a page's photoUrls when its layout changes — preserves existing
- * photos for matching slot indexes and pads/truncates as needed.
+ * Resize a page's photoUrls (and matching per-slot arrays) when its layout
+ * changes. Preserves existing photos / filters / frames / captions for
+ * matching slot indexes and pads/truncates as needed.
  */
 export function applyLayout(page: BookPage, layoutId: LayoutId): BookPage {
   const def = LAYOUTS[layoutId];
@@ -166,7 +167,32 @@ export function applyLayout(page: BookPage, layoutId: LayoutId): BookPage {
     { length: def.slotCount },
     (_, i) => page.photoUrls[i] ?? null,
   );
-  return { ...page, layoutId, photoUrls: next };
+  const nextFilters = page.photoFilters
+    ? Array.from(
+        { length: def.slotCount },
+        (_, i) => page.photoFilters?.[i] ?? null,
+      )
+    : undefined;
+  const nextFrames = page.photoFrames
+    ? Array.from(
+        { length: def.slotCount },
+        (_, i) => page.photoFrames?.[i] ?? null,
+      )
+    : undefined;
+  const nextCaptions = page.slotCaptions
+    ? Array.from(
+        { length: def.slotCount },
+        (_, i) => page.slotCaptions?.[i] ?? null,
+      )
+    : undefined;
+  return {
+    ...page,
+    layoutId,
+    photoUrls: next,
+    photoFilters: nextFilters,
+    photoFrames: nextFrames,
+    slotCaptions: nextCaptions,
+  };
 }
 
 export { newId };

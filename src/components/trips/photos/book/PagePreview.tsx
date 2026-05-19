@@ -11,13 +11,36 @@
  * Photo "slots" are valid drop targets for dnd-kit when `interactive` is
  * true. Text zones become contentEditable inputs in the same mode. In
  * thumbnail mode (interactive=false) the page is fully static.
+ *
+ * Vol. 2 additions:
+ *  - Per-slot photo filter (CSS filter chain).
+ *  - Per-slot photo frame (polaroid / rounded / circle / hexagon / tape / vintage-edge).
+ *  - Decorative stickers (draggable in interactive mode).
+ *  - Background pattern overlay.
+ *  - Map-full layout draws a stylised SVG map behind the photo pins.
+ *  - Magazine-3col splits `body` text into 3 columns.
+ *  - Polaroid-grid auto-rotates each slot.
+ *  - Timeline-strip exposes per-slot dates via slotCaptions.
+ *  - Panorama-bleed renders title overlay over the photo.
+ *  - Journal-page uses a soft paper texture.
  */
 
 import { memo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { LAYOUTS } from '@/lib/photobook/layouts';
 import { fontForKind, getTheme } from '@/lib/photobook/themes';
-import type { BookPage, BookSize, ThemeId } from '@/lib/photobook/types';
+import { filterCss } from '@/lib/photobook/filters';
+import { framePhotoInset, frameClipCss } from '@/lib/photobook/frames';
+import { patternBackgroundStyle } from '@/lib/photobook/patterns';
+import StickerView from './Sticker';
+import type {
+  BookPage,
+  BookSize,
+  PhotoFilter,
+  PhotoFrame,
+  Sticker,
+  ThemeId,
+} from '@/lib/photobook/types';
 
 // Approximate aspect ratios. Matches the PDF page sizes.
 const PAGE_RATIOS: Record<BookSize, number> = {
@@ -42,6 +65,11 @@ interface PagePreviewProps {
   ) => void;
   /** Indicates this is a thumbnail — disables editing + reduces font weight. */
   thumbnail?: boolean;
+
+  /* Vol. 2 — sticker editing */
+  selectedStickerId?: string | null;
+  onSelectSticker?: (id: string | null) => void;
+  onMoveSticker?: (id: string, x: number, y: number) => void;
 }
 
 interface SlotProps {
@@ -58,13 +86,21 @@ interface SlotProps {
   top: number;
   interactive: boolean;
   selected: boolean;
+  filter: PhotoFilter | null;
+  frame: PhotoFrame | null;
+  /** Polaroid caption text (optional). */
+  caption?: string | null;
+  /** Optional rotation in degrees for the whole slot (used by polaroid-grid). */
+  rotateDeg?: number;
   onSelect?: () => void;
 }
 
 /**
  * Single photo slot. When interactive it's both a drop target (so dragging
  * a photo from the pool lands here) and a click target (so the editor
- * knows which slot the user wants to fill via tap).
+ * knows which slot the user wants to fill via tap). Vol. 2 adds frame
+ * styling around the slot, per-slot filters on the image, and optional
+ * rotation for layouts like polaroid-grid.
  */
 function Slot({
   pageId,
@@ -80,6 +116,10 @@ function Slot({
   top,
   interactive,
   selected,
+  filter,
+  frame,
+  caption,
+  rotateDeg,
   onSelect,
 }: SlotProps) {
   const { setNodeRef, isOver } = useDroppable({
@@ -87,6 +127,114 @@ function Slot({
     disabled: !interactive,
     data: { kind: 'slot', pageId, index },
   });
+
+  // Combine theme-level sepia with per-slot filter. Theme sepia stays as a
+  // fallback when the user hasn't picked an explicit filter.
+  const effectiveFilter =
+    filter && filter !== 'none'
+      ? filterCss(filter)
+      : sepia
+        ? 'sepia(0.55) saturate(0.9) brightness(0.96)'
+        : undefined;
+
+  const inset = framePhotoInset(frame);
+  const innerLeft = inset.left * width;
+  const innerTop = inset.top * height;
+  const innerW = (1 - inset.left - inset.right) * width;
+  const innerH = (1 - inset.top - inset.bottom) * height;
+  const clipCss = frameClipCss(frame);
+
+  // ── Frame-specific wrapper styling ───────────────────────
+  let wrapperBg = 'transparent';
+  let wrapperBorder = `1px ${selected ? 'dashed' : 'solid'} ${selected ? '#f59e0b' : ruleColor}`;
+  let wrapperShadow: string | undefined;
+  let wrapperBorderRadius: number | undefined;
+  let wrapperOverflow: React.CSSProperties['overflow'] = 'hidden';
+  let extraInside: React.ReactNode = null;
+
+  if (frame === 'polaroid') {
+    wrapperBg = '#fefefe';
+    wrapperBorder = `1px solid ${selected ? '#f59e0b' : 'rgba(0,0,0,0.06)'}`;
+    wrapperShadow = '0 4px 14px rgba(0,0,0,0.25)';
+    wrapperOverflow = 'visible';
+    // Caption strip below.
+    if (caption || interactive) {
+      const stripTop = innerTop + innerH + Math.min(4, height * 0.01);
+      extraInside = (
+        <div
+          style={{
+            position: 'absolute',
+            left: innerLeft,
+            top: stripTop,
+            width: innerW,
+            height: height - stripTop - 2,
+            color: '#222',
+            fontFamily: '"Caveat", "Indie Flower", cursive',
+            fontSize: Math.max(9, Math.min(width, height) * 0.07),
+            textAlign: 'center',
+            overflow: 'hidden',
+            pointerEvents: 'none',
+          }}
+        >
+          {caption ?? ''}
+        </div>
+      );
+    }
+  } else if (frame === 'rounded') {
+    wrapperBorderRadius = 14;
+  } else if (frame === 'circle') {
+    wrapperBorderRadius = Math.min(width, height) / 2;
+  } else if (frame === 'hexagon') {
+    // Hexagon clipping happens on the inner image — keep the wrapper bare.
+    wrapperBorder = `1px ${selected ? 'dashed' : 'solid'} ${selected ? '#f59e0b' : 'transparent'}`;
+    wrapperBg = 'transparent';
+    wrapperOverflow = 'visible';
+  } else if (frame === 'tape') {
+    wrapperBg = paperColor;
+    wrapperOverflow = 'visible';
+    // Two tape strips, one on top-left, one on bottom-right.
+    extraInside = (
+      <>
+        <div
+          style={{
+            position: 'absolute',
+            top: -6,
+            left: '10%',
+            width: '28%',
+            height: 12,
+            background: '#fbbf24',
+            opacity: 0.85,
+            transform: 'rotate(-10deg)',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: -6,
+            right: '10%',
+            width: '24%',
+            height: 12,
+            background: '#0a0a0a',
+            opacity: 0.85,
+            transform: 'rotate(8deg)',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    );
+  } else if (frame === 'vintage-edge') {
+    wrapperBg = '#f4e6cf';
+    wrapperBorder = `2px solid #6b4a2b`;
+    wrapperShadow = 'inset 0 0 14px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)';
+    wrapperBorderRadius = 3;
+  }
+
+  if (isOver) {
+    wrapperShadow = (wrapperShadow ? wrapperShadow + ', ' : '') + '0 0 0 3px rgba(245,158,11,0.5)';
+  }
 
   return (
     <div
@@ -98,49 +246,65 @@ function Slot({
         top,
         width,
         height,
-        background: paperColor,
-        border: `1px ${selected ? 'dashed' : 'solid'} ${selected ? '#f59e0b' : ruleColor}`,
-        boxShadow: isOver ? '0 0 0 3px rgba(245,158,11,0.5)' : undefined,
         cursor: interactive ? 'pointer' : 'default',
-        overflow: 'hidden',
+        transform: rotateDeg ? `rotate(${rotateDeg}deg)` : undefined,
+        transformOrigin: 'center',
         transition: 'box-shadow 120ms',
+        // Wrapper frame fill (polaroid / vintage-edge / tape need a visible bg)
+        background: wrapperBg,
+        border: wrapperBorder,
+        boxShadow: wrapperShadow,
+        borderRadius: wrapperBorderRadius,
+        overflow: wrapperOverflow,
       }}
     >
-      {photoUrl ? (
-        <img
-          src={photoUrl}
-          alt=""
-          draggable={false}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-            // Cheap sepia approximation for the vintage theme. The PDF uses
-            // a pixel-level sepia transform, but for the preview a CSS
-            // filter is more than enough.
-            filter: sepia ? 'sepia(0.55) saturate(0.9) brightness(0.96)' : undefined,
-            userSelect: 'none',
-          }}
-        />
-      ) : interactive ? (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: inkSoftColor,
-            fontSize: Math.max(10, Math.min(width, height) * 0.1),
-            fontStyle: 'italic',
-            textAlign: 'center',
-            padding: 6,
-          }}
-        >
-          arrastrá una foto aquí
-        </div>
-      ) : null}
+      {/* Inner photo area (respects frame inset). */}
+      <div
+        style={{
+          position: 'absolute',
+          left: innerLeft,
+          top: innerTop,
+          width: innerW,
+          height: innerH,
+          background: paperColor,
+          overflow: 'hidden',
+          ...clipCss,
+        }}
+      >
+        {photoUrl ? (
+          <img
+            src={photoUrl}
+            alt=""
+            draggable={false}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+              filter: effectiveFilter,
+              userSelect: 'none',
+            }}
+          />
+        ) : interactive ? (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: inkSoftColor,
+              fontSize: Math.max(10, Math.min(width, height) * 0.1),
+              fontStyle: 'italic',
+              textAlign: 'center',
+              padding: 6,
+            }}
+          >
+            arrastrá una foto aquí
+          </div>
+        ) : null}
+      </div>
+      {extraInside}
     </div>
   );
 }
@@ -204,6 +368,72 @@ function EditableText({
   );
 }
 
+/**
+ * Stylised SVG map drawn behind `map-full` layouts. Pure decoration — does
+ * not represent real geography.
+ */
+function MapDecoration({ width, height, ink }: { width: number; height: number; ink: string }) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 200 280"
+      preserveAspectRatio="none"
+      style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+    >
+      {/* Soft "ocean" wave lines. */}
+      <g stroke={ink} strokeOpacity={0.18} fill="none" strokeWidth={0.6}>
+        <path d="M0 40 C 40 30, 80 50, 120 38 S 180 50, 200 42" />
+        <path d="M0 70 C 40 60, 80 78, 120 68 S 180 78, 200 72" />
+        <path d="M0 100 C 40 90, 80 108, 120 98 S 180 108, 200 102" />
+        <path d="M0 200 C 40 190, 80 208, 120 198 S 180 208, 200 202" />
+        <path d="M0 230 C 40 220, 80 238, 120 228 S 180 238, 200 232" />
+        <path d="M0 260 C 40 250, 80 268, 120 258 S 180 268, 200 262" />
+      </g>
+      {/* Land masses — abstract polygonal blobs. */}
+      <g fill={ink} fillOpacity={0.08} stroke={ink} strokeOpacity={0.28} strokeWidth={0.8}>
+        <path d="M14 50 Q 30 30, 60 38 T 110 56 Q 130 70, 120 96 Q 100 110, 70 100 Q 30 92, 18 78 Z" />
+        <path d="M120 110 Q 150 100, 180 116 Q 192 140, 170 160 Q 140 170, 120 152 Q 110 130, 120 110 Z" />
+        <path d="M30 160 Q 60 150, 90 168 Q 100 190, 84 210 Q 60 218, 36 200 Q 22 180, 30 160 Z" />
+      </g>
+      {/* Dashed route lines connecting "pins" — purely decorative. */}
+      <g stroke={ink} strokeOpacity={0.55} fill="none" strokeWidth={0.8} strokeDasharray="3 2">
+        <path d="M40 80 Q 90 60, 140 80 T 180 130" />
+        <path d="M60 200 Q 100 180, 150 210" />
+      </g>
+      {/* Small city dots. */}
+      <g fill={ink} fillOpacity={0.5}>
+        <circle cx="40" cy="80" r="2" />
+        <circle cx="100" cy="100" r="2" />
+        <circle cx="150" cy="80" r="2" />
+        <circle cx="170" cy="140" r="2" />
+        <circle cx="80" cy="200" r="2" />
+        <circle cx="150" cy="220" r="2" />
+      </g>
+    </svg>
+  );
+}
+
+/** Split a body string into N roughly-equal columns by sentences. */
+function splitBodyIntoColumns(body: string, n: number): string[] {
+  if (!body || n <= 1) return [body];
+  const sentences = body.match(/[^.!?\n]+[.!?]?[\s]?|\S+/g) ?? [body];
+  const out: string[] = Array.from({ length: n }, () => '');
+  // Distribute by approximate length so columns balance.
+  const total = body.length;
+  const target = total / n;
+  let bucket = 0;
+  let acc = 0;
+  for (const s of sentences) {
+    if (acc + s.length > target * (bucket + 1) && bucket < n - 1) {
+      bucket++;
+    }
+    out[bucket] += s;
+    acc += s.length;
+  }
+  return out;
+}
+
 function PagePreviewImpl({
   page,
   theme: themeId,
@@ -214,6 +444,9 @@ function PagePreviewImpl({
   onSelectSlot,
   onTextChange,
   thumbnail = false,
+  selectedStickerId = null,
+  onSelectSticker,
+  onMoveSticker,
 }: PagePreviewProps) {
   const theme = getTheme(themeId);
   const layout = LAYOUTS[page.layoutId];
@@ -227,8 +460,32 @@ function PagePreviewImpl({
 
   // Cover photo for the cover layout is rendered FULL BLEED behind text.
   const isCover = page.layoutId === 'cover';
+  const isPanorama = page.layoutId === 'panorama-bleed';
+  const isJournal = page.layoutId === 'journal-page';
+  const isMapFull = page.layoutId === 'map-full';
+  const isPolaroidGrid = page.layoutId === 'polaroid-grid';
+  const isMagazine3Col = page.layoutId === 'magazine-3col';
 
-  const decorationLayer = renderDecorations(theme.decorations, width, height, theme.accent, theme.rule);
+  const decorationLayer = renderDecorations(
+    theme.decorations,
+    width,
+    height,
+    theme.accent,
+    theme.rule,
+  );
+
+  // Pattern overlay style — derived from page.backgroundPattern.
+  const patternStyle = patternBackgroundStyle(page.backgroundPattern);
+
+  // Stickers (Vol. 2). Render after photos, before text.
+  const stickers: Sticker[] = page.stickers ?? [];
+
+  // For magazine-3col we need to allocate body string across the 3 'body'
+  // text zones. We compute the cuts up-front.
+  const bodyColumns = isMagazine3Col
+    ? splitBodyIntoColumns(page.body ?? '', 3)
+    : null;
+  let bodyZoneIndex = 0;
 
   return (
     <div
@@ -242,28 +499,81 @@ function PagePreviewImpl({
         borderRadius: thumbnail ? 4 : 6,
       }}
     >
+      {/* Pattern overlay. Drawn ABOVE the bg color, BELOW everything else. */}
+      {page.backgroundPattern && page.backgroundPattern !== 'none' && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            ...patternStyle,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Journal pages get a warm paper texture overlay (subtle). */}
+      {isJournal && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'repeating-linear-gradient(0deg, rgba(120,80,40,0.04) 0 22px, rgba(120,80,40,0.10) 22px 23px)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Map-full decoration. */}
+      {isMapFull && <MapDecoration width={width} height={height} ink={theme.ink} />}
+
       {decorationLayer}
 
       {/* Photo slots. */}
-      {layout.slots.map((slot, idx) => (
-        <Slot
-          key={`${page.id}-slot-${idx}`}
-          pageId={page.id}
-          index={idx}
-          photoUrl={page.photoUrls[idx] ?? null}
-          sepia={theme.sepia}
-          paperColor={theme.paper}
-          ruleColor={theme.rule}
-          inkSoftColor={theme.inkSoft}
-          left={slot.x * width}
-          top={slot.y * height}
-          width={slot.w * width}
-          height={slot.h * height}
-          interactive={interactive}
-          selected={selectedSlot === idx}
-          onSelect={() => onSelectSlot?.(idx)}
-        />
-      ))}
+      {layout.slots.map((slot, idx) => {
+        // Per-slot filter / frame / caption.
+        const filter = page.photoFilters?.[idx] ?? null;
+        const frame = page.photoFrames?.[idx] ?? null;
+        const caption = page.slotCaptions?.[idx] ?? null;
+
+        // Polaroid-grid auto-rotates each slot for that "scattered" feel.
+        let rotateDeg: number | undefined;
+        if (isPolaroidGrid) {
+          // Hand-picked rotations that read as playful but not chaotic.
+          const wobble = [-6, 4, -3, 5, -4, 3];
+          rotateDeg = wobble[idx % wobble.length];
+        }
+        // If user picked the polaroid frame on a non-polaroid layout, still
+        // give a light wobble for personality (but only when there's no
+        // explicit rotation set by the layout itself).
+        if (frame === 'polaroid' && !isPolaroidGrid && rotateDeg == null) {
+          rotateDeg = ((idx % 2 === 0 ? -1 : 1) * 2) + ((idx * 7) % 3 - 1);
+        }
+
+        return (
+          <Slot
+            key={`${page.id}-slot-${idx}`}
+            pageId={page.id}
+            index={idx}
+            photoUrl={page.photoUrls[idx] ?? null}
+            sepia={theme.sepia}
+            paperColor={theme.paper}
+            ruleColor={theme.rule}
+            inkSoftColor={theme.inkSoft}
+            left={slot.x * width}
+            top={slot.y * height}
+            width={slot.w * width}
+            height={slot.h * height}
+            interactive={interactive}
+            selected={selectedSlot === idx}
+            filter={filter}
+            frame={frame}
+            caption={caption}
+            rotateDeg={rotateDeg}
+            onSelect={() => onSelectSlot?.(idx)}
+          />
+        );
+      })}
 
       {/* Cover overlay: a soft dark gradient at the bottom so light text
           on bright photos stays legible. Only applied when there's a
@@ -283,20 +593,65 @@ function PagePreviewImpl({
         />
       )}
 
+      {/* Panorama: dark scrim over the photo for title legibility. */}
+      {isPanorama && page.photoUrls[0] && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            height: '55%',
+            background:
+              'linear-gradient(to bottom, rgba(0,0,0,0.0) 30%, rgba(0,0,0,0.55) 100%)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Stickers — render between photos and text. */}
+      {stickers.map((s) => (
+        <StickerView
+          key={s.id}
+          sticker={s}
+          pageWidth={width}
+          pageHeight={height}
+          interactive={interactive && !thumbnail}
+          selected={selectedStickerId === s.id}
+          onSelect={() => onSelectSticker?.(s.id)}
+          onMove={(x, y) => onMoveSticker?.(s.id, x, y)}
+        />
+      ))}
+
       {/* Text zones. */}
       {layout.textZones.map((zone, idx) => {
         const baseSize = (zone.size ?? 12) * fontScale;
         const family = fontForKind(theme, zone.kind);
-        const value = textValue(page, zone.kind) ?? '';
+
+        // Resolve text value. Magazine-3col body cycles through columns.
+        let value = textValue(page, zone.kind) ?? '';
+        if (isMagazine3Col && zone.kind === 'body' && bodyColumns) {
+          value = bodyColumns[bodyZoneIndex] ?? '';
+          bodyZoneIndex++;
+        }
+
         const placeholder = placeholderFor(zone.kind);
 
         // Cover title/subtitle render as white for contrast against the
-        // hero photo; everything else uses theme colours.
-        const color = isCover
+        // hero photo; same for panorama title/subtitle overlaid on the
+        // photo.
+        const overPhoto =
+          isCover ||
+          (isPanorama && (zone.kind === 'title' || zone.kind === 'subtitle'));
+
+        const color = overPhoto
           ? '#ffffff'
           : zone.kind === 'title' || zone.kind === 'subtitle'
             ? theme.ink
             : theme.inkSoft;
+
+        // Journal layout uses a handwritten feel for the body.
+        const journalBody = isJournal && (zone.kind === 'body' || zone.kind === 'title');
 
         const style: React.CSSProperties = {
           position: 'absolute',
@@ -304,7 +659,9 @@ function PagePreviewImpl({
           top: zone.y * height,
           width: zone.w * width,
           height: zone.h * height,
-          fontFamily: family,
+          fontFamily: journalBody
+            ? '"Caveat", "Indie Flower", cursive'
+            : family,
           fontSize: baseSize,
           color,
           textAlign: zone.align ?? 'left',
@@ -318,13 +675,20 @@ function PagePreviewImpl({
                 ? 500
                 : 400,
           lineHeight: zone.kind === 'body' ? 1.45 : 1.15,
-          // Allow titles to grow downward if user types more, by hiding
-          // overflow at the box boundary rather than crashing the layout.
           overflow: 'hidden',
-          textShadow: isCover && (zone.kind === 'title' || zone.kind === 'subtitle')
-            ? '0 1px 6px rgba(0,0,0,0.6)'
-            : undefined,
+          textShadow:
+            overPhoto && (zone.kind === 'title' || zone.kind === 'subtitle')
+              ? '0 1px 6px rgba(0,0,0,0.6)'
+              : undefined,
         };
+
+        // We never edit a single column of magazine-3col body inline — only
+        // the whole `body` text via the side panel. Skip inline editing for
+        // these column zones.
+        const editableHere =
+          interactive &&
+          !thumbnail &&
+          !(isMagazine3Col && zone.kind === 'body');
 
         return (
           <EditableText
@@ -332,12 +696,9 @@ function PagePreviewImpl({
             value={value}
             placeholder={placeholder}
             style={style}
-            interactive={interactive && !thumbnail}
+            interactive={editableHere}
             onCommit={(next) => {
               if (!onTextChange) return;
-              // Map kind to BookPage field. Most kinds are 1:1; we never
-              // edit 'date' or 'location' inline (the side panel handles
-              // those) but supporting them keeps the surface symmetric.
               onTextChange(zone.kind, next);
             }}
           />

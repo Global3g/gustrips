@@ -11,15 +11,41 @@
  *  - Theme: `getTheme(state.theme)` provides colours, decorations, sepia
  *    toggle, and which jsPDF built-in font to use.
  *  - Image fetching uses /api/photo-proxy for Firebase URLs (same pattern
- *    as exportRecapPdf.ts) and applies a pixel-level sepia for vintage.
+ *    as exportRecapPdf.ts) and applies pixel-level filters per slot.
+ *
+ * Vol. 2 additions (Mixbook-grade):
+ *  - Per-slot photo FILTERS (sepia/bw/vintage/cool/warm/contrast/soft/duotone)
+ *  - Per-slot photo FRAMES (polaroid pad, rounded, circle, hexagon, tape, vintage edge)
+ *  - Background PATTERNS (paper / dots / stripes / grid / map / confetti)
+ *  - STICKERS (travel icons, deco shapes, text labels)
+ *  - Special-layout renderers (map-full, polaroid-grid auto-rotate, panorama
+ *    title overlay, magazine-3col body column split, journal handwriting, etc.)
  *
  * Browser-only: depends on `document` (canvas), `Image`, and `fetch`.
  */
 
 import jsPDF from 'jspdf';
-import type { BookPage, BookState, BookTheme, LayoutDefinition, ThemeId } from '@/lib/photobook/types';
+import type {
+  BookPage,
+  BookPatternId,
+  BookState,
+  BookTheme,
+  LayoutDefinition,
+  PhotoFilter,
+  PhotoFrame,
+  Sticker,
+  StickerKind,
+  ThemeId,
+} from '@/lib/photobook/types';
 import { LAYOUTS } from '@/lib/photobook/layouts';
 import { getTheme } from '@/lib/photobook/themes';
+import { PHOTO_FILTERS } from '@/lib/photobook/filters';
+import { framePhotoInset, HEX_POLY } from '@/lib/photobook/frames';
+import {
+  PRIMITIVE_STICKERS,
+  STICKER_LIBRARY,
+  rasterStickerToCanvas,
+} from '@/lib/photobook/stickers';
 
 type RGB = [number, number, number];
 
@@ -48,17 +74,11 @@ function hexToRgb(hex: string): RGB {
 
 type PdfFontFamily = 'helvetica' | 'times' | 'courier';
 
-/**
- * Map the theme's CSS font key to one of jsPDF's three built-in families.
- * We don't embed custom fonts (yet) — the editor preview uses real custom
- * faces, but the PDF leans on the universally-available builtins to keep
- * the bundle small and the output portable.
- */
 function pdfFontFor(theme: BookTheme, kind: 'title' | 'body'): PdfFontFamily {
   const key = kind === 'title' ? theme.titleFontKey : theme.bodyFontKey;
   if (key === 'sans') return 'helvetica';
   if (key === 'serif') return 'times';
-  return 'times'; // 'script' has no PDF builtin; fall back to times-italic-ish.
+  return 'times';
 }
 
 // ─── Image fetching ───────────────────────────────────────
@@ -91,43 +111,27 @@ function imageFormatFromDataUrl(dataUrl: string): 'JPEG' | 'PNG' | 'WEBP' {
 }
 
 /**
- * Apply a quick sepia transform via a hidden canvas. Used by vintage.
- * Best-effort: if anything fails we return the original data URL.
+ * Apply a per-slot filter to a canvas in-place. Falls back to a theme-level
+ * sepia tone when no explicit filter is set.
  */
-async function sepiaTone(dataUrl: string): Promise<string> {
-  try {
-    if (typeof document === 'undefined') return dataUrl;
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.crossOrigin = 'anonymous';
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('img load failed'));
-      i.src = dataUrl;
-    });
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    if (!w || !h) return dataUrl;
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return dataUrl;
-    ctx.drawImage(img, 0, 0);
-    const data = ctx.getImageData(0, 0, w, h);
-    const px = data.data;
-    for (let i = 0; i < px.length; i += 4) {
-      const r = px[i];
-      const g = px[i + 1];
-      const b = px[i + 2];
-      px[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
-      px[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
-      px[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
-    }
-    ctx.putImageData(data, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.85);
-  } catch {
-    return dataUrl;
-  }
+function applyFilterCanvas(
+  canvas: HTMLCanvasElement,
+  filter: PhotoFilter | null | undefined,
+  themeSepia: boolean,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  // Pick the effective filter: explicit > theme sepia > none.
+  let id: PhotoFilter | null = null;
+  if (filter && filter !== 'none') id = filter;
+  else if (themeSepia) id = 'sepia';
+  if (!id) return;
+
+  const def = PHOTO_FILTERS[id];
+  if (!def) return;
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  def.apply(data.data);
+  ctx.putImageData(data, 0, 0);
 }
 
 // ─── Drawing primitives ───────────────────────────────────
@@ -146,14 +150,118 @@ function drawBackground(ctx: DrawCtx, override?: string) {
   pdf.rect(0, 0, pageW, pageH, 'F');
 }
 
+/**
+ * Stamp a background pattern onto the page using jsPDF primitives. Used in
+ * addition to the flat colour from drawBackground.
+ */
+function drawPattern(
+  pdf: jsPDF,
+  patternId: BookPatternId | null | undefined,
+  pageW: number,
+  pageH: number,
+): void {
+  if (!patternId || patternId === 'none') return;
+
+  if (patternId === 'paper') {
+    pdf.setFillColor(0, 0, 0);
+    for (let y = 1; y < pageH; y += 2.2) {
+      for (let x = 1; x < pageW; x += 2.2) {
+        // Faux fill alpha by drawing tiny radius dots.
+        // (jsPDF GState opacity isn't in the types, so we just draw thin.)
+        pdf.setFillColor(0, 0, 0);
+        pdf.circle(x, y, 0.12, 'F');
+      }
+    }
+    return;
+  }
+
+  if (patternId === 'dots') {
+    pdf.setFillColor(0, 0, 0);
+    for (let y = 3; y < pageH; y += 5) {
+      for (let x = 3; x < pageW; x += 5) {
+        pdf.circle(x, y, 0.45, 'F');
+      }
+    }
+    return;
+  }
+
+  if (patternId === 'stripes-diagonal') {
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.25);
+    // 45° stripes spanning the page.
+    const step = 3.2;
+    const max = pageW + pageH;
+    for (let d = -pageH; d < max; d += step) {
+      pdf.line(d, 0, d + pageH, pageH);
+    }
+    return;
+  }
+
+  if (patternId === 'grid') {
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.15);
+    const step = 6;
+    for (let x = 0; x <= pageW; x += step) pdf.line(x, 0, x, pageH);
+    for (let y = 0; y <= pageH; y += step) pdf.line(0, y, pageW, y);
+    return;
+  }
+
+  if (patternId === 'map') {
+    // Stylised "map" — wavy parallel lines + scattered city dots.
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.2);
+    for (let y = 8; y < pageH; y += 14) {
+      // Approximate a sinus with short line segments.
+      let prevX = 0;
+      let prevY = y;
+      for (let x = 0; x <= pageW; x += 4) {
+        const ny = y + Math.sin(x / 12) * 2.4;
+        pdf.line(prevX, prevY, x, ny);
+        prevX = x;
+        prevY = ny;
+      }
+    }
+    pdf.setFillColor(0, 0, 0);
+    const dots: [number, number][] = [
+      [0.18, 0.22], [0.42, 0.18], [0.62, 0.28], [0.28, 0.52],
+      [0.58, 0.62], [0.78, 0.74], [0.32, 0.82], [0.72, 0.42],
+    ];
+    for (const [px, py] of dots) {
+      pdf.circle(px * pageW, py * pageH, 0.7, 'F');
+    }
+    return;
+  }
+
+  if (patternId === 'confetti') {
+    const colors: RGB[] = [
+      [251, 146, 60],
+      [139, 92, 246],
+      [244, 114, 182],
+      [56, 189, 248],
+      [250, 204, 21],
+      [52, 211, 153],
+    ];
+    // Deterministic distribution via LCG.
+    let s = 4242;
+    for (let i = 0; i < 110; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const x = ((s % 1000) / 1000) * pageW;
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const y = ((s % 1000) / 1000) * pageH;
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const c = colors[s % colors.length];
+      pdf.setFillColor(c[0], c[1], c[2]);
+      pdf.circle(x, y, 0.9, 'F');
+    }
+    return;
+  }
+}
+
 function drawDecorations(ctx: DrawCtx) {
   const { pdf, theme, pageW, pageH } = ctx;
   if (theme.decorations === 'none') return;
 
   if (theme.decorations === 'dashed-borders') {
-    // Hand-drawn dashed border using short line segments. jsPDF exposes a
-    // setLineDashPattern at runtime but it isn't in the type defs, so we
-    // approximate to avoid an `any` cast.
     const [r, g, b] = hexToRgb(theme.rule);
     pdf.setDrawColor(r, g, b);
     pdf.setLineWidth(0.2);
@@ -161,13 +269,11 @@ function drawDecorations(ctx: DrawCtx) {
     const gap = 1.2;
     const step = dash + gap;
     const inset = 4;
-    // Top and bottom
     for (let x = inset; x < pageW - inset; x += step) {
       const x2 = Math.min(x + dash, pageW - inset);
       pdf.line(x, inset, x2, inset);
       pdf.line(x, pageH - inset, x2, pageH - inset);
     }
-    // Left and right
     for (let y = inset; y < pageH - inset; y += step) {
       const y2 = Math.min(y + dash, pageH - inset);
       pdf.line(inset, y, inset, y2);
@@ -182,16 +288,12 @@ function drawDecorations(ctx: DrawCtx) {
     pdf.setLineWidth(0.4);
     const inset = 6;
     const len = 14;
-    // Top-left
     pdf.line(inset, inset, inset + len, inset);
     pdf.line(inset, inset, inset, inset + len);
-    // Top-right
     pdf.line(pageW - inset - len, inset, pageW - inset, inset);
     pdf.line(pageW - inset, inset, pageW - inset, inset + len);
-    // Bottom-left
     pdf.line(inset, pageH - inset, inset + len, pageH - inset);
     pdf.line(inset, pageH - inset - len, inset, pageH - inset);
-    // Bottom-right
     pdf.line(pageW - inset - len, pageH - inset, pageW - inset, pageH - inset);
     pdf.line(pageW - inset, pageH - inset - len, pageW - inset, pageH - inset);
     return;
@@ -206,11 +308,9 @@ function drawDecorations(ctx: DrawCtx) {
   }
 
   if (theme.decorations === 'paper-noise') {
-    // Sparse, deterministic dot pattern stands in for paper texture in PDF.
     const [r, g, b] = hexToRgb(theme.rule);
     pdf.setFillColor(r, g, b);
     const dots = 70;
-    // Use a simple LCG seeded by a constant for stable output.
     let s = 1234567;
     for (let i = 0; i < dots; i++) {
       s = (s * 1664525 + 1013904223) >>> 0;
@@ -222,7 +322,6 @@ function drawDecorations(ctx: DrawCtx) {
     return;
   }
 
-  /* ── Brutalist: thick black frame ── */
   if (theme.decorations === 'mono-borders') {
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(1.4);
@@ -232,7 +331,6 @@ function drawDecorations(ctx: DrawCtx) {
     return;
   }
 
-  /* ── Y2K: thick accent border (PDF can't do real neon glow) ── */
   if (theme.decorations === 'neon-glow') {
     const [r, g, b] = hexToRgb(theme.accent);
     pdf.setDrawColor(r, g, b);
@@ -243,8 +341,6 @@ function drawDecorations(ctx: DrawCtx) {
     return;
   }
 
-  /* ── Zine: tape strips drawn as small rotated rectangles in corners.
-        jsPDF can't rotate easily so we use color blocks aligned to corners. */
   if (theme.decorations === 'tape-strips') {
     const tapes: [number, number, number, number, string][] = [
       [10, 4, 22, 5, theme.accent],
@@ -260,7 +356,6 @@ function drawDecorations(ctx: DrawCtx) {
     return;
   }
 
-  /* ── Glass: translucent overlay rect (jsPDF doesn't do real blur). */
   if (theme.decorations === 'glass-blur') {
     pdf.setFillColor(255, 255, 255);
     pdf.rect(pageW * 0.06, pageH * 0.06, pageW * 0.88, pageH * 0.88, 'F');
@@ -271,7 +366,6 @@ function drawDecorations(ctx: DrawCtx) {
     return;
   }
 
-  /* ── Psychedelic: colored rings in opposite corners. */
   if (theme.decorations === 'psychedelic-frame') {
     const rings: [number, number, number, string][] = [
       [4, 4, 18, '#fb923c'],
@@ -290,21 +384,182 @@ function drawDecorations(ctx: DrawCtx) {
 }
 
 /**
- * Place an image inside a slot rectangle. Maintains aspect ratio using
- * "cover" semantics (the image fills the slot and we crop the overflow).
- *
- * jsPDF's `addImage` doesn't natively do cover-fit, so we compute the
- * cropped portion ourselves via an offscreen canvas.
+ * Draw the decorative SVG map behind a `map-full` layout. We rasterise an
+ * inline SVG into a canvas and embed it as a PNG — keeps the code small
+ * and the map looking smooth at any DPI.
  */
-async function placeImageCover(
+async function drawMapDecoration(
   pdf: jsPDF,
-  rawUrl: string | null,
+  pageW: number,
+  pageH: number,
+  inkHex: string,
+): Promise<void> {
+  if (typeof document === 'undefined') return;
+  const ink = inkHex;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" preserveAspectRatio="none" width="${Math.round(pageW * 8)}" height="${Math.round(pageH * 8)}">
+    <g stroke="${ink}" stroke-opacity="0.18" fill="none" stroke-width="0.6">
+      <path d="M0 40 C 40 30, 80 50, 120 38 S 180 50, 200 42"/>
+      <path d="M0 70 C 40 60, 80 78, 120 68 S 180 78, 200 72"/>
+      <path d="M0 100 C 40 90, 80 108, 120 98 S 180 108, 200 102"/>
+      <path d="M0 200 C 40 190, 80 208, 120 198 S 180 208, 200 202"/>
+      <path d="M0 230 C 40 220, 80 238, 120 228 S 180 238, 200 232"/>
+      <path d="M0 260 C 40 250, 80 268, 120 258 S 180 268, 200 262"/>
+    </g>
+    <g fill="${ink}" fill-opacity="0.08" stroke="${ink}" stroke-opacity="0.28" stroke-width="0.8">
+      <path d="M14 50 Q 30 30, 60 38 T 110 56 Q 130 70, 120 96 Q 100 110, 70 100 Q 30 92, 18 78 Z"/>
+      <path d="M120 110 Q 150 100, 180 116 Q 192 140, 170 160 Q 140 170, 120 152 Q 110 130, 120 110 Z"/>
+      <path d="M30 160 Q 60 150, 90 168 Q 100 190, 84 210 Q 60 218, 36 200 Q 22 180, 30 160 Z"/>
+    </g>
+    <g stroke="${ink}" stroke-opacity="0.55" fill="none" stroke-width="0.8" stroke-dasharray="3 2">
+      <path d="M40 80 Q 90 60, 140 80 T 180 130"/>
+      <path d="M60 200 Q 100 180, 150 210"/>
+    </g>
+    <g fill="${ink}" fill-opacity="0.5">
+      <circle cx="40" cy="80" r="2"/><circle cx="100" cy="100" r="2"/>
+      <circle cx="150" cy="80" r="2"/><circle cx="170" cy="140" r="2"/>
+      <circle cx="80" cy="200" r="2"/><circle cx="150" cy="220" r="2"/>
+    </g>
+  </svg>`;
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('map svg load failed'));
+      i.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(pageW * 8);
+    canvas.height = Math.round(pageH * 8);
+    const cctx = canvas.getContext('2d');
+    if (!cctx) return;
+    cctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const png = canvas.toDataURL('image/png');
+    pdf.addImage(png, 'PNG', 0, 0, pageW, pageH, undefined, 'FAST');
+  } catch {
+    /* swallow — the page will simply lack the map. */
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/* ── Frame helpers (PDF) ──────────────────────────────────── */
+
+/** Stroke the frame OUTSIDE the photo area (e.g. polaroid white pad). */
+function drawFrameWrapper(
+  pdf: jsPDF,
+  frame: PhotoFrame | null | undefined,
   x: number,
   y: number,
   w: number,
   h: number,
   theme: BookTheme,
+): void {
+  if (!frame || frame === 'none') return;
+
+  if (frame === 'polaroid') {
+    // White card under the photo + slight shadow line.
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(x, y, w, h, 'F');
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.25);
+    pdf.rect(x, y, w, h, 'S');
+    return;
+  }
+
+  if (frame === 'tape') {
+    // Two coloured strips at corners. We draw them after the inner photo
+    // so they sit ON TOP — handled separately by drawFrameOverlay below.
+    return;
+  }
+
+  if (frame === 'vintage-edge') {
+    // Warm parchment pad behind the photo.
+    pdf.setFillColor(244, 230, 207);
+    pdf.rect(x, y, w, h, 'F');
+    const [r, g, b] = hexToRgb('#6b4a2b');
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.6);
+    pdf.rect(x, y, w, h, 'S');
+    return;
+  }
+
+  if (frame === 'rounded') {
+    // jsPDF roundedRect exists.
+    pdf.setDrawColor(...hexToRgb(theme.rule));
+    pdf.setLineWidth(0.2);
+    pdf.roundedRect(x, y, w, h, 3, 3, 'S');
+    return;
+  }
+
+  if (frame === 'circle') {
+    // Circle frame: draw a thin outline circle (the photo is clipped via
+    // canvas elsewhere — see clipImageToShape).
+    return;
+  }
+
+  if (frame === 'hexagon') {
+    // Frame outline drawn around the inner hexagon photo.
+    return;
+  }
+}
+
+/** Stickers / tape strips that sit ON TOP of the photo. */
+function drawFrameOverlay(
+  pdf: jsPDF,
+  frame: PhotoFrame | null | undefined,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  if (!frame || frame === 'none') return;
+  if (frame === 'tape') {
+    // Tape strip top-left and bottom-right.
+    const tapeW = w * 0.28;
+    const tapeH = Math.max(2.5, h * 0.06);
+    // Amber tape (top-left).
+    pdf.setFillColor(251, 191, 36);
+    pdf.rect(x + w * 0.08, y - tapeH * 0.4, tapeW, tapeH, 'F');
+    // Black tape (bottom-right).
+    pdf.setFillColor(10, 10, 10);
+    pdf.rect(x + w - w * 0.08 - tapeW, y + h - tapeH * 0.6, tapeW, tapeH, 'F');
+  }
+}
+
+/**
+ * Place an image inside a slot rectangle. Maintains aspect ratio using
+ * "cover" semantics (the image fills the slot and we crop the overflow).
+ *
+ * Applies:
+ *  - The per-slot FILTER (vol. 2) or theme sepia fallback.
+ *  - The per-slot FRAME (vol. 2): polaroid pad, hexagon mask, circle mask,
+ *    vintage edge, rounded corners, tape strips.
+ */
+async function placeImageCover(
+  pdf: jsPDF,
+  rawUrl: string | null,
+  outerX: number,
+  outerY: number,
+  outerW: number,
+  outerH: number,
+  theme: BookTheme,
+  filter: PhotoFilter | null,
+  frame: PhotoFrame | null,
+  slotCaption: string | null,
 ) {
+  // Frame wrapper (polaroid card, vintage pad) is drawn first so the photo
+  // sits ON TOP of it. Then we compute the inner rect respecting frame
+  // insets (polaroid has an extra-thick bottom border).
+  drawFrameWrapper(pdf, frame, outerX, outerY, outerW, outerH, theme);
+
+  const inset = framePhotoInset(frame);
+  const x = outerX + inset.left * outerW;
+  const y = outerY + inset.top * outerH;
+  const w = outerW * (1 - inset.left - inset.right);
+  const h = outerH * (1 - inset.top - inset.bottom);
+
   const fallbackFill = () => {
     const [pr, pg, pb] = hexToRgb(theme.paper);
     const [rr, rg, rb] = hexToRgb(theme.rule);
@@ -316,17 +571,20 @@ async function placeImageCover(
 
   if (!rawUrl) {
     fallbackFill();
+    drawSlotCaption(pdf, slotCaption, outerX, outerY, outerW, outerH, frame, theme);
+    drawFrameOverlay(pdf, frame, outerX, outerY, outerW, outerH);
     return;
   }
 
   const dataUrl = await fetchImageAsDataUrl(rawUrl);
   if (!dataUrl) {
     fallbackFill();
+    drawSlotCaption(pdf, slotCaption, outerX, outerY, outerW, outerH, frame, theme);
+    drawFrameOverlay(pdf, frame, outerX, outerY, outerW, outerH);
     return;
   }
 
   try {
-    // Load into Image so we know its natural size and can crop.
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const i = new Image();
       i.crossOrigin = 'anonymous';
@@ -340,19 +598,14 @@ async function placeImageCover(
     const imgRatio = img.naturalWidth / img.naturalHeight;
     let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
     if (imgRatio > slotRatio) {
-      // Image is wider — crop horizontally.
       sw = img.naturalHeight * slotRatio;
       sx = (img.naturalWidth - sw) / 2;
     } else {
-      // Image is taller — crop vertically.
       sh = img.naturalWidth / slotRatio;
       sy = (img.naturalHeight - sh) / 2;
     }
 
-    // Render the cropped region to a canvas, optionally sepia.
     const canvas = document.createElement('canvas');
-    // Target ~150 DPI at the slot size — overkill for small slots, but
-    // keeps large heroes crisp. Clamp to avoid runaway canvases.
     const targetW = Math.min(Math.round(w * 6), 2400);
     const targetH = Math.min(Math.round(h * 6), 2400);
     canvas.width = targetW;
@@ -360,50 +613,136 @@ async function placeImageCover(
     const cctx = canvas.getContext('2d');
     if (!cctx) {
       fallbackFill();
+      drawFrameOverlay(pdf, frame, outerX, outerY, outerW, outerH);
       return;
     }
-    cctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-    if (theme.sepia) {
-      const data = cctx.getImageData(0, 0, targetW, targetH);
-      const px = data.data;
-      for (let i = 0; i < px.length; i += 4) {
-        const r = px[i];
-        const g = px[i + 1];
-        const b = px[i + 2];
-        px[i] = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
-        px[i + 1] = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
-        px[i + 2] = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
-      }
-      cctx.putImageData(data, 0, 0);
+    // Mask for circle/hexagon BEFORE drawing the image.
+    if (frame === 'circle') {
+      cctx.save();
+      cctx.beginPath();
+      cctx.ellipse(targetW / 2, targetH / 2, targetW / 2, targetH / 2, 0, 0, Math.PI * 2);
+      cctx.clip();
+    } else if (frame === 'hexagon') {
+      cctx.save();
+      cctx.beginPath();
+      HEX_POLY.forEach(([px, py], i) => {
+        const cx = px * targetW;
+        const cy = py * targetH;
+        if (i === 0) cctx.moveTo(cx, cy);
+        else cctx.lineTo(cx, cy);
+      });
+      cctx.closePath();
+      cctx.clip();
+    } else if (frame === 'rounded') {
+      cctx.save();
+      const r = Math.min(targetW, targetH) * 0.08;
+      cctx.beginPath();
+      cctx.moveTo(r, 0);
+      cctx.lineTo(targetW - r, 0);
+      cctx.quadraticCurveTo(targetW, 0, targetW, r);
+      cctx.lineTo(targetW, targetH - r);
+      cctx.quadraticCurveTo(targetW, targetH, targetW - r, targetH);
+      cctx.lineTo(r, targetH);
+      cctx.quadraticCurveTo(0, targetH, 0, targetH - r);
+      cctx.lineTo(0, r);
+      cctx.quadraticCurveTo(0, 0, r, 0);
+      cctx.clip();
     }
 
-    const out = canvas.toDataURL('image/jpeg', 0.86);
+    cctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+    if (frame === 'circle' || frame === 'hexagon' || frame === 'rounded') {
+      cctx.restore();
+    }
+
+    // Apply per-slot filter (or theme sepia fallback).
+    applyFilterCanvas(canvas, filter, theme.sepia);
+
+    // Vintage-edge: paint a heavy dark vignette inside the photo bounds.
+    if (frame === 'vintage-edge') {
+      const grad = cctx.createRadialGradient(
+        targetW / 2,
+        targetH / 2,
+        Math.min(targetW, targetH) * 0.3,
+        targetW / 2,
+        targetH / 2,
+        Math.max(targetW, targetH) * 0.7,
+      );
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+      cctx.fillStyle = grad;
+      cctx.fillRect(0, 0, targetW, targetH);
+    }
+
+    const out = canvas.toDataURL('image/png');
     const fmt = imageFormatFromDataUrl(out);
     pdf.addImage(out, fmt, x, y, w, h, undefined, 'FAST');
 
-    // Thin frame for definition.
-    const [rr, rg, rb] = hexToRgb(theme.rule);
-    pdf.setDrawColor(rr, rg, rb);
-    pdf.setLineWidth(0.15);
-    pdf.rect(x, y, w, h, 'S');
+    // Thin frame around the photo (skip when the wrapper already drew one
+    // or when the photo is masked into a non-rect shape).
+    if (frame !== 'polaroid' && frame !== 'vintage-edge' && frame !== 'rounded') {
+      if (frame !== 'circle' && frame !== 'hexagon') {
+        const [rr, rg, rb] = hexToRgb(theme.rule);
+        pdf.setDrawColor(rr, rg, rb);
+        pdf.setLineWidth(0.15);
+        pdf.rect(x, y, w, h, 'S');
+      }
+    }
   } catch {
     fallbackFill();
   }
+
+  // Slot caption (polaroid white pad usage).
+  drawSlotCaption(pdf, slotCaption, outerX, outerY, outerW, outerH, frame, theme);
+
+  // Overlay (tape strips).
+  drawFrameOverlay(pdf, frame, outerX, outerY, outerW, outerH);
 }
 
 /**
- * Draw a soft dark scrim at the bottom of the page — used on the cover so
- * the title (white) stays readable over arbitrary photos.
- *
- * jsPDF's GState-based opacity isn't in the type defs, so we render the
- * scrim into an offscreen canvas (where we DO have alpha) and embed it as
- * an image. Same visual result, cleaner types.
+ * Slot-level caption text. Only the polaroid frame has a dedicated text
+ * pad; for other frames we still render a small caption under the photo
+ * when one is set, but with no special styling.
  */
+function drawSlotCaption(
+  pdf: jsPDF,
+  caption: string | null,
+  outerX: number,
+  outerY: number,
+  outerW: number,
+  outerH: number,
+  frame: PhotoFrame | null | undefined,
+  theme: BookTheme,
+): void {
+  if (!caption) return;
+  if (frame === 'polaroid') {
+    const inset = framePhotoInset(frame);
+    const stripY = outerY + (inset.top + (1 - inset.top - inset.bottom)) * outerH + 1;
+    const stripH = outerH * inset.bottom;
+    pdf.setFont('times', 'italic');
+    pdf.setFontSize(10);
+    pdf.setTextColor(40, 30, 20);
+    pdf.text(caption, outerX + outerW / 2, stripY + stripH * 0.55, {
+      align: 'center',
+      maxWidth: outerW * (1 - inset.left - inset.right),
+    });
+    return;
+  }
+  // Generic fallback — below the photo.
+  pdf.setFont(pdfFontFor(theme, 'body'), 'italic');
+  pdf.setFontSize(8);
+  const [r, g, b] = hexToRgb(theme.inkSoft);
+  pdf.setTextColor(r, g, b);
+  pdf.text(caption, outerX + outerW / 2, outerY + outerH + 3, {
+    align: 'center',
+    maxWidth: outerW,
+  });
+}
+
 function drawCoverScrim(pdf: jsPDF, w: number, h: number) {
   if (typeof document === 'undefined') return;
   const scrimH = h * 0.5;
-  // Use a moderate resolution — gradients don't need DPI to look smooth.
   const pxW = Math.max(200, Math.round(w * 4));
   const pxH = Math.max(100, Math.round(scrimH * 4));
   const canvas = document.createElement('canvas');
@@ -420,15 +759,47 @@ function drawCoverScrim(pdf: jsPDF, w: number, h: number) {
   pdf.addImage(png, 'PNG', 0, h - scrimH, w, scrimH, undefined, 'FAST');
 }
 
-/**
- * Render the text zones of a page.
- *
- * Note: text colour rules
- *  - On the cover, title/subtitle render in white (high contrast over
- *    the photo).
- *  - On regular pages, titles use `theme.ink`, body/caption use
- *    `theme.inkSoft`.
- */
+/** Same gradient idea, applied to a panorama photo from the bottom up. */
+function drawPanoramaScrim(pdf: jsPDF, w: number, photoH: number) {
+  if (typeof document === 'undefined') return;
+  const scrimH = photoH * 0.5;
+  const pxW = Math.max(200, Math.round(w * 4));
+  const pxH = Math.max(80, Math.round(scrimH * 4));
+  const canvas = document.createElement('canvas');
+  canvas.width = pxW;
+  canvas.height = pxH;
+  const cctx = canvas.getContext('2d');
+  if (!cctx) return;
+  const grad = cctx.createLinearGradient(0, 0, 0, pxH);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+  cctx.fillStyle = grad;
+  cctx.fillRect(0, 0, pxW, pxH);
+  const png = canvas.toDataURL('image/png');
+  pdf.addImage(png, 'PNG', 0, photoH - scrimH, w, scrimH, undefined, 'FAST');
+}
+
+/* ── Text zones ───────────────────────────────────────────── */
+
+/** Split a body string into N roughly-equal columns by sentences. */
+function splitBodyIntoColumns(body: string, n: number): string[] {
+  if (!body || n <= 1) return [body];
+  const sentences = body.match(/[^.!?\n]+[.!?]?[\s]?|\S+/g) ?? [body];
+  const out: string[] = Array.from({ length: n }, () => '');
+  const total = body.length;
+  const target = total / n;
+  let bucket = 0;
+  let acc = 0;
+  for (const s of sentences) {
+    if (acc + s.length > target * (bucket + 1) && bucket < n - 1) {
+      bucket++;
+    }
+    out[bucket] += s;
+    acc += s.length;
+  }
+  return out;
+}
+
 function drawTextZones(
   pdf: jsPDF,
   page: BookPage,
@@ -438,10 +809,23 @@ function drawTextZones(
   pageH: number,
 ) {
   const isCover = page.layoutId === 'cover';
+  const isPanorama = page.layoutId === 'panorama-bleed';
+  const isMagazine3Col = page.layoutId === 'magazine-3col';
+
+  // Pre-split body for magazine-3col.
+  const bodyColumns = isMagazine3Col
+    ? splitBodyIntoColumns(page.body ?? '', 3)
+    : null;
+  let bodyZoneIndex = 0;
 
   for (const zone of layout.textZones) {
-    const value = textValueFor(page, zone.kind);
+    let value = textValueFor(page, zone.kind);
+    if (isMagazine3Col && zone.kind === 'body' && bodyColumns) {
+      value = bodyColumns[bodyZoneIndex] ?? '';
+      bodyZoneIndex++;
+    }
     if (!value) continue;
+
     const x = zone.x * pageW;
     const y = zone.y * pageH;
     const w = zone.w * pageW;
@@ -459,8 +843,12 @@ function drawTextZones(
     pdf.setFont(family, style);
     pdf.setFontSize(sizePt);
 
-    const color = isCover
-      ? ([255, 255, 255] as RGB)
+    const overPhoto =
+      isCover ||
+      (isPanorama && (zone.kind === 'title' || zone.kind === 'subtitle'));
+
+    const color: RGB = overPhoto
+      ? [255, 255, 255]
       : zone.kind === 'title' || zone.kind === 'subtitle'
         ? hexToRgb(theme.ink)
         : hexToRgb(theme.inkSoft);
@@ -469,11 +857,7 @@ function drawTextZones(
     let display = value;
     if (zone.upper) display = display.toUpperCase();
 
-    // Wrap text. The font baseline sits a bit below `y`, so use `y` as the
-    // first-line baseline. jsPDF text() uses baseline by default when no
-    // baseline option is given.
     const lines = pdf.splitTextToSize(display, w);
-    // Restrict to the height of the zone (rough: line height ≈ size * 1.2 / pt-to-mm ≈ size * 0.42).
     const lineMm = sizePt * 0.42;
     const maxLines = Math.max(1, Math.floor((zone.h * pageH) / lineMm));
     const visible = lines.slice(0, maxLines);
@@ -500,17 +884,211 @@ function textValueFor(page: BookPage, kind: 'title' | 'subtitle' | 'caption' | '
   }
 }
 
+/* ── Stickers (PDF) ───────────────────────────────────────── */
+
+/**
+ * Draw a sticker by kind. Simple shape stickers are rendered as jsPDF
+ * primitives; complex ones are rasterised from SVG → canvas → addImage.
+ */
+async function drawSticker(
+  pdf: jsPDF,
+  sticker: Sticker,
+  pageW: number,
+  pageH: number,
+): Promise<void> {
+  const def = STICKER_LIBRARY[sticker.kind];
+  if (!def) return;
+  const color = sticker.color ?? def.defaultColor;
+  // Sticker render size in mm — calibrated so scale=1 reads "medium-sized
+  // accent" on an A4 page (~22mm square). Scale multiplies.
+  const sizeMm = 22 * sticker.scale;
+  const cx = sticker.x * pageW;
+  const cy = sticker.y * pageH;
+
+  if (PRIMITIVE_STICKERS.has(sticker.kind as StickerKind)) {
+    drawPrimitiveSticker(pdf, sticker.kind, cx, cy, sizeMm, color, sticker.rotation);
+    return;
+  }
+
+  // Rasterise via SVG. Use a generous pixel size for crispness.
+  const px = Math.max(96, Math.round(sizeMm * 12));
+  const canvas = await rasterStickerToCanvas(sticker.kind, color, px);
+  if (!canvas) return;
+
+  // Rotation: jsPDF can rotate via the 4th-or-5th-arg overload? Easiest is
+  // to render the rotated image to ANOTHER canvas and embed that.
+  let final = canvas;
+  if (sticker.rotation !== 0) {
+    final = document.createElement('canvas');
+    final.width = canvas.width;
+    final.height = canvas.height;
+    const fctx = final.getContext('2d');
+    if (fctx) {
+      fctx.translate(canvas.width / 2, canvas.height / 2);
+      fctx.rotate((sticker.rotation * Math.PI) / 180);
+      fctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+    }
+  }
+
+  const png = final.toDataURL('image/png');
+  pdf.addImage(png, 'PNG', cx - sizeMm / 2, cy - sizeMm / 2, sizeMm, sizeMm, undefined, 'FAST');
+}
+
+/** Draw simple stickers using jsPDF primitives (no SVG raster). */
+function drawPrimitiveSticker(
+  pdf: jsPDF,
+  kind: StickerKind,
+  cx: number,
+  cy: number,
+  size: number,
+  colorHex: string,
+  rotation: number,
+): void {
+  const [r, g, b] = hexToRgb(colorHex);
+  const half = size / 2;
+
+  // Helper for rotated point.
+  const rad = (rotation * Math.PI) / 180;
+  const rot = (px: number, py: number): [number, number] => {
+    const dx = px - cx;
+    const dy = py - cy;
+    return [cx + dx * Math.cos(rad) - dy * Math.sin(rad), cy + dx * Math.sin(rad) + dy * Math.cos(rad)];
+  };
+
+  if (kind === 'map-pin') {
+    pdf.setFillColor(r, g, b);
+    // Teardrop: circle + downward triangle.
+    pdf.circle(cx, cy - half * 0.2, half * 0.55, 'F');
+    const tipPts: [number, number][] = [
+      [cx - half * 0.45, cy - half * 0.1],
+      [cx + half * 0.45, cy - half * 0.1],
+      [cx, cy + half * 0.85],
+    ];
+    pdf.triangle(
+      tipPts[0][0], tipPts[0][1],
+      tipPts[1][0], tipPts[1][1],
+      tipPts[2][0], tipPts[2][1],
+      'F',
+    );
+    pdf.setFillColor(255, 255, 255);
+    pdf.circle(cx, cy - half * 0.2, half * 0.22, 'F');
+    return;
+  }
+
+  if (kind === 'heart') {
+    pdf.setFillColor(r, g, b);
+    const lx = cx - half * 0.35;
+    const rx = cx + half * 0.35;
+    pdf.circle(lx, cy - half * 0.15, half * 0.42, 'F');
+    pdf.circle(rx, cy - half * 0.15, half * 0.42, 'F');
+    pdf.triangle(
+      cx - half * 0.75, cy - half * 0.05,
+      cx + half * 0.75, cy - half * 0.05,
+      cx, cy + half * 0.85,
+      'F',
+    );
+    return;
+  }
+
+  if (kind === 'star') {
+    pdf.setFillColor(r, g, b);
+    // 5-point star polygon.
+    const points: [number, number][] = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+      const radius = i % 2 === 0 ? half : half * 0.42;
+      const [px, py] = rot(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
+      points.push([px, py]);
+    }
+    // jsPDF doesn't expose polygon-fill directly. Use lines via triangles.
+    for (let i = 1; i < points.length - 1; i++) {
+      pdf.triangle(
+        points[0][0], points[0][1],
+        points[i][0], points[i][1],
+        points[i + 1][0], points[i + 1][1],
+        'F',
+      );
+    }
+    return;
+  }
+
+  if (kind === 'arrow') {
+    pdf.setFillColor(r, g, b);
+    // Shaft.
+    const sw = size * 0.6;
+    const sh = size * 0.18;
+    const sx = cx - sw / 2;
+    const sy = cy - sh / 2;
+    pdf.rect(sx, sy, sw * 0.7, sh, 'F');
+    // Head triangle.
+    pdf.triangle(
+      sx + sw * 0.7, cy - half * 0.45,
+      sx + sw, cy,
+      sx + sw * 0.7, cy + half * 0.45,
+      'F',
+    );
+    return;
+  }
+
+  if (kind === 'route-dashed') {
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.7);
+    // Curve approximated by short dashed line segments along a Bezier.
+    const steps = 18;
+    let prev: [number, number] | null = null;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const xPt = cx - half + 2 * half * t;
+      const yPt = cy + half * 0.5 - Math.sin(t * Math.PI) * half * 0.85;
+      if (prev && i % 2 === 0) pdf.line(prev[0], prev[1], xPt, yPt);
+      prev = [xPt, yPt];
+    }
+    pdf.setFillColor(r, g, b);
+    pdf.circle(cx - half, cy + half * 0.5, 1.1, 'F');
+    pdf.circle(cx + half, cy + half * 0.5 - 0.001, 1.1, 'F');
+    return;
+  }
+
+  if (kind === 'sun') {
+    pdf.setFillColor(r, g, b);
+    pdf.circle(cx, cy, half * 0.45, 'F');
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(size * 0.06);
+    const rays = 8;
+    for (let i = 0; i < rays; i++) {
+      const ang = (i * Math.PI * 2) / rays + rad;
+      const x1 = cx + Math.cos(ang) * half * 0.62;
+      const y1 = cy + Math.sin(ang) * half * 0.62;
+      const x2 = cx + Math.cos(ang) * half * 0.95;
+      const y2 = cy + Math.sin(ang) * half * 0.95;
+      pdf.line(x1, y1, x2, y2);
+    }
+    return;
+  }
+}
+
 // ─── Render a single page ─────────────────────────────────
 
 async function renderPage(ctx: DrawCtx, page: BookPage) {
   const layout = LAYOUTS[page.layoutId];
   const { pdf, theme, pageW, pageH } = ctx;
 
+  // 1. Background color.
   drawBackground(ctx, page.background);
 
-  // Cover photo: full bleed, no slot frame.
-  const isCover = page.layoutId === 'cover';
+  // 2. Background pattern overlay.
+  drawPattern(pdf, page.backgroundPattern, pageW, pageH);
 
+  // 3. Layout-specific decoration BEHIND photos.
+  if (page.layoutId === 'map-full') {
+    await drawMapDecoration(pdf, pageW, pageH, theme.ink);
+  }
+
+  const isCover = page.layoutId === 'cover';
+  const isPanorama = page.layoutId === 'panorama-bleed';
+  const isPolaroidGrid = page.layoutId === 'polaroid-grid';
+
+  // 4. Photos.
   for (let i = 0; i < layout.slots.length; i++) {
     const slot = layout.slots[i];
     const x = slot.x * pageW;
@@ -518,16 +1096,34 @@ async function renderPage(ctx: DrawCtx, page: BookPage) {
     const w = slot.w * pageW;
     const h = slot.h * pageH;
     const url = page.photoUrls[i] ?? null;
-    await placeImageCover(pdf, url, x, y, w, h, theme);
+    const filter = page.photoFilters?.[i] ?? null;
+    let frame = page.photoFrames?.[i] ?? null;
+    const caption = page.slotCaptions?.[i] ?? null;
+    // Polaroid-grid implicitly uses the polaroid frame.
+    if (isPolaroidGrid && (!frame || frame === 'none')) {
+      frame = 'polaroid';
+    }
+    await placeImageCover(pdf, url, x, y, w, h, theme, filter, frame, caption);
   }
 
+  // 5. Photo overlays (cover scrim / panorama scrim).
   if (isCover && page.photoUrls[0]) {
     drawCoverScrim(pdf, pageW, pageH);
   }
+  if (isPanorama && page.photoUrls[0]) {
+    drawPanoramaScrim(pdf, pageW, pageH * 0.55);
+  }
 
-  // Decorations under the text but above the photo (covers excluded).
+  // 6. Theme decorations (over photos, under stickers and text).
   if (!isCover) drawDecorations(ctx);
 
+  // 7. Stickers (decorative, sit on top of photos).
+  const stickers: Sticker[] = page.stickers ?? [];
+  for (const s of stickers) {
+    await drawSticker(pdf, s, pageW, pageH);
+  }
+
+  // 8. Text zones (always on top).
   drawTextZones(pdf, page, layout, theme, pageW, pageH);
 }
 
@@ -555,10 +1151,8 @@ export async function exportPhotoBookPdf(state: BookState): Promise<Blob> {
   const pageH = pdf.internal.pageSize.getHeight();
   const ctx: DrawCtx = { pdf, theme, pageW, pageH };
 
-  // Cover first.
   await renderPage(ctx, state.cover);
 
-  // Then each page in order.
   for (const page of state.pages) {
     pdf.addPage();
     await renderPage(ctx, page);
@@ -567,9 +1161,6 @@ export async function exportPhotoBookPdf(state: BookState): Promise<Blob> {
   return pdf.output('blob');
 }
 
-/**
- * Generate and trigger a download.
- */
 export async function exportAndDownloadPhotoBookPdf(
   state: BookState,
   filename: string,

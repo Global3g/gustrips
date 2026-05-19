@@ -15,6 +15,9 @@
  *         page that owns the slot).
  *  - PDF generation lives in `exportPhotoBookPdf` and is dynamically
  *    imported on demand to keep the route shell tiny.
+ *
+ * Vol. 2: the right column is now organised in TABS to fit the expanded
+ * toolset (layouts, fotos, texto, stickers, fondo, estilo).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +29,12 @@ import {
   RotateCcw,
   Wand2,
   ShoppingBag,
+  LayoutGrid,
+  Image as ImageIcon,
+  Type as TypeIcon,
+  Sparkles,
+  Palette,
+  Paintbrush,
 } from 'lucide-react';
 import {
   DndContext,
@@ -46,6 +55,10 @@ import LayoutPicker from '@/components/trips/photos/book/LayoutPicker';
 import PhotoPool from '@/components/trips/photos/book/PhotoPool';
 import TextEditor from '@/components/trips/photos/book/TextEditor';
 import ThemeSelector from '@/components/trips/photos/book/ThemeSelector';
+import PhotoFilterPicker from '@/components/trips/photos/book/PhotoFilterPicker';
+import PhotoFramePicker from '@/components/trips/photos/book/PhotoFramePicker';
+import StickerPanel from '@/components/trips/photos/book/StickerPanel';
+import BackgroundPanel from '@/components/trips/photos/book/BackgroundPanel';
 
 import { LAYOUTS } from '@/lib/photobook/layouts';
 import { THEMES, getTheme } from '@/lib/photobook/themes';
@@ -58,9 +71,13 @@ import {
 } from '@/lib/photobook/seed';
 import type {
   BookPage,
+  BookPatternId,
   BookSize,
   BookState,
   LayoutId,
+  PhotoFilter,
+  PhotoFrame,
+  Sticker,
   ThemeId,
   TextZoneKind,
 } from '@/lib/photobook/types';
@@ -73,13 +90,23 @@ const SIZE_OPTIONS: { id: BookSize; label: string }[] = [
   { id: 'letter', label: 'Letter' },
 ];
 
+type EditorTab = 'layout' | 'photos' | 'text' | 'stickers' | 'background' | 'style';
+
+const TAB_DEFS: { id: EditorTab; label: string; icon: typeof LayoutGrid }[] = [
+  { id: 'layout', label: 'Layout', icon: LayoutGrid },
+  { id: 'photos', label: 'Fotos', icon: ImageIcon },
+  { id: 'text', label: 'Texto', icon: TypeIcon },
+  { id: 'stickers', label: 'Stickers', icon: Sparkles },
+  { id: 'background', label: 'Fondo', icon: Paintbrush },
+  { id: 'style', label: 'Estilo', icon: Palette },
+];
+
 function loadFromStorage(tripId: string): BookState | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY(tripId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as BookState;
-    // Light sanity check — if shape looks wrong, discard.
     if (!parsed?.cover || !Array.isArray(parsed.pages)) return null;
     return parsed;
   } catch {
@@ -92,8 +119,7 @@ function saveToStorage(tripId: string, state: BookState): void {
   try {
     window.localStorage.setItem(STORAGE_KEY(tripId), JSON.stringify(state));
   } catch {
-    // localStorage may be full or disabled — silently ignore. We've still
-    // got the in-memory state; the user just won't survive a refresh.
+    /* ignore */
   }
 }
 
@@ -110,15 +136,14 @@ export default function PhotoBookPage() {
   const [state, setState] = useState<BookState | null>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<EditorTab>('photos');
   const [poolQuery, setPoolQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(420);
   const previewWrapRef = useRef<HTMLDivElement | null>(null);
 
-  /* ─── Initialisation (load or seed) ─────────────────────
-     Run once when the trip data is available. We deliberately key off the
-     trip ID (not the whole trip object) so updates to title/description
-     don't wipe the user's edits. */
+  /* ─── Initialisation (load or seed) ───────────────────── */
   const seededRef = useRef(false);
   useEffect(() => {
     if (!trip || seededRef.current) return;
@@ -146,8 +171,6 @@ export default function PhotoBookPage() {
     if (!node) return;
     const ro = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width;
-      // Cap the preview so it never overflows the column. Subtract a bit
-      // of padding (24px on each side) for breathing room.
       setPreviewWidth(Math.max(220, Math.min(560, w - 24)));
     });
     ro.observe(node);
@@ -181,8 +204,6 @@ export default function PhotoBookPage() {
   const handleLayoutChange = useCallback(
     (id: LayoutId) => {
       if (!activePage) return;
-      // Don't allow swapping the cover into a different layout — keeps the
-      // cover-photo + overlay logic simple.
       if (activePage.layoutId === 'cover' && id !== 'cover') return;
       if (id === 'cover' && activePage.layoutId !== 'cover') return;
       updatePage(activePage.id, (p) => applyLayout(p, id));
@@ -224,7 +245,6 @@ export default function PhotoBookPage() {
       setState((cur) => {
         if (!cur) return cur;
         const next = cur.pages.filter((p) => p.id !== pageId);
-        // Avoid leaving the editor pointing at a deleted page.
         if (activePageId === pageId) {
           setActivePageId(cur.cover.id);
         }
@@ -247,7 +267,6 @@ export default function PhotoBookPage() {
     });
   }, []);
 
-  /* ─── Auto-fill: one page per event with photos, default layout ──── */
   const handleAutoFill = useCallback(() => {
     if (!state || !trip) return;
     const sortedEvents = [...events].sort((a, b) => {
@@ -291,7 +310,6 @@ export default function PhotoBookPage() {
     toast(`Se agregaron ${additions.length} páginas`, 'success');
   }, [state, trip, events, albumPhotos, toast]);
 
-  /* ─── Reset to auto-generated baseline ─────────────────── */
   const handleReset = useCallback(() => {
     if (!trip) return;
     const ok = typeof window !== 'undefined'
@@ -302,6 +320,7 @@ export default function PhotoBookPage() {
     setState(fresh);
     setActivePageId(fresh.cover.id);
     setSelectedSlot(null);
+    setSelectedStickerId(null);
   }, [trip, events, albumPhotos]);
 
   /* ─── DnD: photo pool → slot ───────────────────────────── */
@@ -329,7 +348,6 @@ export default function PhotoBookPage() {
     [updatePage],
   );
 
-  /* ─── Tap-to-fill (mobile-friendly) ────────────────────── */
   const handleTapPhoto = useCallback(
     (url: string) => {
       if (!activePage) return;
@@ -338,8 +356,6 @@ export default function PhotoBookPage() {
         toast('Esta página no tiene fotos', 'info');
         return;
       }
-      // If no slot is selected, fill the first empty slot; otherwise the
-      // selected one.
       let target = selectedSlot;
       if (target == null) {
         target = activePage.photoUrls.findIndex((u) => !u);
@@ -355,11 +371,119 @@ export default function PhotoBookPage() {
     [activePage, selectedSlot, updatePage, toast],
   );
 
-  /* ─── Photo slot color helpers ─────────────────────────── */
+  /* ─── Vol. 2: per-slot filter & frame & caption ────────── */
+
+  const handleFilterChange = useCallback(
+    (filter: PhotoFilter | null) => {
+      if (!activePage || selectedSlot == null) return;
+      updatePage(activePage.id, (p) => {
+        const cnt = LAYOUTS[p.layoutId].slotCount;
+        const next = Array.from(
+          { length: cnt },
+          (_, i) => p.photoFilters?.[i] ?? null,
+        );
+        next[selectedSlot] = filter;
+        return { ...p, photoFilters: next };
+      });
+    },
+    [activePage, selectedSlot, updatePage],
+  );
+
+  const handleFrameChange = useCallback(
+    (frame: PhotoFrame | null) => {
+      if (!activePage || selectedSlot == null) return;
+      updatePage(activePage.id, (p) => {
+        const cnt = LAYOUTS[p.layoutId].slotCount;
+        const next = Array.from(
+          { length: cnt },
+          (_, i) => p.photoFrames?.[i] ?? null,
+        );
+        next[selectedSlot] = frame;
+        return { ...p, photoFrames: next };
+      });
+    },
+    [activePage, selectedSlot, updatePage],
+  );
+
+  const handleSlotCaptionChange = useCallback(
+    (caption: string) => {
+      if (!activePage || selectedSlot == null) return;
+      updatePage(activePage.id, (p) => {
+        const cnt = LAYOUTS[p.layoutId].slotCount;
+        const next = Array.from(
+          { length: cnt },
+          (_, i) => p.slotCaptions?.[i] ?? null,
+        );
+        next[selectedSlot] = caption || null;
+        return { ...p, slotCaptions: next };
+      });
+    },
+    [activePage, selectedSlot, updatePage],
+  );
+
+  /* ─── Background + pattern ─────────────────────────────── */
+
   const handleBackgroundChange = useCallback((color: string | undefined) => {
     if (!activePage) return;
     updatePage(activePage.id, (p) => ({ ...p, background: color }));
   }, [activePage, updatePage]);
+
+  const handlePatternChange = useCallback((pattern: BookPatternId | undefined) => {
+    if (!activePage) return;
+    updatePage(activePage.id, (p) => ({ ...p, backgroundPattern: pattern }));
+  }, [activePage, updatePage]);
+
+  /* ─── Stickers ─────────────────────────────────────────── */
+
+  const handleAddSticker = useCallback(
+    (sticker: Sticker) => {
+      if (!activePage) return;
+      updatePage(activePage.id, (p) => ({
+        ...p,
+        stickers: [...(p.stickers ?? []), sticker],
+      }));
+      setActiveTab('stickers');
+    },
+    [activePage, updatePage],
+  );
+
+  const handleRemoveSticker = useCallback(
+    (id: string) => {
+      if (!activePage) return;
+      updatePage(activePage.id, (p) => ({
+        ...p,
+        stickers: (p.stickers ?? []).filter((s) => s.id !== id),
+      }));
+      if (selectedStickerId === id) setSelectedStickerId(null);
+    },
+    [activePage, updatePage, selectedStickerId],
+  );
+
+  const handleUpdateSticker = useCallback(
+    (id: string, patch: Partial<Sticker>) => {
+      if (!activePage) return;
+      updatePage(activePage.id, (p) => ({
+        ...p,
+        stickers: (p.stickers ?? []).map((s) =>
+          s.id === id ? { ...s, ...patch } : s,
+        ),
+      }));
+    },
+    [activePage, updatePage],
+  );
+
+  const handleMoveSticker = useCallback(
+    (id: string, x: number, y: number) => {
+      if (!activePage) return;
+      updatePage(activePage.id, (p) => ({
+        ...p,
+        stickers: (p.stickers ?? []).map((s) =>
+          s.id === id ? { ...s, x, y } : s,
+        ),
+      }));
+    },
+    [activePage, updatePage],
+  );
 
   /* ─── PDF export ───────────────────────────────────────── */
   const handleExport = useCallback(async () => {
@@ -384,13 +508,24 @@ export default function PhotoBookPage() {
   }
 
   const theme = getTheme(state.theme);
+  const selectedPhotoUrl =
+    selectedSlot != null ? activePage.photoUrls[selectedSlot] ?? null : null;
+  const selectedFilter =
+    selectedSlot != null
+      ? (activePage.photoFilters?.[selectedSlot] ?? null)
+      : null;
+  const selectedFrame =
+    selectedSlot != null
+      ? (activePage.photoFrames?.[selectedSlot] ?? null)
+      : null;
+  const selectedCaption =
+    selectedSlot != null
+      ? (activePage.slotCaptions?.[selectedSlot] ?? '')
+      : '';
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="max-w-[1400px] mx-auto pb-16">
-        {/* Dark glass stage — required because the trip layout uses a
-            light pastel background; without this wrapper the white text
-            would be invisible. */}
         <div
           className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30 p-4 sm:p-6 space-y-5"
           style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
@@ -407,7 +542,6 @@ export default function PhotoBookPage() {
                 Volver a fotos
               </button>
 
-              {/* Theme dropdown */}
               <select
                 value={state.theme}
                 onChange={(e) => setState((s) => (s ? { ...s, theme: e.target.value as ThemeId } : s))}
@@ -420,7 +554,6 @@ export default function PhotoBookPage() {
                 ))}
               </select>
 
-              {/* Size selector */}
               <select
                 value={state.size}
                 onChange={(e) => setState((s) => (s ? { ...s, size: e.target.value as BookSize } : s))}
@@ -487,9 +620,9 @@ export default function PhotoBookPage() {
           </div>
 
           {/* ─── 3-column grid ─── */}
-          <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_300px] gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_320px] gap-4">
             {/* ─── Left rail: pages ─── */}
-            <aside className="lg:max-h-[78vh] overflow-y-auto pr-1 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <aside className="lg:max-h-[80vh] overflow-y-auto pr-1 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3">
               <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-2">
                 Páginas
               </div>
@@ -499,6 +632,7 @@ export default function PhotoBookPage() {
                 onSelectPage={(id) => {
                   setActivePageId(id);
                   setSelectedSlot(null);
+                  setSelectedStickerId(null);
                 }}
                 onReorder={handleReorderPages}
                 onDuplicate={handleDuplicatePage}
@@ -511,6 +645,7 @@ export default function PhotoBookPage() {
             <div
               ref={previewWrapRef}
               className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 flex items-start justify-center"
+              onClick={() => setSelectedStickerId(null)}
             >
               <PagePreview
                 page={activePage}
@@ -521,101 +656,161 @@ export default function PhotoBookPage() {
                 selectedSlot={selectedSlot}
                 onSelectSlot={setSelectedSlot}
                 onTextChange={handleTextChange}
+                selectedStickerId={selectedStickerId}
+                onSelectSticker={setSelectedStickerId}
+                onMoveSticker={handleMoveSticker}
               />
             </div>
 
-            {/* ─── Right panel: edit ─── */}
-            <aside className="lg:max-h-[78vh] overflow-y-auto pr-1 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-4">
-              {/* Theme */}
-              <section>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-2">
-                  Estilo
-                </div>
-                <ThemeSelector
-                  value={state.theme}
-                  onChange={(id) => setState((s) => (s ? { ...s, theme: id } : s))}
-                />
-              </section>
+            {/* ─── Right panel: tabbed editor ─── */}
+            <aside className="lg:max-h-[80vh] overflow-y-auto pr-1 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3 space-y-3">
+              {/* Tab strip */}
+              <div className="grid grid-cols-6 gap-1 p-1 rounded-lg bg-black/30 border border-white/[0.06]">
+                {TAB_DEFS.map(({ id, label, icon: Icon }) => {
+                  const active = id === activeTab;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setActiveTab(id)}
+                      title={label}
+                      aria-pressed={active}
+                      className={
+                        'flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-md transition-colors ' +
+                        (active
+                          ? 'bg-amber-300/15 text-amber-100'
+                          : 'text-white/55 hover:text-white hover:bg-white/[0.06]')
+                      }
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      <span className="text-[8.5px] leading-tight font-semibold">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-              {/* Layout */}
-              {activePage.layoutId !== 'cover' && (
-                <section>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-2">
-                    Layout
+              {/* ─── Tab content ─── */}
+              {activeTab === 'layout' && (
+                <section className="space-y-2">
+                  {activePage.layoutId === 'cover' ? (
+                    <p className="text-[11px] text-white/55 italic">
+                      La tapa tiene un layout fijo. Cambiá el layout de las
+                      páginas internas desde acá.
+                    </p>
+                  ) : (
+                    <LayoutPicker
+                      value={activePage.layoutId}
+                      onChange={handleLayoutChange}
+                    />
+                  )}
+                </section>
+              )}
+
+              {activeTab === 'photos' && (
+                <section className="space-y-3">
+                  {/* Pool */}
+                  <div>
+                    <div className="text-[9px] uppercase font-bold tracking-wider text-white/40 mb-1">
+                      Fotos del viaje
+                    </div>
+                    <PhotoPool
+                      photos={albumPhotos}
+                      query={poolQuery}
+                      onQueryChange={setPoolQuery}
+                      onTapPhoto={handleTapPhoto}
+                    />
                   </div>
-                  <LayoutPicker
-                    value={activePage.layoutId}
-                    onChange={handleLayoutChange}
+
+                  {/* Selected slot controls */}
+                  <div className="rounded-md bg-white/[0.04] border border-white/[0.08] p-2 space-y-3">
+                    <div className="text-[9px] uppercase font-bold tracking-wider text-white/60">
+                      {selectedSlot != null
+                        ? `Foto seleccionada · slot ${selectedSlot + 1}`
+                        : 'Tocá una foto del preview'}
+                    </div>
+                    {selectedSlot != null ? (
+                      <>
+                        <div>
+                          <div className="text-[10px] font-semibold text-white/65 mb-1">
+                            Filtro
+                          </div>
+                          <PhotoFilterPicker
+                            photoUrl={selectedPhotoUrl}
+                            value={selectedFilter}
+                            onChange={handleFilterChange}
+                          />
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-semibold text-white/65 mb-1">
+                            Marco
+                          </div>
+                          <PhotoFramePicker
+                            value={selectedFrame}
+                            onChange={handleFrameChange}
+                          />
+                        </div>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[10px] font-semibold text-white/65">
+                            Caption del slot
+                          </span>
+                          <input
+                            type="text"
+                            value={selectedCaption ?? ''}
+                            onChange={(e) => handleSlotCaptionChange(e.target.value)}
+                            placeholder="Texto bajo la foto (polaroid, etc.)"
+                            className="w-full px-2 py-1.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-white text-xs placeholder:text-white/30 focus:outline-none focus:border-amber-300/40"
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <p className="text-[10.5px] text-white/45 italic">
+                        Tocá una foto en el preview para aplicar filtros,
+                        marcos o un caption.
+                      </p>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {activeTab === 'text' && (
+                <section>
+                  <TextEditor page={activePage} onChange={handleTextChange} />
+                </section>
+              )}
+
+              {activeTab === 'stickers' && (
+                <section>
+                  <StickerPanel
+                    stickers={activePage.stickers ?? []}
+                    selectedStickerId={selectedStickerId}
+                    onAdd={handleAddSticker}
+                    onRemove={handleRemoveSticker}
+                    onSelect={setSelectedStickerId}
+                    onUpdate={handleUpdateSticker}
                   />
                 </section>
               )}
 
-              {/* Background */}
-              <section>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-2">
-                  Fondo
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {theme.swatches.map((sw) => {
-                    const active = (activePage.background || theme.background) === sw;
-                    return (
-                      <button
-                        key={sw}
-                        type="button"
-                        onClick={() => handleBackgroundChange(sw === theme.background ? undefined : sw)}
-                        className={
-                          'w-7 h-7 rounded-full border-2 transition-transform ' +
-                          (active ? 'border-amber-300 scale-110' : 'border-white/20')
-                        }
-                        style={{ background: sw }}
-                        aria-label={`Fondo ${sw}`}
-                        aria-pressed={active}
-                      />
-                    );
-                  })}
-                  <label
-                    className="w-7 h-7 rounded-full border-2 border-white/20 overflow-hidden cursor-pointer flex items-center justify-center"
-                    title="Color personalizado"
-                  >
-                    <input
-                      type="color"
-                      value={activePage.background || theme.background}
-                      onChange={(e) => handleBackgroundChange(e.target.value)}
-                      className="w-12 h-12 -m-2 cursor-pointer"
-                    />
-                  </label>
-                  {activePage.background && (
-                    <button
-                      type="button"
-                      onClick={() => handleBackgroundChange(undefined)}
-                      className="text-[10px] text-white/60 hover:text-white underline ml-1"
-                    >
-                      Restaurar
-                    </button>
-                  )}
-                </div>
-              </section>
+              {activeTab === 'background' && (
+                <section>
+                  <BackgroundPanel
+                    themeId={state.theme}
+                    backgroundColor={activePage.background}
+                    pattern={activePage.backgroundPattern}
+                    onColorChange={handleBackgroundChange}
+                    onPatternChange={handlePatternChange}
+                  />
+                </section>
+              )}
 
-              {/* Text */}
-              <section>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-2">
-                  Textos
-                </div>
-                <TextEditor page={activePage} onChange={handleTextChange} />
-              </section>
-
-              {/* Photo pool */}
-              <section>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-2">
-                  Fotos del viaje
-                </div>
-                <PhotoPool
-                  photos={albumPhotos}
-                  query={poolQuery}
-                  onQueryChange={setPoolQuery}
-                  onTapPhoto={handleTapPhoto}
-                />
-              </section>
+              {activeTab === 'style' && (
+                <section>
+                  <ThemeSelector
+                    value={state.theme}
+                    onChange={(id) => setState((s) => (s ? { ...s, theme: id } : s))}
+                  />
+                </section>
+              )}
             </aside>
           </div>
         </div>

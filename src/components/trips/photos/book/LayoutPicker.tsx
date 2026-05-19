@@ -25,7 +25,7 @@ interface MiniProps {
 }
 
 function MiniLayout({ layout, active }: MiniProps) {
-  // 56×80 thumbnail. The shape doesn't depend on the page size since this
+  // 52×76 thumbnail. The shape doesn't depend on the page size since this
   // is about layout *structure*, not aspect ratio.
   const W = 52;
   const H = 76;
@@ -51,6 +51,10 @@ function MiniLayout({ layout, active }: MiniProps) {
             width: s.w * W,
             height: s.h * H,
             background: active ? 'rgba(245, 158, 11, 0.35)' : 'rgba(255,255,255,0.55)',
+            borderRadius: layout.id === 'polaroid-grid' ? 1 : 0,
+            transform: layout.id === 'polaroid-grid'
+              ? `rotate(${(i % 2 === 0 ? -1 : 1) * 5}deg)`
+              : undefined,
           }}
         />
       ))}
