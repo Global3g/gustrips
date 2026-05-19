@@ -60,7 +60,6 @@ const MobileScrollHelper = dynamic(
   { ssr: false },
 );
 import LazySection from '@/components/trips/photos/LazySection';
-const PhotoFilmstrip = dynamic(() => import('@/components/trips/photos/PhotoFilmstrip'), { ssr: false, loading: () => null });
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
@@ -1090,10 +1089,6 @@ export default function PhotosPage() {
             </div>
           ) : (
             <div className="space-y-7">
-              {/* Movie-reel hero banner — random sample of trip photos drifting
-                  right→left. Hover (or focus) pauses the motion. */}
-              <PhotoFilmstrip photos={allPhotos} />
-
               {/* Sort filter — lets the user flip the order of the day/event
                   sections. Persisted per-trip so the choice survives reloads. */}
               <div className="flex items-center justify-between gap-3 -mt-2 flex-wrap">
