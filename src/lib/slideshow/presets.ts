@@ -59,17 +59,24 @@ export interface MusicOption {
 }
 
 /* ── Music tracks ───────────────────────────────────────────────────
-   All URLs point to assets.mixkit.co/music/preview/* — Mixkit's
-   royalty-free preview stream. They're served with CORS so HTMLAudio
-   can play them without proxying. If a track 404s for any reason the
-   viewer silently treats it as `none` (no music). */
+   Tracks are served as same-origin static assets from `/public/audio/`.
+   This avoids three classes of bug we had with the old Mixkit hot-
+   linked URLs:
+     1. Mixkit started returning 403 on direct preview URLs (CDN now
+        requires a Referer from mixkit.co). We can't influence that.
+     2. Even when a CDN responds 200, an unexpected `Content-Type`
+        (e.g. `application/xml` on error pages) silently breaks audio.
+     3. Same-origin requests sidestep CORS entirely — `<audio src>`
+        loads media without preflight, no third-party trust issues.
+   Source: Kevin MacLeod (incompetech.com), CC-BY 4.0. Re-encoded to
+   AAC 96 kbps (.m4a) — every modern browser plays AAC inside MP4. */
 export const MUSIC: MusicOption[] = [
-  { id: 'none',      label: 'Sin música',     description: 'Solo las fotos', url: null },
-  { id: 'chill',     label: 'Chill',          description: 'Relajada y luminosa', url: 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3' },
-  { id: 'cinematic', label: 'Cinematográfica', description: 'Épica y orquestal', url: 'https://assets.mixkit.co/music/preview/mixkit-cinematic-trailer-impact-1232.mp3' },
-  { id: 'happy',     label: 'Alegre',          description: 'Upbeat y soleada', url: 'https://assets.mixkit.co/music/preview/mixkit-happy-relax-day-642.mp3' },
-  { id: 'romantic',  label: 'Romántica',       description: 'Emocional, instrumental', url: 'https://assets.mixkit.co/music/preview/mixkit-love-and-romance-emotional-cinematic-622.mp3' },
-  { id: 'travel',    label: 'Viaje',           description: 'Aventurera, expansiva', url: 'https://assets.mixkit.co/music/preview/mixkit-adventure-of-life-538.mp3' },
+  { id: 'none',      label: 'Sin música',      description: 'Solo las fotos', url: null },
+  { id: 'chill',     label: 'Chill',           description: 'Relajada y luminosa', url: '/audio/chill.m4a' },
+  { id: 'cinematic', label: 'Cinematográfica', description: 'Épica y orquestal', url: '/audio/cinematic.m4a' },
+  { id: 'happy',     label: 'Alegre',          description: 'Upbeat y soleada', url: '/audio/happy.m4a' },
+  { id: 'romantic',  label: 'Romántica',       description: 'Emocional, instrumental', url: '/audio/romantic.m4a' },
+  { id: 'travel',    label: 'Viaje',           description: 'Aventurera, expansiva', url: '/audio/travel.m4a' },
 ];
 
 export interface CaptionOption {
@@ -113,7 +120,11 @@ export const DEFAULT_SETTINGS: SlideshowSettings = {
   durationPerSlide: 4,
   transition: 'fade',
   filter: 'none',
-  music: 'none',
+  // `chill` instead of `none` so first-time viewers get a soundtrack
+  // by default — they can flip it off from the editor or with `m` in
+  // the viewer. (Previously defaulted to `none`, which combined with
+  // dead Mixkit URLs gave users the impression "music is broken".)
+  music: 'chill',
   musicVolume: 50,
   caption: 'all',
   overlayTheme: 'auto',

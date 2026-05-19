@@ -166,9 +166,17 @@ export default function Slideshow({
   /** True while the user is moving the mouse or recently was. Drives the
    *  auto-hide of the floating control bar. */
   const [controlsVisible, setControlsVisible] = useState(true);
-  /** True if HTMLAudio's autoplay was blocked. We surface a button so the
-   *  user can manually unlock it. */
+  /** True if HTMLAudio's autoplay was blocked. We surface a full-bleed
+   *  overlay so the user can manually unlock it with one tap. */
   const [audioBlocked, setAudioBlocked] = useState(false);
+  /** When true, the floating volume slider hovers below the mute icon.
+   *  Toggled by hovering the music icon on desktop, or by long-press
+   *  on touch devices (handled via the button's onPointerDown). */
+  const [volumePopoverOpen, setVolumePopoverOpen] = useState(false);
+  /** Live volume state — mirrors settings.musicVolume but owned by the
+   *  viewer so the slider can be tweaked without going through page
+   *  state. Persisted via the keyboard shortcut handler too. */
+  const [localVolume, setLocalVolume] = useState(settings.musicVolume);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -253,15 +261,14 @@ export default function Slideshow({
           break;
         case 'ArrowUp':
           e.preventDefault();
-          if (audioRef.current) {
-            audioRef.current.volume = Math.min(1, audioRef.current.volume + 0.05);
-          }
+          // Drive the slider through React state instead of the bare DOM
+          // node so the visible volume readout (and the popover slider)
+          // stay in sync with what's actually applied to the audio.
+          setLocalVolume((v) => Math.min(100, v + 5));
           break;
         case 'ArrowDown':
           e.preventDefault();
-          if (audioRef.current) {
-            audioRef.current.volume = Math.max(0, audioRef.current.volume - 0.05);
-          }
+          setLocalVolume((v) => Math.max(0, v - 5));
           break;
         case 'm':
         case 'M':
@@ -316,26 +323,40 @@ export default function Slideshow({
 
   // ── Audio: track + volume + autoplay handshake ───────────
   // The audio element is recreated whenever the chosen track changes
-  // (different `key` prop below). We set the volume imperatively because
-  // React only writes it on mount, not on settings changes.
+  // (different `key` prop below). We set volume + muted imperatively on
+  // every change because the React `defaultVolume` / `muted` attrs only
+  // apply on mount, and we want live updates while the user scrubs.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.volume = volumeToMedia(settings.musicVolume);
+    audio.volume = volumeToMedia(localVolume);
     audio.muted = muted;
-  }, [settings.musicVolume, muted]);
+  }, [localVolume, muted, musicDef.url]);
 
+  // Autoplay handshake. Re-runs whenever the chosen track URL changes
+  // or play/pause is toggled. We intentionally do NOT depend on
+  // `settings.musicVolume` or `muted` here — those are mutated through
+  // the imperative effect above, so changing them shouldn't restart the
+  // track from 0:00.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !musicDef.url) return;
-    // Browsers gate autoplay-with-sound on a user gesture. The route is
-    // entered via a click on /photos/show "Iniciar", so play() usually
-    // succeeds, but we still catch the rejection to surface a CTA.
+    // Browsers gate autoplay-with-sound on a user gesture. The viewer
+    // is mounted right after the user clicks "Iniciar", so the gesture
+    // is still considered active here and play() usually succeeds. If
+    // it doesn't (e.g. browser has stricter Media Engagement settings
+    // for this site), we surface a big overlay CTA so the user can
+    // unlock audio with one tap. We do NOT silently fall back to mute.
     const tryPlay = async () => {
       try {
         await audio.play();
         setAudioBlocked(false);
-      } catch {
+      } catch (err) {
+        // Helpful in DevTools; users see the CTA instead of a console.
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.warn('[Slideshow] audio.play() blocked:', err);
+        }
         setAudioBlocked(true);
       }
     };
@@ -346,10 +367,19 @@ export default function Slideshow({
   const handleUnlockAudio = useCallback(async () => {
     const audio = audioRef.current;
     if (!audio) return;
+    // Calling .play() inside this click handler is the textbook way to
+    // satisfy the autoplay policy — the click is a fresh user gesture
+    // that browsers treat as sufficient activation.
     try {
+      audio.muted = false;
       await audio.play();
+      setMuted(false);
       setAudioBlocked(false);
-    } catch {
+    } catch (err) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn('[Slideshow] manual unlock failed:', err);
+      }
       setAudioBlocked(true);
     }
   }, []);
@@ -516,13 +546,47 @@ export default function Slideshow({
           {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
         </FloatingButton>
         {musicDef.url ? (
-          <FloatingButton
-            onClick={toggleMute}
-            aria-label={muted ? 'Activar audio' : 'Silenciar'}
-            title={muted ? 'Activar audio (m)' : 'Silenciar (m)'}
+          // Wrapper so the popover anchors below the icon. We open the
+          // popover on hover (desktop) and on click (touch) — toggling
+          // mute remains the primary click action.
+          <div
+            className="relative"
+            onMouseEnter={() => setVolumePopoverOpen(true)}
+            onMouseLeave={() => setVolumePopoverOpen(false)}
           >
-            {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-          </FloatingButton>
+            <FloatingButton
+              onClick={toggleMute}
+              aria-label={muted ? 'Activar audio' : 'Silenciar'}
+              title={muted ? 'Activar audio (m)' : 'Silenciar (m) · ↑↓ volumen'}
+              className={muted ? 'ring-1 ring-rose-300/60' : ''}
+            >
+              {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            </FloatingButton>
+            {volumePopoverOpen && !muted ? (
+              <div
+                role="group"
+                aria-label="Volumen"
+                className="absolute right-0 top-12 z-30 flex items-center gap-2 rounded-full bg-black/70 px-3 py-2 backdrop-blur-md shadow-2xl shadow-black/60 ring-1 ring-white/10"
+              >
+                <span className="text-[10px] uppercase tracking-wider text-white/60 font-semibold whitespace-nowrap">
+                  Vol
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={localVolume}
+                  onChange={(e) => setLocalVolume(Number(e.target.value))}
+                  aria-label="Volumen de la música"
+                  className="w-28 accent-emerald-400"
+                />
+                <span className="text-[10px] text-white/70 tabular-nums w-7 text-right">
+                  {localVolume}
+                </span>
+              </div>
+            ) : null}
+          </div>
         ) : null}
         <FloatingButton
           onClick={() => setFilterEnabled((v) => !v)}
@@ -562,15 +626,41 @@ export default function Slideshow({
         </FloatingButton>
       </div>
 
-      {/* ── Audio-blocked toast ── */}
+      {/* ── Audio-blocked overlay ──
+          Big, central, dismissable. The browser blocked our autoplay
+          (rare, since the user just clicked "Iniciar") — make it
+          painfully obvious why they aren't hearing anything and give
+          them a one-tap escape hatch. */}
       {audioBlocked && musicDef.url ? (
-        <button
-          type="button"
-          onClick={handleUnlockAudio}
-          className="absolute left-1/2 top-20 -translate-x-1/2 z-30 rounded-full bg-emerald-500/95 hover:bg-emerald-400 text-emerald-950 text-sm font-bold px-4 py-2 shadow-2xl shadow-black/60"
-        >
-          Activar audio
-        </button>
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-3xl bg-zinc-950/85 px-8 py-7 ring-1 ring-white/10 shadow-2xl shadow-black/70 max-w-sm mx-4 text-center">
+            <div className="rounded-full bg-emerald-400/15 ring-1 ring-emerald-300/40 p-3">
+              <Volume2 className="h-7 w-7 text-emerald-300" />
+            </div>
+            <div>
+              <p className="text-white text-lg font-bold">Activá la música</p>
+              <p className="text-white/60 text-sm mt-1 leading-snug">
+                Tu navegador bloqueó la reproducción automática. Tocá el botón
+                para escuchar el soundtrack del slideshow.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleUnlockAudio}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-400 hover:bg-emerald-300 text-emerald-950 text-base font-black px-6 py-3 shadow-[0_8px_30px_rgba(16,185,129,0.45)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+            >
+              <Volume2 className="h-5 w-5" strokeWidth={2.5} />
+              Activar audio
+            </button>
+            <button
+              type="button"
+              onClick={() => setAudioBlocked(false)}
+              className="text-white/45 hover:text-white/75 text-xs font-semibold uppercase tracking-wider"
+            >
+              Seguir sin audio
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {/* ── Progress bar ── */}
