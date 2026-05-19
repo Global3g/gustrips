@@ -51,7 +51,6 @@ import {
 } from '@/context/TripDataContext';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useToast } from '@/context/ToastContext';
-const Particles = dynamic(() => import('@/components/ui/Particles'), { ssr: false, loading: () => null });
 const TripInsights = dynamic(() => import('@/components/trips/TripInsights'), { ssr: false, loading: () => null });
 const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
 const ScrollScrubber = dynamic(() => import('@/components/trips/photos/ScrollScrubber'), { ssr: false, loading: () => null });
@@ -824,17 +823,9 @@ export default function PhotosPage() {
             trip layout's 3 background orbs, all repainting during the photo
             grid mount/scroll. Cut to the essentials so the GPU has budget
             for thumbnail decoding. */}
-        <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-          <Particles count={12} />
-          <div
-            className="absolute -top-12 left-1/4 w-96 h-96 rounded-full blur-2xl"
-            style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.20), transparent 70%)' }}
-          />
-          <div
-            className="absolute top-1/3 -right-12 w-80 h-80 rounded-full blur-2xl"
-            style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.18), transparent 70%)' }}
-          />
-        </div>
+        {/* Decoración eliminada — el canvas Particles + orbs blur eran el
+            cuello de scroll. El stage queda en el degradado dark del
+            container y suficiente. */}
 
         {/* Content */}
         <div className="relative z-10 p-5 sm:p-7 space-y-5">
@@ -1095,7 +1086,7 @@ export default function PhotosPage() {
               {/* Sort filter — sticky at the top of the photo content so the
                   4 outputs (Slideshow / Collage / Reel / Photo book) stay
                   reachable while the user scrolls through long photo lists. */}
-              <div className="sticky top-0 z-30 -mx-5 sm:-mx-7 px-5 sm:px-7 py-3 backdrop-blur-xl border-b border-white/[0.08] flex items-center justify-between gap-3 flex-wrap" style={{ background: 'rgba(13,27,46,0.85)' }}>
+              <div className="sticky top-0 z-30 -mx-5 sm:-mx-7 px-5 sm:px-7 py-3 border-b border-white/[0.08] flex items-center justify-between gap-3 flex-wrap" style={{ background: '#0d1b2e' }}>
                 <p className="text-white/55 text-xs font-medium">
                   {photoGroups.length} {photoGroups.length === 1 ? 'grupo' : 'grupos'} · {stats.total} {stats.total === 1 ? 'foto' : 'fotos'}
                 </p>

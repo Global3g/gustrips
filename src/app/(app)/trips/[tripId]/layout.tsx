@@ -123,7 +123,7 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
             doesn't block the initial paint of the page content. The image
             is heavily faded (0.15 opacity, desaturated) so showing it a few
             frames later than the chrome is not user-visible. */}
-        {trip?.coverImage && !pathname.includes('/itinerary') && (
+        {trip?.coverImage && !pathname.includes('/itinerary') && !pathname.includes('/photos') && (
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
