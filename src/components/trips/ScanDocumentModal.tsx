@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
-import { scanBulkDocument, type ScannedEvent } from '@/lib/utils/aiScanner';
+import { scanBulkDocument, ScanNetworkError, type ScannedEvent } from '@/lib/utils/aiScanner';
 import { EVENT_TYPES, CURRENCIES, MAX_FILE_SIZE } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
 import type { EventType } from '@/types';
@@ -553,11 +553,20 @@ export default function ScanDocumentModal({ open, onClose, onConfirm, defaultDat
     } catch (error) {
       console.error('Error scanning document:', error);
       setState('error');
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : 'No pudimos leer el documento, intenta con otro archivo'
-      );
+      // Network drops (ERR_CONNECTION_CLOSED, Failed to fetch) should
+      // tell the user to retry, not "intenta con otro archivo".
+      if (
+        error instanceof ScanNetworkError ||
+        (error instanceof TypeError && /failed to fetch|networkerror/i.test(error.message))
+      ) {
+        setErrorMessage('Se perdió la conexión con el servidor de AI. Revisá tu internet y volvé a tocar Reintentar.');
+      } else {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'No pudimos leer el documento, intenta con otro archivo'
+        );
+      }
     }
   }, [defaultDate]);
 

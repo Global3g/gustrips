@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v6-2026-05-16';
+const SW_VERSION = 'gustrips-v7-2026-05-20';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const IMAGE_CACHE = `${SW_VERSION}-images`;
@@ -418,7 +418,15 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(SHELL_CACHE);
       const cached = await cache.match(req);
       if (cached) return cached;
-      throw new Error('Offline and no cached response');
+      // Return a real Response (not a thrown Error) so the browser doesn't
+      // log an unhandled rejection in the console every time the user has
+      // a transient network drop. The caller still gets a non-ok response
+      // to handle.
+      return new Response('Offline — sin caché para este recurso.', {
+        status: 503,
+        statusText: 'Offline',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
   })());
 });

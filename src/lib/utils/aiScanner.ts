@@ -15,6 +15,43 @@ export interface ScannedEvent {
   details: Record<string, string>;
 }
 
+/** Custom error class so the UI can detect network drops vs API errors. */
+export class ScanNetworkError extends Error {
+  constructor(message = 'Network error') {
+    super(message);
+    this.name = 'ScanNetworkError';
+  }
+}
+
+/**
+ * Fetch wrapper that retries once on transient network errors. The Gemini
+ * API occasionally closes the connection mid-stream (ERR_CONNECTION_CLOSED);
+ * a single retry resolves most of those cases without bothering the user.
+ * After `attempts` failures, throws a `ScanNetworkError` so the UI can
+ * render a friendly retry CTA.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  attempts = 2,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (e) {
+      lastErr = e;
+      // Small backoff before retrying so we don't hammer a flaky API.
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+    }
+  }
+  throw new ScanNetworkError(
+    lastErr instanceof Error ? lastErr.message : 'Connection failed',
+  );
+}
+
 /**
  * Convert a File to base64 using FileReader (browser-compatible).
  */
@@ -47,7 +84,7 @@ export async function scanDocument(file: File): Promise<ScannedEvent> {
   const base64 = await fileToBase64(file);
   const mimeType = file.type || 'application/pdf';
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
@@ -177,7 +214,7 @@ export async function scanBulkDocument(file: File, tripYear?: number): Promise<S
   const base64 = await fileToBase64(file);
   const mimeType = file.type || 'application/pdf';
 
-  const response = await fetch(
+  const response = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
