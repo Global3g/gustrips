@@ -20,7 +20,16 @@ export type LayoutId =
   | '6-grid'
   | 'text-only';
 
-export type ThemeId = 'editorial' | 'magazine' | 'vintage' | 'modern';
+export type ThemeId =
+  | 'editorial'
+  | 'magazine'
+  | 'vintage'
+  | 'modern'
+  | 'brutalist'   // Neo-brutalist: oversized mono type + raw black borders
+  | 'y2k'         // Cybernetic neon gradients + holographic accents
+  | 'zine'        // Punk DIY collage with mixed type + washi tape
+  | 'glass'       // Glassmorphism: frosted translucent layers + soft blur
+  | 'psychedelic';// 70s maximalist: vibrant dreamy gradients + groovy frame
 
 export type BookSize = 'a4' | 'square' | 'letter';
 
@@ -84,7 +93,17 @@ export interface BookTheme {
   /** Apply sepia filter to photos. */
   sepia: boolean;
   /** Optional decorations. */
-  decorations: 'none' | 'dashed-borders' | 'corner-flourish' | 'paper-noise' | 'geometric-bars';
+  decorations:
+    | 'none'
+    | 'dashed-borders'
+    | 'corner-flourish'
+    | 'paper-noise'
+    | 'geometric-bars'
+    | 'mono-borders'      // brutalist: thick exposed black frames
+    | 'neon-glow'         // y2k: glowing accent strokes + scanlines
+    | 'tape-strips'       // zine: angled washi-tape corners
+    | 'glass-blur'        // glassmorphism: soft translucent overlay rect
+    | 'psychedelic-frame'; // maximalist: concentric color rings in corners
   /** A handful of curated swatches for quick page-bg picks. */
   swatches: string[];
 }

@@ -377,7 +377,17 @@ function placeholderFor(kind: 'title' | 'subtitle' | 'caption' | 'body' | 'date'
  * are best handled in the PDF where we control DPI.
  */
 function renderDecorations(
-  kind: 'none' | 'dashed-borders' | 'corner-flourish' | 'paper-noise' | 'geometric-bars',
+  kind:
+    | 'none'
+    | 'dashed-borders'
+    | 'corner-flourish'
+    | 'paper-noise'
+    | 'geometric-bars'
+    | 'mono-borders'
+    | 'neon-glow'
+    | 'tape-strips'
+    | 'glass-blur'
+    | 'psychedelic-frame',
   w: number,
   h: number,
   accent: string,
@@ -465,6 +475,128 @@ function renderDecorations(
       </>
     );
   }
+
+  /* ── Brutalist: thick black frame + corner label ── */
+  if (kind === 'mono-borders') {
+    return (
+      <>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 6,
+            border: `4px solid ${rule || '#000'}`,
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            padding: '2px 6px',
+            background: '#000',
+            color: '#fff',
+            fontFamily: '"Space Mono", monospace',
+            fontSize: 9,
+            letterSpacing: 1.5,
+            pointerEvents: 'none',
+          }}
+        >
+          {`PB · ${Math.round(w)}×${Math.round(h)}`}
+        </div>
+      </>
+    );
+  }
+
+  /* ── Y2K Neon glow + scanlines ── */
+  if (kind === 'neon-glow') {
+    return (
+      <>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 6,
+            border: `2px solid ${accent}`,
+            boxShadow: `0 0 18px ${accent}, inset 0 0 14px ${accent}55`,
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background:
+              'repeating-linear-gradient(180deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 4px)',
+          }}
+        />
+      </>
+    );
+  }
+
+  /* ── Zine: washi tape strips at corners ── */
+  if (kind === 'tape-strips') {
+    const tapeCommon: React.CSSProperties = {
+      position: 'absolute',
+      width: 56,
+      height: 16,
+      background: accent,
+      opacity: 0.85,
+      pointerEvents: 'none',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+    };
+    return (
+      <>
+        <div style={{ ...tapeCommon, top: -4, left: 22, transform: 'rotate(-12deg)' }} />
+        <div style={{ ...tapeCommon, top: -4, right: 22, transform: 'rotate(10deg)', background: '#0a0a0a' }} />
+        <div style={{ ...tapeCommon, bottom: -4, left: 22, transform: 'rotate(8deg)', background: '#ffd400' }} />
+        <div style={{ ...tapeCommon, bottom: -4, right: 22, transform: 'rotate(-10deg)' }} />
+      </>
+    );
+  }
+
+  /* ── Glass: soft translucent overlay rect with blur look ── */
+  if (kind === 'glass-blur') {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '6%',
+          left: '6%',
+          width: '88%',
+          height: '88%',
+          background: 'rgba(255,255,255,0.18)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
+          border: '1px solid rgba(255,255,255,0.4)',
+          borderRadius: 12,
+          pointerEvents: 'none',
+        }}
+      />
+    );
+  }
+
+  /* ── Psychedelic: concentric color rings in opposite corners ── */
+  if (kind === 'psychedelic-frame') {
+    const ring = (size: number, stroke: number, color: string, pos: React.CSSProperties): React.CSSProperties => ({
+      position: 'absolute',
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      border: `${stroke}px solid ${color}`,
+      pointerEvents: 'none',
+      ...pos,
+    });
+    return (
+      <>
+        <div style={ring(60, 4, '#fb923c', { top: -20, left: -20 })} />
+        <div style={ring(40, 3, '#f472b6', { top: -10, left: -10 })} />
+        <div style={ring(80, 5, '#a855f7', { bottom: -30, right: -30 })} />
+        <div style={ring(50, 3, '#38bdf8', { bottom: -15, right: -15 })} />
+      </>
+    );
+  }
+
   return null;
 }
 

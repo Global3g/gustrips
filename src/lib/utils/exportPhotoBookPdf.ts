@@ -219,6 +219,73 @@ function drawDecorations(ctx: DrawCtx) {
       const y = (s % 1000) / 1000 * pageH;
       pdf.circle(x, y, 0.15, 'F');
     }
+    return;
+  }
+
+  /* ── Brutalist: thick black frame ── */
+  if (theme.decorations === 'mono-borders') {
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(1.4);
+    pdf.rect(3, 3, pageW - 6, pageH - 6, 'S');
+    pdf.setLineWidth(0.4);
+    pdf.rect(6, 6, pageW - 12, pageH - 12, 'S');
+    return;
+  }
+
+  /* ── Y2K: thick accent border (PDF can't do real neon glow) ── */
+  if (theme.decorations === 'neon-glow') {
+    const [r, g, b] = hexToRgb(theme.accent);
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.9);
+    pdf.rect(4, 4, pageW - 8, pageH - 8, 'S');
+    pdf.setLineWidth(0.3);
+    pdf.rect(6.5, 6.5, pageW - 13, pageH - 13, 'S');
+    return;
+  }
+
+  /* ── Zine: tape strips drawn as small rotated rectangles in corners.
+        jsPDF can't rotate easily so we use color blocks aligned to corners. */
+  if (theme.decorations === 'tape-strips') {
+    const tapes: [number, number, number, number, string][] = [
+      [10, 4, 22, 5, theme.accent],
+      [pageW - 32, 4, 22, 5, '#0a0a0a'],
+      [10, pageH - 9, 22, 5, '#ffd400'],
+      [pageW - 32, pageH - 9, 22, 5, theme.accent],
+    ];
+    for (const [x, y, w, h, color] of tapes) {
+      const [r, g, bb] = hexToRgb(color);
+      pdf.setFillColor(r, g, bb);
+      pdf.rect(x, y, w, h, 'F');
+    }
+    return;
+  }
+
+  /* ── Glass: translucent overlay rect (jsPDF doesn't do real blur). */
+  if (theme.decorations === 'glass-blur') {
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(pageW * 0.06, pageH * 0.06, pageW * 0.88, pageH * 0.88, 'F');
+    const [r, g, b] = hexToRgb(theme.accent);
+    pdf.setDrawColor(r, g, b);
+    pdf.setLineWidth(0.3);
+    pdf.rect(pageW * 0.06, pageH * 0.06, pageW * 0.88, pageH * 0.88, 'S');
+    return;
+  }
+
+  /* ── Psychedelic: colored rings in opposite corners. */
+  if (theme.decorations === 'psychedelic-frame') {
+    const rings: [number, number, number, string][] = [
+      [4, 4, 18, '#fb923c'],
+      [4, 4, 12, '#f472b6'],
+      [pageW - 4, pageH - 4, 24, '#a855f7'],
+      [pageW - 4, pageH - 4, 16, '#38bdf8'],
+    ];
+    for (const [cx, cy, radius, color] of rings) {
+      const [r, g, bb] = hexToRgb(color);
+      pdf.setDrawColor(r, g, bb);
+      pdf.setLineWidth(0.8);
+      pdf.circle(cx, cy, radius, 'S');
+    }
+    return;
   }
 }
 
