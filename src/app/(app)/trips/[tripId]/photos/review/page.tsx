@@ -4,17 +4,24 @@
  * Photo Review page — Tinder-style triage flow.
  *
  * The user steps through every un-reviewed photo and decides whether to
- * keep, delete, favorite or skip it, optionally editing the caption inline.
+ * keep, delete or favorite it, optionally editing the caption inline.
+ * Advancing requires an explicit Keep or Delete — there is no Skip, so
+ * an accidental space/arrow press can't jump past a photo undecided.
  *
  * Data flow:
  *   - Pulls `albumPhotos` and review-mode mutations from the layout-level
  *     `TripDataProvider` (no new Firestore subscription opened here).
- *   - Builds a `queue` filtered/sorted in memory and steps through with
- *     a local `index`.
+ *   - Snapshots the queue at session start / filter change; we do NOT
+ *     recompute the queue when albumPhotos updates, otherwise the act
+ *     of "Keep"-ing photo A would shrink the unreviewed queue and the
+ *     next `index + 1` would land on photo C instead of B (visible to
+ *     the user as "advances too fast").
+ *   - Per-photo decisions are tracked in a Map so stats stay accurate
+ *     when the user goes back and changes their mind.
  *
  * Interaction surface:
- *   - Buttons: Delete (red, left) · Favorite (toggle) · Keep (green, right)
- *   - Keyboard: ← delete · → keep · ↓ / f favorite · ↑ / space skip
+ *   - Buttons: Delete (red, left) · Back (center) · Favorite (toggle) · Keep (green, right)
+ *   - Keyboard: ← delete · → keep · ↓ / f favorite · Backspace back
  *     · c focus textarea · Esc blur textarea · Cmd/Ctrl+Enter keep
  *   - Touch:  swipe right = keep, swipe left = delete (Tinder convention).
  *   - Voice:  optional dictation appends to the caption.
@@ -40,7 +47,7 @@ import {
   Mic,
   MicOff,
   Filter,
-  SkipForward,
+  Undo2,
   Loader2,
 } from 'lucide-react';
 
@@ -58,16 +65,14 @@ import type { AlbumPhoto, TripEvent } from '@/types';
 /* ─────────────────────────────────────────────────────────────────────── */
 
 type ReviewFilter = 'unreviewed' | 'all' | 'favorites';
-type ActionKind = 'keep' | 'delete' | 'favorite' | 'skip';
+type ActionKind = 'keep' | 'delete' | 'favorite';
+type Decision = 'kept' | 'deleted';
 
 interface ReviewStats {
   kept: number;
   deleted: number;
   favorited: number;
-  skipped: number;
 }
-
-const INITIAL_STATS: ReviewStats = { kept: 0, deleted: 0, favorited: 0, skipped: 0 };
 
 const CAPTION_MAX = 500;
 const SWIPE_THRESHOLD = 110;
@@ -131,11 +136,24 @@ export default function PhotoReviewPage() {
   const [index, setIndex] = useState(0);
   const [caption, setCaption] = useState('');
   const [originalCaption, setOriginalCaption] = useState('');
-  const [stats, setStats] = useState<ReviewStats>(INITIAL_STATS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [captionSavedFlash, setCaptionSavedFlash] = useState(false);
   const [busy, setBusy] = useState(false);
   const [direction, setDirection] = useState<1 | -1>(1);
+
+  // Snapshot of the queue captured at session start / filter change.
+  // We deliberately do NOT recompute when albumPhotos updates — that would
+  // shrink the queue after every Keep/Delete (since markReviewed flips
+  // `reviewed:true`), causing the next `index + 1` to jump TWO photos
+  // forward instead of one. Symptom the user reports as "advances too fast".
+  const [queue, setQueue] = useState<AlbumPhoto[]>([]);
+  const queueInitialized = useRef(false);
+
+  // Per-photo decisions. The map persists across "Atrás" navigation so
+  // stats stay accurate when the user goes back and changes their mind
+  // (the old action is overwritten, not double-counted).
+  const [decisions, setDecisions] = useState<Map<string, Decision>>(() => new Map());
+  const [favoritedUrls, setFavoritedUrls] = useState<Set<string>>(() => new Set());
 
   // Last action retained for symmetry with the toast undo. We don't surface
   // a global "undo last" — the delete toast already covers the destructive
@@ -144,10 +162,42 @@ export default function PhotoReviewPage() {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  /* ─── Queue snapshot lifecycle ─────────────────────────────────────── */
+  // Re-snapshot on filter change. setIndex(0) resets the cursor.
+  useEffect(() => {
+    if (!queueInitialized.current && albumPhotos.length === 0) return;
+    setQueue(buildQueue(albumPhotos, filter));
+    setIndex(0);
+    setDecisions(new Map());
+    setFavoritedUrls(new Set());
+    queueInitialized.current = true;
+    // albumPhotos intentionally omitted — see the comment on `queue` above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  // Initial snapshot once Firestore has delivered albumPhotos. Runs at most
+  // once per page mount; after that the queue is stable until filter change.
+  useEffect(() => {
+    if (queueInitialized.current) return;
+    if (albumPhotos.length === 0) return;
+    setQueue(buildQueue(albumPhotos, filter));
+    queueInitialized.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [albumPhotos]);
+
   /* ─── Derived data ─────────────────────────────────────────────────── */
-  const queue = useMemo(() => buildQueue(albumPhotos, filter), [albumPhotos, filter]);
   const currentPhoto: AlbumPhoto | undefined = queue[index];
   const showSummary = queue.length > 0 && index >= queue.length;
+
+  const stats = useMemo<ReviewStats>(() => {
+    let kept = 0;
+    let deleted = 0;
+    for (const action of decisions.values()) {
+      if (action === 'kept') kept++;
+      else if (action === 'deleted') deleted++;
+    }
+    return { kept, deleted, favorited: favoritedUrls.size };
+  }, [decisions, favoritedUrls]);
 
   const eventsById = useMemo(() => {
     const m = new Map<string, TripEvent>();
@@ -231,12 +281,22 @@ export default function PhotoReviewPage() {
   /* ─── Actions ─────────────────────────────────────────────────────── */
   const handleKeep = useCallback(async () => {
     if (!currentPhoto || busy) return;
+    const photoSnapshot = currentPhoto;
     setBusy(true);
     try {
-      await persistCaptionIfDirty(currentPhoto, caption, { silent: true });
-      await markReviewed(currentPhoto, true);
-      setStats((s) => ({ ...s, kept: s.kept + 1 }));
-      setLastAction({ kind: 'keep', photo: currentPhoto });
+      await persistCaptionIfDirty(photoSnapshot, caption, { silent: true });
+      await markReviewed(photoSnapshot, true);
+      // If the photo had previously been soft-deleted (user changed mind
+      // via Atrás), restore it.
+      if (decisions.get(photoSnapshot.url) === 'deleted') {
+        await restorePhoto(photoSnapshot);
+      }
+      setDecisions((m) => {
+        const next = new Map(m);
+        next.set(photoSnapshot.url, 'kept');
+        return next;
+      });
+      setLastAction({ kind: 'keep', photo: photoSnapshot });
       advance();
     } catch (err) {
       console.warn('[review] keep failed', err);
@@ -244,7 +304,17 @@ export default function PhotoReviewPage() {
     } finally {
       setBusy(false);
     }
-  }, [currentPhoto, busy, caption, persistCaptionIfDirty, markReviewed, advance, toast]);
+  }, [
+    currentPhoto,
+    busy,
+    caption,
+    decisions,
+    persistCaptionIfDirty,
+    markReviewed,
+    restorePhoto,
+    advance,
+    toast,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!currentPhoto || busy) return;
@@ -254,7 +324,11 @@ export default function PhotoReviewPage() {
       await persistCaptionIfDirty(photoSnapshot, caption, { silent: true });
       await softDelete(photoSnapshot);
       await markReviewed(photoSnapshot, true);
-      setStats((s) => ({ ...s, deleted: s.deleted + 1 }));
+      setDecisions((m) => {
+        const next = new Map(m);
+        next.set(photoSnapshot.url, 'deleted');
+        return next;
+      });
       setLastAction({ kind: 'delete', photo: photoSnapshot });
 
       toast('Foto eliminada', 'info', {
@@ -262,7 +336,11 @@ export default function PhotoReviewPage() {
         onClick: async () => {
           try {
             await restorePhoto(photoSnapshot);
-            setStats((s) => ({ ...s, deleted: Math.max(0, s.deleted - 1) }));
+            setDecisions((m) => {
+              const next = new Map(m);
+              next.delete(photoSnapshot.url);
+              return next;
+            });
           } catch (err) {
             console.warn('[review] restore failed', err);
             toast('No se pudo restaurar la foto', 'error');
@@ -291,16 +369,20 @@ export default function PhotoReviewPage() {
 
   const handleFavoriteToggle = useCallback(async () => {
     if (!currentPhoto || busy) return;
-    const wasFavorite = currentPhoto.favorite === true;
+    const photoSnapshot = currentPhoto;
+    const wasFavorite = photoSnapshot.favorite === true;
     const next = !wasFavorite;
     setBusy(true);
     try {
-      await persistCaptionIfDirty(currentPhoto, caption, { silent: true });
-      await markFavorite(currentPhoto, next);
-      if (!wasFavorite && next) {
-        setStats((s) => ({ ...s, favorited: s.favorited + 1 }));
-      }
-      setLastAction({ kind: 'favorite', photo: currentPhoto });
+      await persistCaptionIfDirty(photoSnapshot, caption, { silent: true });
+      await markFavorite(photoSnapshot, next);
+      setFavoritedUrls((s) => {
+        const ns = new Set(s);
+        if (next) ns.add(photoSnapshot.url);
+        else ns.delete(photoSnapshot.url);
+        return ns;
+      });
+      setLastAction({ kind: 'favorite', photo: photoSnapshot });
     } catch (err) {
       console.warn('[review] favorite failed', err);
       toast('No se pudo actualizar la favorita', 'error');
@@ -309,18 +391,23 @@ export default function PhotoReviewPage() {
     }
   }, [currentPhoto, busy, caption, persistCaptionIfDirty, markFavorite, toast]);
 
-  const handleSkip = useCallback(async () => {
-    if (!currentPhoto || busy) return;
+  /** Step back to the previous photo. Persists the in-flight caption first
+   *  so we don't lose typed-but-unsaved text. Does NOT undo the previous
+   *  decision in Firestore — if the user wants to change it, they pick
+   *  Keep or Delete again and that overwrites. */
+  const handleBack = useCallback(async () => {
+    if (index === 0 || busy) return;
     setBusy(true);
     try {
-      await persistCaptionIfDirty(currentPhoto, caption, { silent: true });
-      setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
-      setLastAction({ kind: 'skip', photo: currentPhoto });
-      advance();
+      if (currentPhoto) {
+        await persistCaptionIfDirty(currentPhoto, caption, { silent: true });
+      }
+      setDirection(-1);
+      setIndex((i) => Math.max(0, i - 1));
     } finally {
       setBusy(false);
     }
-  }, [currentPhoto, busy, caption, persistCaptionIfDirty, advance]);
+  }, [index, busy, currentPhoto, caption, persistCaptionIfDirty]);
 
   /* ─── Filter changes reset position ─────────────────────────────────
      Done in the handler (vs. an effect) to keep the render → state cycle
@@ -382,10 +469,9 @@ export default function PhotoReviewPage() {
           e.preventDefault();
           void handleKeep();
           break;
-        case 'ArrowUp':
-        case ' ':
+        case 'Backspace':
           e.preventDefault();
-          void handleSkip();
+          void handleBack();
           break;
         case 'ArrowDown':
         case 'f':
@@ -405,7 +491,7 @@ export default function PhotoReviewPage() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [currentPhoto, showSummary, handleKeep, handleDelete, handleSkip, handleFavoriteToggle]);
+  }, [currentPhoto, showSummary, handleKeep, handleDelete, handleBack, handleFavoriteToggle]);
 
   /* ─── Preload next photo ──────────────────────────────────────────── */
   useEffect(() => {
@@ -439,8 +525,9 @@ export default function PhotoReviewPage() {
     router.push(`/trips/${tripId}/photos`);
   }, [router, tripId]);
 
-  const continueWithSkipped = useCallback(() => {
-    setStats(INITIAL_STATS);
+  const restartUnreviewed = useCallback(() => {
+    setDecisions(new Map());
+    setFavoritedUrls(new Set());
     setIndex(0);
     setFilter('unreviewed');
   }, []);
@@ -449,7 +536,7 @@ export default function PhotoReviewPage() {
 
   // Empty state (no photos to review at all under the current filter, and
   // we haven't gone through a session yet)
-  const emptyOnLoad = queue.length === 0 && stats.kept + stats.deleted + stats.skipped === 0;
+  const emptyOnLoad = queue.length === 0 && stats.kept + stats.deleted === 0;
 
   return (
     <div
@@ -572,9 +659,8 @@ export default function PhotoReviewPage() {
         <SummaryView
           stats={stats}
           filter={filter}
-          remainingSkipped={stats.skipped > 0}
           onBackToAlbum={goBack}
-          onContinue={continueWithSkipped}
+          onRestart={restartUnreviewed}
         />
       ) : currentPhoto ? (
         <main className="flex-1 flex flex-col min-h-0 px-3 sm:px-6 pb-4">
@@ -738,12 +824,13 @@ export default function PhotoReviewPage() {
 
             <button
               type="button"
-              onClick={handleSkip}
-              disabled={busy}
-              aria-label="Saltar"
-              className="hidden sm:inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-white/65 hover:text-white transition-all disabled:opacity-50"
+              onClick={handleBack}
+              disabled={busy || index === 0}
+              aria-label="Atrás"
+              title="Atrás (Backspace)"
+              className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-white/65 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              <SkipForward className="w-5 h-5" />
+              <Undo2 className="w-5 h-5" />
             </button>
 
             <button
@@ -773,8 +860,8 @@ export default function PhotoReviewPage() {
               conservar
             </span>
             <span>
-              <kbd className="bg-white/[0.06] px-1.5 py-0.5 rounded text-white/65 font-mono">↑</kbd>{' '}
-              saltar
+              <kbd className="bg-white/[0.06] px-1.5 py-0.5 rounded text-white/65 font-mono">⌫</kbd>{' '}
+              atrás
             </span>
             <span>
               <kbd className="bg-white/[0.06] px-1.5 py-0.5 rounded text-white/65 font-mono">f</kbd>{' '}
@@ -803,26 +890,20 @@ export default function PhotoReviewPage() {
 interface SummaryViewProps {
   stats: ReviewStats;
   filter: ReviewFilter;
-  remainingSkipped: boolean;
   onBackToAlbum: () => void;
-  onContinue: () => void;
+  onRestart: () => void;
 }
 
-function SummaryView({
-  stats,
-  filter,
-  remainingSkipped,
-  onBackToAlbum,
-  onContinue,
-}: SummaryViewProps) {
+function SummaryView({ stats, filter, onBackToAlbum, onRestart }: SummaryViewProps) {
   const items: { label: string; value: number; accent: string }[] = [
     { label: 'Conservadas', value: stats.kept, accent: 'text-emerald-300' },
     { label: 'Eliminadas', value: stats.deleted, accent: 'text-rose-300' },
     { label: 'Favoritas', value: stats.favorited, accent: 'text-amber-300' },
-    { label: 'Pospuestas', value: stats.skipped, accent: 'text-white/70' },
   ];
 
-  const showContinue = remainingSkipped || filter === 'unreviewed';
+  // Offer a "review again" only if there might still be unreviewed items
+  // (i.e. when we just finished a filtered subset like 'favorites' or 'all').
+  const showRestart = filter !== 'unreviewed';
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
@@ -832,7 +913,7 @@ function SummaryView({
         </p>
         <h1 className="text-white text-3xl sm:text-4xl font-bold mb-8">Revisión terminada</h1>
 
-        <div className="grid grid-cols-2 gap-3 mb-10">
+        <div className="grid grid-cols-3 gap-3 mb-10">
           {items.map((item) => (
             <div
               key={item.label}
@@ -841,7 +922,7 @@ function SummaryView({
               <span className={classNames('text-3xl font-bold tabular-nums', item.accent)}>
                 {item.value}
               </span>
-              <span className="text-white/55 text-xs font-medium">{item.label}</span>
+              <span className="text-white/55 text-[11px] font-medium">{item.label}</span>
             </div>
           ))}
         </div>
@@ -854,13 +935,13 @@ function SummaryView({
           >
             Volver al álbum
           </button>
-          {showContinue && (
+          {showRestart && (
             <button
               type="button"
-              onClick={onContinue}
+              onClick={onRestart}
               className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-white/85 text-sm font-semibold transition-colors"
             >
-              Continuar con las pospuestas
+              Pasar las que falten por revisar
             </button>
           )}
         </div>
