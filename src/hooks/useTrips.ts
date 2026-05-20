@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   collection,
   query,
+  where,
   orderBy,
   onSnapshot,
   addDoc,
@@ -43,35 +44,75 @@ export function useTrips(): UseTripsReturn {
     const tripsRef = collection(db, 'trips');
     const uid = user.uid;
 
-    const q = query(
+    // After tightening the security rules to enforce per-trip ownership,
+    // Firestore rejects unrestricted queries on /trips with "Missing or
+    // insufficient permissions" because the query *could* return docs the
+    // user can't read. We must scope the query by structure to match
+    // exactly what the rules allow.
+    //
+    // We run two scoped subscriptions in parallel and merge them in the
+    // client: one for trips this user created, one for trips they were
+    // invited to. Two listeners use slightly more quota than one, but the
+    // alternative (a single `or()` query) needs composite indexes for each
+    // branch — cheaper to maintain this way for a tens-of-trips dataset.
+    const ownedQuery = query(
       tripsRef,
+      where('createdBy', '==', uid),
+      orderBy('createdAt', 'desc'),
+    );
+    const sharedQuery = query(
+      tripsRef,
+      where('travelerIds', 'array-contains', uid),
       orderBy('createdAt', 'desc'),
     );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const tripsData: Trip[] = snapshot.docs
-          .map((d) => ({
-            id: d.id,
-            ...d.data(),
-          }) as Trip)
-          .filter(
-            (t) => t.createdBy === uid || (t.travelerIds?.includes(uid) ?? false),
-          );
+    let owned: Trip[] = [];
+    let shared: Trip[] = [];
+    let ownedLoaded = false;
+    let sharedLoaded = false;
 
-        setTrips(tripsData);
-        setLoading(false);
-        setError(null);
+    const emit = () => {
+      // Merge + dedupe by id (the user can be BOTH owner and traveler).
+      const byId = new Map<string, Trip>();
+      for (const t of owned) byId.set(t.id, t);
+      for (const t of shared) if (!byId.has(t.id)) byId.set(t.id, t);
+      const merged = Array.from(byId.values()).sort((a, b) =>
+        (b.createdAt ?? '').localeCompare(a.createdAt ?? ''),
+      );
+      setTrips(merged);
+      if (ownedLoaded && sharedLoaded) setLoading(false);
+      setError(null);
+    };
+
+    const handleError = (label: string) => (err: unknown) => {
+      console.error(`Error al escuchar viajes (${label}):`, err);
+      setError('Error al cargar los viajes');
+      setLoading(false);
+    };
+
+    const unsubOwned = onSnapshot(
+      ownedQuery,
+      (snapshot) => {
+        owned = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Trip);
+        ownedLoaded = true;
+        emit();
       },
-      (err) => {
-        console.error('Error al escuchar viajes:', err);
-        setError('Error al cargar los viajes');
-        setLoading(false);
+      handleError('owned'),
+    );
+    const unsubShared = onSnapshot(
+      sharedQuery,
+      (snapshot) => {
+        shared = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Trip);
+        sharedLoaded = true;
+        emit();
       },
+      handleError('shared'),
     );
 
-    return () => unsubscribe();
+    return () => {
+      unsubOwned();
+      unsubShared();
+    };
   }, [user?.uid]);
 
   const createTrip = useCallback(
