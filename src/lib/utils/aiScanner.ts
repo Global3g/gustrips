@@ -266,6 +266,8 @@ IMPORTANT:
 - Include cabin class in details.cabin if found
 - Include ALL rows/stops/segments, don't skip any
 - Do NOT duplicate events. Each distinct flight/stop should appear only ONCE
+- MULTIPLE PASSENGERS, SAME TRIP: If the document shows the SAME journey (same date + same departure time + same origin + same destination) repeated for different passenger names (e.g. one ticket per person), MERGE them into a SINGLE event. List every passenger name in details.passengers (comma-separated). Do NOT create a separate event per passenger.
+- ROUND TRIP / IDA Y VUELTA: A return trip is TWO events — one outbound and one inbound. Each direction can still group multiple passengers.
 - Title should be in Spanish when possible
 - Return ONLY the JSON array` }
           ],
@@ -361,5 +363,66 @@ IMPORTANT:
     throw new Error('Could not extract any events from the document');
   }
 
-  return cleaned;
+  // Safety net: even with the explicit instruction in the prompt, Gemini
+  // sometimes still emits one event per passenger ticket. Collapse any
+  // events that share date + startTime + origin + destination (or
+  // fromLocation/toLocation) into a single event, merging the passenger
+  // lists. This catches the "4 train tickets → 4 events" case the user
+  // reported (should have been 2 events: outbound + return).
+  return mergeDuplicateJourneys(cleaned);
+}
+
+/** Merge events that represent the same journey but different
+ *  passengers. Keys off date + startTime + a normalised origin/destination
+ *  pair. Passenger names from `details.passengers` are concatenated. */
+function mergeDuplicateJourneys(events: ScannedEvent[]): ScannedEvent[] {
+  const groups = new Map<string, ScannedEvent>();
+  const norm = (s: unknown): string => String(s ?? '').trim().toLowerCase();
+  for (const ev of events) {
+    const origin = norm(ev.details?.origin || ev.details?.fromLocation);
+    const destination = norm(ev.details?.destination || ev.details?.toLocation);
+    // Only merge when we have enough signal — at minimum date + start time
+    // and either an origin/destination pair OR a shared title.
+    const tripletKey = origin && destination
+      ? `${ev.date}|${ev.startTime ?? ''}|${origin}|${destination}`
+      : `${ev.date}|${ev.startTime ?? ''}|${norm(ev.title)}|${norm(ev.location)}`;
+    const key = `${ev.type}:${tripletKey}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, ev);
+      continue;
+    }
+    // Merge passenger lists.
+    const existingP = norm(existing.details?.passengers);
+    const newP = norm(ev.details?.passengers);
+    if (newP && newP !== existingP) {
+      const combined = existingP
+        ? Array.from(new Set([...existingP.split(/[,;]+/), ...newP.split(/[,;]+/)].map((s) => s.trim()).filter(Boolean))).join(', ')
+        : ev.details?.passengers || '';
+      if (combined) {
+        existing.details = { ...existing.details, passengers: combined };
+      }
+    }
+    // Sum costs (each passenger paid their own ticket).
+    if (typeof ev.cost === 'number' && typeof existing.cost === 'number') {
+      existing.cost = existing.cost + ev.cost;
+    } else if (typeof ev.cost === 'number' && existing.cost == null) {
+      existing.cost = ev.cost;
+    }
+    // Prefer a non-empty confirmation code / seat info — keep first seen.
+    if (ev.details?.confirmationCode && !existing.details?.confirmationCode) {
+      existing.details = { ...existing.details, confirmationCode: ev.details.confirmationCode };
+    }
+    if (ev.details?.seatNumber) {
+      const existingSeats = norm(existing.details?.seatNumber);
+      const newSeats = norm(ev.details.seatNumber);
+      if (newSeats && newSeats !== existingSeats) {
+        existing.details = {
+          ...existing.details,
+          seatNumber: existingSeats ? `${existing.details?.seatNumber}, ${ev.details.seatNumber}` : ev.details.seatNumber,
+        };
+      }
+    }
+  }
+  return Array.from(groups.values());
 }
