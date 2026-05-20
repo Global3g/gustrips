@@ -2,6 +2,16 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const webpush = require('web-push');
+const Sentry = require('@sentry/node');
+
+const SENTRY_DSN = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: process.env.SENTRY_ENV || 'production',
+    tracesSampleRate: 0.1,
+  });
+}
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -14,13 +24,16 @@ const db = admin.firestore();
    of this file (notably checkEventReminders) still loads. */
 let tripshistoryApp = null;
 try {
-  // eslint-disable-next-line global-require
+   
   tripshistoryApp = require('./tripshistory/dist/index').default;
 } catch (e) {
   console.warn(
     '[tripshistory] dist/ not found — run `cd functions/tripshistory && npm run build` before deploy.',
     e && e.message ? e.message : e,
   );
+  Sentry.captureException(e instanceof Error ? e : new Error(String(e)), {
+    tags: { fn: 'tripshistory-load' },
+  });
 }
 
 if (tripshistoryApp) {
@@ -93,7 +106,7 @@ exports.heicToJpeg = onRequest(
       // sharp uses libvips compiled with libheif including the HEVC decoder
       // (the heic-convert package's pure-JS libheif build cannot decode
       // HEVC 10-bit, which is iPhone 12+ default).
-      // eslint-disable-next-line global-require
+       
       const sharp = require('sharp');
       const jpegBuffer = await sharp(inputBuffer, { failOn: 'none' })
         .rotate() // auto-rotate from EXIF
@@ -105,6 +118,7 @@ exports.heicToJpeg = onRequest(
       res.status(200).send(jpegBuffer);
     } catch (err) {
       console.error('[heicToJpeg] failure', err);
+      Sentry.captureException(err, { tags: { fn: 'heicToJpeg' } });
       res.status(500).json({
         error: 'conversion-failed',
         message: err && err.message ? err.message : 'unknown',
@@ -257,6 +271,9 @@ exports.migrateAlbumPhotos = onRequest(
           updatedAt: new Date().toISOString(),
         }).catch((err) => {
           console.warn('[migrateAlbumPhotos] trip update failed', tripId, err.message);
+          Sentry.captureException(err, {
+            tags: { fn: 'migrateAlbumPhotos', stage: 'trip-update', tripId },
+          });
         });
 
         perTrip.push({
@@ -279,6 +296,7 @@ exports.migrateAlbumPhotos = onRequest(
       });
     } catch (err) {
       console.error('[migrateAlbumPhotos] fatal', err);
+      Sentry.captureException(err, { tags: { fn: 'migrateAlbumPhotos' } });
       res.status(500).json({ error: 'fatal', message: err && err.message });
     }
   },
@@ -301,6 +319,9 @@ exports.checkEventReminders = onSchedule(
 
     if (!vapidPublic || !vapidPrivate) {
       console.error('VAPID keys not configured');
+      Sentry.captureException(new Error('VAPID keys not configured'), {
+        tags: { fn: 'checkEventReminders', stage: 'vapid-config' },
+      });
       return;
     }
 
@@ -315,73 +336,100 @@ exports.checkEventReminders = onSchedule(
     let sent = 0;
 
     for (const tripDoc of tripsSnap.docs) {
-      const trip = tripDoc.data();
+      try {
+        const trip = tripDoc.data();
 
-      // Skip trips not in active date range
-      if (todayDate < trip.startDate || todayDate > trip.endDate) continue;
+        // Skip trips not in active date range
+        if (todayDate < trip.startDate || todayDate > trip.endDate) continue;
 
-      // Get today's events
-      const eventsSnap = await db
-        .collection(`trips/${tripDoc.id}/events`)
-        .where('date', '==', todayDate)
-        .get();
-
-      const upcoming = eventsSnap.docs.filter((d) => {
-        const ev = d.data();
-        if (!ev.startTime || ev.deletedAt) return false;
-        return ev.startTime >= windowStartTime && ev.startTime <= windowEndTime;
-      });
-
-      if (upcoming.length === 0) continue;
-
-      // Collect unique member UIDs
-      const uids = new Set([trip.createdBy]);
-      if (trip.travelerIds) trip.travelerIds.forEach((id) => uids.add(id));
-
-      for (const uid of uids) {
-        const subsSnap = await db
-          .collection('pushSubscriptions')
-          .where('userId', '==', uid)
+        // Get today's events
+        const eventsSnap = await db
+          .collection(`trips/${tripDoc.id}/events`)
+          .where('date', '==', todayDate)
           .get();
 
-        if (subsSnap.empty) continue;
+        const upcoming = eventsSnap.docs.filter((d) => {
+          const ev = d.data();
+          if (!ev.startTime || ev.deletedAt) return false;
+          return ev.startTime >= windowStartTime && ev.startTime <= windowEndTime;
+        });
 
-        for (const eventDoc of upcoming) {
-          const ev = eventDoc.data();
+        if (upcoming.length === 0) continue;
 
-          const payload = JSON.stringify({
-            title: `${trip.title} — en 30 min`,
-            body: `${ev.startTime} — ${ev.title}${ev.location ? ` en ${ev.location}` : ''}`,
-            icon: '/logo.png',
-            badge: '/logo.png',
-            tag: `event-${eventDoc.id}`,
-            data: {
-              url: `/trips/${tripDoc.id}/itinerary`,
-              tripId: tripDoc.id,
-              eventId: eventDoc.id,
-            },
-          });
+        // Collect unique member UIDs
+        const uids = new Set([trip.createdBy]);
+        if (trip.travelerIds) trip.travelerIds.forEach((id) => uids.add(id));
 
-          for (const subDoc of subsSnap.docs) {
-            const { subscription } = subDoc.data();
-            try {
-              await webpush.sendNotification(subscription, payload);
-              sent++;
-            } catch (err) {
-              if (err.statusCode === 410) {
-                await subDoc.ref.delete();
-              } else {
-                console.error('Push error:', err.message);
+        for (const uid of uids) {
+          const subsSnap = await db
+            .collection('pushSubscriptions')
+            .where('userId', '==', uid)
+            .get();
+
+          if (subsSnap.empty) continue;
+
+          for (const eventDoc of upcoming) {
+            const ev = eventDoc.data();
+
+            const payload = JSON.stringify({
+              title: `${trip.title} — en 30 min`,
+              body: `${ev.startTime} — ${ev.title}${ev.location ? ` en ${ev.location}` : ''}`,
+              icon: '/logo.png',
+              badge: '/logo.png',
+              tag: `event-${eventDoc.id}`,
+              data: {
+                url: `/trips/${tripDoc.id}/itinerary`,
+                tripId: tripDoc.id,
+                eventId: eventDoc.id,
+              },
+            });
+
+            for (const subDoc of subsSnap.docs) {
+              const { subscription } = subDoc.data();
+              try {
+                await webpush.sendNotification(subscription, payload);
+                sent++;
+              } catch (err) {
+                if (err.statusCode === 410) {
+                  await subDoc.ref.delete();
+                } else {
+                  console.error('Push error:', err.message);
+                  Sentry.captureException(err, {
+                    tags: {
+                      fn: 'checkEventReminders',
+                      stage: 'webpush',
+                      tripId: tripDoc.id,
+                      'event-id': eventDoc.id,
+                    },
+                  });
+                }
               }
             }
           }
         }
+      } catch (err) {
+        console.error('[checkEventReminders] trip iteration failed:', tripDoc.id, err);
+        if (SENTRY_DSN) {
+          Sentry.captureException(err, { tags: { fn: 'checkEventReminders', tripId: tripDoc.id } });
+        }
       }
     }
 
-    console.log(`Sent ${sent} notifications at ${mxTime.toLocaleTimeString()}`);
+    const mxTimeStr = now.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City' });
+    console.log(`Sent ${sent} notifications at ${mxTimeStr}`);
   },
 );
+
+// Global error reporting — captures uncaught throws inside the function
+// runtime so we get reports even when the per-function try/catch misses.
+if (SENTRY_DSN) {
+  process.on('unhandledRejection', (reason) => {
+    Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
+  });
+  process.on('uncaughtException', (err) => {
+    Sentry.captureException(err);
+  });
+}
 
 /* ── Helpers ── */
 

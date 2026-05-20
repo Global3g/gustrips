@@ -26,6 +26,7 @@
  */
 
 import { memo } from 'react';
+import Image from 'next/image';
 import { useDroppable } from '@dnd-kit/core';
 import { LAYOUTS } from '@/lib/photobook/layouts';
 import { fontForKind, getTheme } from '@/lib/photobook/themes';
@@ -272,13 +273,13 @@ function Slot({
         }}
       >
         {photoUrl ? (
-          <img
+          <Image
             src={photoUrl}
             alt=""
+            fill
             draggable={false}
+            sizes="(max-width: 768px) 100vw, 50vw"
             style={{
-              width: '100%',
-              height: '100%',
               objectFit: 'cover',
               display: 'block',
               filter: effectiveFilter,

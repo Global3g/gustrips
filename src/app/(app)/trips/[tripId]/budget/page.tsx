@@ -14,7 +14,6 @@ import {
   MapPin,
   UtensilsCrossed,
   Car,
-  MoreHorizontal,
   Ship,
   Pencil,
   Plus,
@@ -51,7 +50,7 @@ import Button from '@/components/ui/Button';
 import { classNames, formatCurrency, getInitials } from '@/lib/utils/helpers';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useToast } from '@/context/ToastContext';
-import { ROUTES, EVENT_TYPES, CURRENCIES } from '@/config/constants';
+import { EVENT_TYPES, CURRENCIES } from '@/config/constants';
 import type { EventType, TripEvent, BudgetCategory, SharedExpense, TripMember } from '@/types';
 import type { LucideIcon } from 'lucide-react';
 

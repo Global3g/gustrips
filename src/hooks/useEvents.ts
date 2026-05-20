@@ -24,11 +24,18 @@ export function useEvents(tripId: string) {
   const [events, setEvents] = useState<TripEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One timer per deleted event id. Sharing a single ref let rapid
+  // successive deletes cancel each other and leave zombies in Firestore.
+  const undoTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Clean old deleted items on mount
+  // Clean old deleted items on mount + clear pending timers on unmount.
   useEffect(() => {
     clearOldDeletedItems();
+    const timers = undoTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -101,25 +108,24 @@ export function useEvents(tripId: string) {
       await updateDoc(eventRef, { deletedAt: nowISO() });
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
-      // Clear any previous undo timer
-      if (undoTimerRef.current) {
-        clearTimeout(undoTimerRef.current);
-      }
+      // Cancel any previous pending hard-delete for THIS event id
+      // (re-deleting the same event while its undo window is open).
+      const timers = undoTimersRef.current;
+      const previous = timers.get(eventId);
+      if (previous) clearTimeout(previous);
 
-      // Return undo function
       const undo = async () => {
-        if (undoTimerRef.current) {
-          clearTimeout(undoTimerRef.current);
-          undoTimerRef.current = null;
+        const t = timers.get(eventId);
+        if (t) {
+          clearTimeout(t);
+          timers.delete(eventId);
         }
-        // Remove deletedAt to restore the event
         await updateDoc(eventRef, { deletedAt: null });
         try { markMutation(); } catch { /* localStorage may be unavailable */ }
         options?.onUndo?.();
       };
 
-      // Schedule hard delete after undo window
-      undoTimerRef.current = setTimeout(async () => {
+      const timer = setTimeout(async () => {
         try {
           await deleteDoc(eventRef);
           try { markMutation(); } catch { /* localStorage may be unavailable */ }
@@ -127,8 +133,9 @@ export function useEvents(tripId: string) {
         } catch (err) {
           console.error('Error al eliminar evento permanentemente:', err);
         }
-        undoTimerRef.current = null;
+        timers.delete(eventId);
       }, UNDO_DELAY_MS);
+      timers.set(eventId, timer);
 
       return { undo };
     },

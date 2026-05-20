@@ -26,8 +26,17 @@ export function BalanceTab({ tripId }: BalanceTabProps) {
   const { travelers } = useGlobalTravelers();
 
   const currency = trip?.budgetCurrency ?? 'MXN';
-  const tripTravelerIds = trip?.travelerIds || [];
-  const tripTravelers = travelers.filter((t) => tripTravelerIds.includes(t.id));
+  // Wrap in useMemo so the array identity is stable across renders —
+  // otherwise downstream useMemos depending on `tripTravelerIds` run every
+  // render even when the underlying list hasn't changed.
+  const tripTravelerIds = useMemo(
+    () => trip?.travelerIds || [],
+    [trip?.travelerIds],
+  );
+  const tripTravelers = useMemo(
+    () => travelers.filter((t) => tripTravelerIds.includes(t.id)),
+    [travelers, tripTravelerIds],
+  );
 
   const allBalances = useMemo(() => getBalances(), [getBalances]);
   const balances = useMemo(

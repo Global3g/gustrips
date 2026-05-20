@@ -93,7 +93,7 @@ const MosaicAutoTemplate = forwardRef<HTMLDivElement, Props>(function MosaicAuto
 
   const slots = useMemo(
     () => generateMosaicSlots(NUM, CANVAS, CANVAS - HEADER, seed),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [seed, NUM],
   );
 

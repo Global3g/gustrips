@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   collection,
   query,
-  where,
   orderBy,
   onSnapshot,
   addDoc,
@@ -42,9 +41,8 @@ export function useTrips(): UseTripsReturn {
 
     const db = getClientDb();
     const tripsRef = collection(db, 'trips');
+    const uid = user.uid;
 
-    // Cargar todos los viajes (las reglas permiten leer todos si estás autenticado)
-    // Luego filtraremos por usuario en el cliente
     const q = query(
       tripsRef,
       orderBy('createdAt', 'desc'),
@@ -53,12 +51,14 @@ export function useTrips(): UseTripsReturn {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        // Filtrar solo los viajes del usuario actual
         const tripsData: Trip[] = snapshot.docs
-          .map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          })) as Trip[];
+          .map((d) => ({
+            id: d.id,
+            ...d.data(),
+          }) as Trip)
+          .filter(
+            (t) => t.createdBy === uid || (t.travelerIds?.includes(uid) ?? false),
+          );
 
         setTrips(tripsData);
         setLoading(false);

@@ -15,7 +15,7 @@ interface AirportAutocompleteProps {
 
 export default function AirportAutocomplete({
   label,
-  value,
+  value: _value,
   onChange,
   placeholder = 'Buscar ciudad o código...',
   required = false,

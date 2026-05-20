@@ -25,6 +25,7 @@ import {
   Play,
   Film,
   BookOpen,
+  Eye,
 } from 'lucide-react';
 import {
   DndContext,
@@ -107,7 +108,11 @@ export default function PhotosPage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip();
   const { events, updateEvent, loading: eventsLoading } = useEvents();
-  const { albumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum();
+  const { albumPhotos: rawAlbumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum();
+  const albumPhotos = useMemo(
+    () => rawAlbumPhotos.filter((p) => !p.deletedAt),
+    [rawAlbumPhotos],
+  );
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);
@@ -646,6 +651,7 @@ export default function PhotosPage() {
         toast('Leyenda actualizada', 'success');
       } catch (err) {
         console.error('Error updating caption:', err);
+        toast('No se pudo actualizar la leyenda', 'error');
       }
       setEditingCaption(null);
       setCaptionText('');
@@ -797,12 +803,6 @@ export default function PhotosPage() {
     [flatPhotos],
   );
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
-  const goNext = useCallback(() => {
-    setLightboxIndex((prev) => (prev !== null && prev < flatPhotos.length - 1 ? prev + 1 : prev));
-  }, [flatPhotos.length]);
-  const goPrev = useCallback(() => {
-    setLightboxIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
-  }, []);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -1091,6 +1091,15 @@ export default function PhotosPage() {
                   {photoGroups.length} {photoGroups.length === 1 ? 'grupo' : 'grupos'} · {stats.total} {stats.total === 1 ? 'foto' : 'fotos'}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/trips/${tripId}/photos/review`)}
+                    disabled={allPhotos.length < 1}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-400/15 to-fuchsia-500/15 hover:from-violet-400/25 hover:to-fuchsia-500/25 border border-violet-300/30 text-violet-100 hover:text-white text-xs font-semibold transition-colors disabled:opacity-40"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Revisar
+                  </button>
                   <button
                     type="button"
                     onClick={() => router.push(`/trips/${tripId}/photos/show`)}

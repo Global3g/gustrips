@@ -6,6 +6,7 @@
     "node": "22"
   },
   "dependencies": {
+    "@sentry/node": "^10.53.1",
     "@types/cors": "^2.8.19",
     "cors": "^2.8.6",
     "express": "^4.21.2",

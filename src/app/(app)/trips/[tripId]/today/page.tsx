@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { format, parseISO, differenceInDays, isAfter, isBefore, startOfDay } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { formatDateHeaderES } from '@/lib/utils/helpers';
 import {
   CalendarDays,
@@ -35,7 +34,7 @@ import {
 } from '@/context/TripDataContext';
 import { EVENT_TYPES, ROUTES } from '@/config/constants';
 import { classNames, formatCurrency } from '@/lib/utils/helpers';
-import type { TripEvent, EventType } from '@/types';
+import type { EventType } from '@/types';
 
 /* ─── Icon map ─────────────────────────────────────── */
 

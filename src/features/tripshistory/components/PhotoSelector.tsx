@@ -37,6 +37,11 @@ interface SelectedItem {
 // Run autoscales instances when traffic spikes.
 const PROCESSING_CONCURRENCY = 4;
 
+// Accept any image extension we know, OR any MIME starting with image/.
+// Some sources (Apple Photos drag, Drive web, Outlook attachments) hand us
+// files with empty/octet-stream MIME types, so we can't rely on MIME alone.
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif|avif)$/i;
+
 /**
  * File picker + drag-drop surface. When the user hits "Procesar fotos" we:
  *   1. extract EXIF + dimensions
@@ -63,11 +68,6 @@ export default function PhotoSelector({
   const [globalError, setGlobalError] = useState<string | null>(null);
 
   const { firebaseUser } = useAuthContext();
-
-  // Accept any image extension we know, OR any MIME starting with image/.
-  // Some sources (Apple Photos drag, Drive web, Outlook attachments) hand us
-  // files with empty/octet-stream MIME types, so we can't rely on MIME alone.
-  const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif|avif)$/i;
 
   const isImageFile = useCallback((f: File): boolean => {
     if (f.type && f.type.startsWith('image/')) return true;
@@ -288,7 +288,7 @@ export default function PhotoSelector({
           const msg = err instanceof Error ? err.message : String(err);
           // Surface the underlying error in the console for debugging. The
           // per-item chip shows the same `msg` so you can hover it too.
-          // eslint-disable-next-line no-console
+           
           console.error('[PhotoSelector] failed processing', file.name, err);
           errors.push(`${file.name}: ${msg}`);
           updateStatus(idx, 'error', msg);
@@ -339,18 +339,6 @@ export default function PhotoSelector({
   const isBusy = disabled || processing;
   const canSubmit = items.length >= minPhotos && !processing;
 
-  // Mirror the exact handler shape used by /trips/[tripId]/photos which works
-  // reliably across Chrome / Safari / Firefox. The drop zone has to be a plain
-  // <div> — wrapping it in <motion.div> with whileHover/whileTap intercepts
-  // pointer events on some browsers and the drag never fires.
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    if (!isBusy) setIsDragging(true);
-  };
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
 
 
   return (

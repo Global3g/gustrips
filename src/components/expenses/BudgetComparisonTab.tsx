@@ -12,7 +12,6 @@ import {
   Car,
   Ship,
   MoreHorizontal,
-  AlertCircle,
   Layers,
   CalendarDays,
   TrendingUp,
@@ -221,7 +220,12 @@ export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   const loading = tripLoading || expensesLoading || eventsLoading;
-  const budgetCategories = trip?.budgetCategories ?? [];
+  // Memoize so dependents (categoryComparison, etc.) don't re-run when the
+  // identity changes but the data doesn't.
+  const budgetCategories = useMemo(
+    () => trip?.budgetCategories ?? [],
+    [trip?.budgetCategories],
+  );
   const currency = trip?.budgetCurrency ?? 'MXN';
   const { convert: fxConvert, rates } = useExchangeRates(currency);
 

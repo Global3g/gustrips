@@ -102,7 +102,7 @@ const MoodBoardTemplate = forwardRef<HTMLDivElement, Props>(function MoodBoardTe
       }
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [photos, seed, NUM]);
 
   const snippet = useMemo(() => {

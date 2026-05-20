@@ -3,9 +3,8 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { format, parseISO, eachDayOfInterval, addDays, subDays, isSameDay, differenceInMinutes } from 'date-fns';
-import { es } from 'date-fns/locale/es';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Plane, List, Clock, Layers, FileSearch, MapPin, Sparkles, Footprints, AlertTriangle, StickyNote, Search, X } from 'lucide-react';
+import { AnimatePresence, Reorder } from 'framer-motion';
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, List, Clock, Layers, FileSearch, MapPin, Sparkles, Footprints, AlertTriangle, StickyNote, Search, X } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const AgendaView = dynamic(() => import('@/components/trips/AgendaView'), { ssr: false });
@@ -166,7 +165,7 @@ export default function ItineraryPage() {
   }, [expenses]);
   const getExpensesByEvent = useCallback((eventId: string) => expensesByEvent[eventId] || [], [expensesByEvent]);
   const {
-    documents,
+    documents: _documents,
     uploadDocument,
     deleteDocument,
     getDocumentsByEvent,
@@ -595,7 +594,7 @@ export default function ItineraryPage() {
 
   const handleDuplicate = async (event: TripEvent) => {
     try {
-      const { id, createdBy, createdAt, ...rest } = event;
+      const { id: _id, createdBy: _createdBy, createdAt: _createdAt, ...rest } = event;
       await createEvent({
         ...rest,
         title: `(copia) ${event.title}`,
@@ -839,6 +838,7 @@ export default function ItineraryPage() {
       await updateTrip({ dayLocations });
     } catch (err) {
       console.error('Error saving day location:', err);
+      toast('No se pudo guardar la ubicación del día', 'error');
     }
   };
 
@@ -860,6 +860,7 @@ export default function ItineraryPage() {
       await updateTrip({ dayNotes: next } as any);
     } catch (err) {
       console.error('Error guardando nota del día:', err);
+      toast('No se pudo guardar la nota del día', 'error');
     } finally {
       setSavingNote(false);
     }

@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   CalendarDays,
-  Wallet,
   Receipt,
   PiggyBank,
   Users,

@@ -1,4 +1,4 @@
-import { eachDayOfInterval, parseISO, format } from 'date-fns';
+import { eachDayOfInterval, parseISO, format, subDays } from 'date-fns';
 import type { Trip, TripEvent, MealPreferences } from '@/types';
 
 interface EventToCreate {
@@ -27,15 +27,30 @@ function addMinutesToTime(time: string, minutes: number): string {
 }
 
 /**
- * Subtracts minutes from a time string (HH:MM) and returns a new HH:MM string.
+ * Subtracts minutes from a (date, time) pair and returns the resulting
+ * { date, time } — crossing into the previous day when the subtraction
+ * goes before midnight. Returning the same day for an early-morning
+ * flight (e.g. 01:00 → transfer at 22:30 the day before) pushed the
+ * transfer event 12h AFTER the flight.
  */
-function subtractMinutesFromTime(time: string, minutes: number): string {
+function subtractMinutesFromDateTime(
+  dateStr: string,
+  time: string,
+  minutes: number,
+): { date: string; time: string } {
   const [h, m] = time.split(':').map(Number);
   let totalMinutes = h * 60 + m - minutes;
-  if (totalMinutes < 0) totalMinutes += 24 * 60;
+  let date = dateStr;
+  while (totalMinutes < 0) {
+    totalMinutes += 24 * 60;
+    date = format(subDays(parseISO(date), 1), 'yyyy-MM-dd');
+  }
   const newH = Math.floor(totalMinutes / 60) % 24;
   const newM = totalMinutes % 60;
-  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+  return {
+    date,
+    time: `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`,
+  };
 }
 
 /**
@@ -158,8 +173,15 @@ export function generateRecurringEvents(
 
       // Flight DEPARTS on this day
       if (flight.startTime) {
-        const transferTime = subtractMinutesFromTime(flight.startTime, 150);
-        const hasTransportNear = dayEvents.some(
+        const { date: transferDate, time: transferTime } =
+          subtractMinutesFromDateTime(dateStr, flight.startTime, 150);
+        // When the transfer falls on the previous day we can't reliably
+        // diff against the current day's events list — use the broader
+        // existingEvents instead so we still skip dupes near the transfer.
+        const candidateEvents = transferDate === dateStr
+          ? dayEvents
+          : existingEvents.filter((e) => e.date === transferDate);
+        const hasTransportNear = candidateEvents.some(
           (e) =>
             e.type === 'transport' &&
             e.startTime &&
@@ -170,7 +192,7 @@ export function generateRecurringEvents(
           result.push({
             title: 'Traslado Hotel → Aeropuerto',
             type: 'transport',
-            date: dateStr,
+            date: transferDate,
             startTime: transferTime,
             endTime: addMinutesToTime(transferTime, 60),
             location: '',

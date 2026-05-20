@@ -11,9 +11,7 @@ import {
   X,
   Users,
   CheckSquare,
-  Wallet,
   Copy,
-  Loader2,
   Download,
   HardDriveDownload,
   Share2,
@@ -26,11 +24,6 @@ import {
   MoreHorizontal,
   CalendarPlus,
   Navigation,
-  Plane,
-  Hotel,
-  Car,
-  UtensilsCrossed,
-  Ship,
   StickyNote,
   Plus,
   Trash2,
@@ -38,7 +31,6 @@ import {
   PiggyBank,
   Link2,
   Sparkles,
-  CalendarDays,
 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 import { format, parseISO, differenceInDays, isAfter, isBefore, isEqual, startOfDay } from 'date-fns';
@@ -67,13 +59,13 @@ import { Button } from '@/components/ui/Button';
 import { exportTripBackup, downloadBackup, getTripBackupFilename } from '@/lib/utils/backup';
 import { buildIcsString, downloadIcsFile, getTripIcsFilename } from '@/lib/utils/exportIcs';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
-import { TRIP_STATUS, ROUTES, EVENT_TYPES } from '@/config/constants';
+import { TRIP_STATUS, ROUTES } from '@/config/constants';
 import { glassStyle, classNames, formatCurrency, formatDateES, generateId } from '@/lib/utils/helpers';
 import { nowISO } from '@/lib/utils/helpers';
 import SpotlightCard from '@/components/ui/SpotlightCard';
 import PendingExpensesBanner from '@/components/expenses/PendingExpensesBanner';
 import QuickActionsRow from '@/components/trips/QuickActionsRow';
-import type { Trip, TripEvent, ChecklistItem, QuickNote } from '@/types';
+import type { Trip, TripEvent, QuickNote } from '@/types';
 
 /* ── Dynamic / below-the-fold imports ─────────────────────────────────
  * Each of these is heavy or conditional and shouldn't ship in the first
@@ -577,9 +569,9 @@ export default function TripDetailPage() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [generatingShare, setGeneratingShare] = useState(false);
+  const [_generatingShare, setGeneratingShare] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [backingUp, setBackingUp] = useState(false);
+  const [_backingUp, setBackingUp] = useState(false);
 
   if (loading) return <TripDetailSkeleton />;
 
@@ -614,7 +606,6 @@ export default function TripDetailPage() {
   const spent = events.reduce((sum, e) => sum + (e.cost || 0), 0);
   const budget = trip.budget || 0;
   const budgetPct = budget > 0 ? Math.min(Math.round((spent / budget) * 100), 100) : 0;
-  const budgetColor = budgetPct > 85 ? '#ef4444' : budgetPct > 60 ? '#f59e0b' : '#22c55e';
   const checkDone = checklistItems.filter((i) => i.checked).length;
   const checkTotal = checklistItems.length;
   const checkPct = checkTotal > 0 ? Math.round((checkDone / checkTotal) * 100) : 0;

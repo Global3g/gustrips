@@ -12,13 +12,11 @@ import {
   Globe,
   Settings,
   Check,
-  X,
   Phone,
   AlertTriangle,
   Shield,
   Heart,
   Plane,
-  Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -345,16 +343,15 @@ export default function MembersPage() {
   const params = useParams();
   const tripId = params.tripId as string;
   const { trip } = useTrip();
-  const { members, invites, loading: membersLoading, inviteMember } = useMembers(tripId);
+  const { members: _members, invites, loading: membersLoading, inviteMember } = useMembers(tripId);
   const { travelers: allGlobalTravelers, loading: travelersLoading } = useGlobalTravelers();
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const { toast } = useToast();
   const [showInvite, setShowInvite] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [showSelector, setShowSelector] = useState(false);
 
   const loading = membersLoading || travelersLoading;
-  const isOwner = trip?.createdBy === user?.uid;
 
   // Get assigned travelers from global collection
   const assignedTravelers = useMemo(() => {

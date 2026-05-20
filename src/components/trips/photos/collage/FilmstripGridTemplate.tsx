@@ -38,7 +38,7 @@ const FilmstripGridTemplate = forwardRef<HTMLDivElement, Props>(function Filmstr
       out.push(photos[out.length % photos.length]);
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [photos, seed, NUM]);
 
   const usableHeight = CANVAS - HEADER - 20;

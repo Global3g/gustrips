@@ -3,7 +3,6 @@
 import { motion } from 'framer-motion';
 import { Clock, MapPin, Camera } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale';
 import type { Event } from '@/features/tripshistory/types';
 
 interface EventCardProps {

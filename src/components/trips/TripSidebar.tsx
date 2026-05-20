@@ -226,7 +226,7 @@ function DayItem({ href, dayNumber, dayLabel, weekday, eventCount, isActive, isT
 /*  Week group label for itinerary                                     */
 /* ------------------------------------------------------------------ */
 
-function WeekLabel({ weekNumber, index }: { weekNumber: number; index: number }) {
+function WeekLabel({ weekNumber: _weekNumber, index }: { weekNumber: number; index: number }) {
   return (
     <div className="flex items-center gap-2 px-5 pt-2 pb-1">
       <span className="text-[9px] font-bold text-white/70 uppercase tracking-[0.12em]">
@@ -320,8 +320,10 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
       const data = await exportTripBackup(tripId);
       const filename = getTripBackupFilename(trip.title);
       downloadBackup(data, filename);
+      toast('Backup descargado', 'success');
     } catch (err) {
       console.error('Error al generar backup:', err);
+      toast('No se pudo generar el backup', 'error');
     } finally {
       setBackingUp(false);
     }

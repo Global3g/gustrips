@@ -1,5 +1,3 @@
-import type { Timestamp } from 'firebase/firestore';
-
 // ─── Trip ───────────────────────────────────────────
 export type TripStatus = 'planning' | 'active' | 'completed' | 'cancelled';
 
@@ -72,6 +70,16 @@ export interface AlbumPhoto {
   caption?: string;
   eventId?: string;
   uploadedAt: string;
+  // Review mode (see /photos/review). Set when the user has triaged the
+  // photo so the review flow can skip already-seen ones.
+  reviewed?: boolean;
+  reviewedAt?: string;
+  // Star-favorite — surfaced first in slideshow/recap; independent of review.
+  favorite?: boolean;
+  // Soft delete with undo. Photos with deletedAt set are excluded from
+  // every album view but still live in Storage; a cleanup pass purges them
+  // after the retention window.
+  deletedAt?: string | null;
 }
 
 // ─── Global Traveler ───────────────────────────────

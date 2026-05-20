@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, X, ChevronLeft, ChevronRight, Loader2, Camera } from 'lucide-react';
+import { Trash2, X, ChevronLeft, ChevronRight, Loader2, Camera } from 'lucide-react';
 
 interface PhotoGalleryProps {
   photos: string[];
@@ -83,9 +84,12 @@ export default function PhotoGallery({ photos, onAddPhoto, onDeletePhoto }: Phot
               openLightbox(idx);
             }}
           >
-            <img
+            <Image
               src={url}
               alt={`Foto ${idx + 1}`}
+              width={80}
+              height={80}
+              sizes="80px"
               className="w-20 h-20 rounded-lg object-cover border border-gray-200 hover:border-blue-300 transition-colors"
             />
             <button

@@ -20,11 +20,19 @@ export function useExchangeRates(base: string): UseExchangeRatesReturn {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getExchangeRates(base).then((r) => {
-      if (cancelled) return;
-      setRates(r);
-      setLoading(false);
-    });
+    getExchangeRates(base)
+      .then((r) => {
+        if (cancelled) return;
+        setRates(r);
+      })
+      .catch((err) => {
+        // Network failure or upstream API down. Leave the previous rates
+        // in place (may be stale but still usable) and stop the spinner.
+        console.error('[useExchangeRates] fetch failed', err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };

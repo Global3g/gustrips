@@ -77,12 +77,6 @@ export default function OnboardingModal({ onDismiss }: OnboardingModalProps) {
     }
   }, [step]);
 
-  const prevStep = useCallback(() => {
-    if (step > 0) {
-      setStep((prev) => prev - 1);
-    }
-  }, [step]);
-
   if (!visible) return null;
 
   return (

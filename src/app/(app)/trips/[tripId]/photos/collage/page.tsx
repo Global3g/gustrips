@@ -308,7 +308,11 @@ export default function CollagePage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip();
   const { events } = useEvents();
-  const { albumPhotos } = useAlbum();
+  const { albumPhotos: rawAlbumPhotos } = useAlbum();
+  const albumPhotos = useMemo(
+    () => rawAlbumPhotos.filter((p) => !p.deletedAt),
+    [rawAlbumPhotos],
+  );
   const { toast } = useToast();
 
   const [template, setTemplate] = useState<TemplateId>('bento');

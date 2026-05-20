@@ -148,6 +148,16 @@ interface UseAlbumReturn {
   ) => Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }>;
   markAllOptimized: () => Promise<number>;
   processPendingUploads: () => Promise<{ uploaded: number; failed: number }>;
+  // ─── Review mode ───
+  /** Mark the photo as reviewed (or undo). Used by /photos/review. */
+  markReviewed: (photo: AlbumPhoto, reviewed?: boolean) => Promise<void>;
+  /** Toggle/set favorite. Stars are visible across album views. */
+  markFavorite: (photo: AlbumPhoto, favorite?: boolean) => Promise<void>;
+  /** Soft-delete (sets deletedAt). The photo disappears from album views
+   *  but Storage objects stay until a cleanup pass purges them. */
+  softDelete: (photo: AlbumPhoto) => Promise<void>;
+  /** Reverse a soft-delete within the undo window. */
+  restorePhoto: (photo: AlbumPhoto) => Promise<void>;
 }
 
 export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
@@ -184,6 +194,10 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
               caption: data.caption,
               eventId: data.eventId,
               uploadedAt,
+              reviewed: data.reviewed,
+              reviewedAt: typeof data.reviewedAt === 'string' ? data.reviewedAt : undefined,
+              favorite: data.favorite,
+              deletedAt: typeof data.deletedAt === 'string' ? data.deletedAt : undefined,
             }) as AlbumPhoto,
           );
         });
@@ -660,6 +674,51 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     [tripId, trip, subPhotos],
   );
 
+  /* ─── Review mode mutations ─────────────────────────
+   * All four flow through the same `upsertSubPhoto` so legacy photos
+   * (still living in trip.albumPhotos[]) get migrated to the subcollection
+   * on first interaction. Effects on the legacy array are intentionally
+   * NOT mirrored here — these are new fields the legacy schema doesn't have,
+   * and the migration banner will clear the array eventually. */
+
+  const markReviewed = useCallback(
+    async (photo: AlbumPhoto, reviewed: boolean = true): Promise<void> => {
+      await upsertSubPhoto({
+        ...photo,
+        reviewed,
+        reviewedAt: reviewed ? nowISO() : undefined,
+      });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [upsertSubPhoto],
+  );
+
+  const markFavorite = useCallback(
+    async (photo: AlbumPhoto, favorite: boolean = true): Promise<void> => {
+      await upsertSubPhoto({ ...photo, favorite });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [upsertSubPhoto],
+  );
+
+  const softDelete = useCallback(
+    async (photo: AlbumPhoto): Promise<void> => {
+      await upsertSubPhoto({ ...photo, deletedAt: nowISO() });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [upsertSubPhoto],
+  );
+
+  const restorePhoto = useCallback(
+    async (photo: AlbumPhoto): Promise<void> => {
+      // null clears deletedAt without dropping the field; upsertSubPhoto
+      // sets the field via setDoc merge so this works as a real "undelete".
+      await upsertSubPhoto({ ...photo, deletedAt: null });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [upsertSubPhoto],
+  );
+
   return {
     albumPhotos,
     addPhoto,
@@ -670,5 +729,9 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     migrateThumbnails,
     markAllOptimized,
     processPendingUploads,
+    markReviewed,
+    markFavorite,
+    softDelete,
+    restorePhoto,
   };
 }

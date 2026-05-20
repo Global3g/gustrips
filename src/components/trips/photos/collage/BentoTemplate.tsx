@@ -121,7 +121,7 @@ const BentoTemplate = forwardRef<HTMLDivElement, Props>(function BentoTemplate(
       out.push(photos[out.length % photos.length]);
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [photos, seed, chosen]);
 
   return (

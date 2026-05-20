@@ -36,7 +36,7 @@ const BigHeroTemplate = forwardRef<HTMLDivElement, Props>(function BigHeroTempla
       out.push(photos[out.length % photos.length]);
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [photos, seed, NUM]);
 
   const hero = usable[0];

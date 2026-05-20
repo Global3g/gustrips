@@ -1,5 +1,4 @@
 import jsPDF from 'jspdf';
-import { EVENT_TYPES } from '@/config/constants';
 import { formatCurrency, formatDateES, getInitials } from '@/lib/utils/helpers';
 import type {
   Trip,
@@ -133,7 +132,7 @@ export async function exportRecapPdf(input: ExportRecapInput): Promise<void> {
   const {
     trip,
     events,
-    albumPhotos,
+    albumPhotos: rawAlbumPhotos,
     members,
     travelers,
     baseCurrency,
@@ -143,12 +142,16 @@ export async function exportRecapPdf(input: ExportRecapInput): Promise<void> {
     cities,
     kmTraveled,
     daysVisited,
-    topPhotos,
+    topPhotos: rawTopPhotos,
     peakDayDate,
     peakDaySpent,
     topCategory,
     topEvent,
   } = input;
+
+  // Soft-deleted photos must not appear in the recap PDF.
+  const albumPhotos = rawAlbumPhotos.filter((p) => !p.deletedAt);
+  const topPhotos = rawTopPhotos.filter((p) => !p.deletedAt);
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();

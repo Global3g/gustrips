@@ -1,36 +1,87 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Trips: cualquier usuario autenticado puede leer todos los viajes
-    // Trips con shareToken pueden ser leidos sin autenticacion
-    // Pero solo puede escribir sus propios viajes
-    match /trips/{tripId} {
-      allow read: if request.auth != null
-                   || (resource.data.shareToken != null && resource.data.shareToken != '');
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
 
-      // Subcolecciones (members, events, documents, checklist)
-      // Lectura publica si el viaje padre tiene shareToken
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function tripData(tripId) {
+      return get(/databases/$(database)/documents/trips/$(tripId)).data;
+    }
+
+    function isTripMember(tripId) {
+      let t = tripData(tripId);
+      return isSignedIn() && (
+        t.createdBy == request.auth.uid
+        || (t.travelerIds is list && request.auth.uid in t.travelerIds)
+      );
+    }
+
+    function hasValidShareToken(t) {
+      return t.shareToken is string && t.shareToken.size() > 0;
+    }
+
+    // Trips: members can read+write their trips. Trips with shareToken
+    // are publicly readable for the share view.
+    match /trips/{tripId} {
+      allow read: if (isSignedIn() && (
+                       resource.data.createdBy == request.auth.uid
+                       || (resource.data.travelerIds is list
+                           && request.auth.uid in resource.data.travelerIds)
+                     ))
+                   || hasValidShareToken(resource.data);
+
+      allow create: if isSignedIn()
+                     && request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if isSignedIn()
+                     && resource.data.createdBy == request.auth.uid
+                     // owner cannot be reassigned via update
+                     && request.resource.data.createdBy == resource.data.createdBy;
+
+      allow delete: if isSignedIn()
+                     && resource.data.createdBy == request.auth.uid;
+
+      // Subcolecciones (members, events, documents, checklist, photos, pushSubscriptions)
+      // Lectura: members del trip o public via shareToken del trip padre.
+      // Escritura: solo members del trip.
       match /{subcollection}/{docId} {
-        allow read: if request.auth != null
-                     || (get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken != null
-                         && get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken != '');
-        allow write: if request.auth != null;
+        allow read: if isTripMember(tripId)
+                     || hasValidShareToken(tripData(tripId));
+        allow write: if isTripMember(tripId);
+
+        // Deep subcollections (e.g. trips/{id}/photos/{id}/comments)
+        match /{deep=**} {
+          allow read: if isTripMember(tripId)
+                       || hasValidShareToken(tripData(tripId));
+          allow write: if isTripMember(tripId);
+        }
       }
+    }
+
+    // Push subscriptions: per-user, scoped by userId field.
+    match /pushSubscriptions/{subId} {
+      allow read, delete: if isSignedIn()
+                           && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+                     && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn()
+                     && resource.data.userId == request.auth.uid
+                     && request.resource.data.userId == resource.data.userId;
     }
 
     // Global travelers per user
     match /users/{userId}/travelers/{travelerId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
     // Tripshistory: trip stories per user (with subcollections: photos, questions, days, events)
     match /users/{userId}/tripstories/{storyId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
     match /users/{userId}/tripstories/{storyId}/{subcollection=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
   }

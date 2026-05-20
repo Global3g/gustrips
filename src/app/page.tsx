@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { FileSearch, CalendarDays, Wallet } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -72,10 +73,13 @@ export default function LandingPage() {
         >
           {/* Logo */}
           <motion.div variants={itemVariants} className="mb-8">
-            <img
+            <Image
               src="/logo.png"
               alt="GusTrips"
-              className="h-28 sm:h-36 mx-auto"
+              width={1399}
+              height={752}
+              priority
+              className="h-28 sm:h-36 w-auto mx-auto"
             />
           </motion.div>
 

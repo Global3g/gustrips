@@ -62,7 +62,11 @@ export default function ReelPage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip();
   const { events } = useEvents();
-  const { albumPhotos } = useAlbum();
+  const { albumPhotos: rawAlbumPhotos } = useAlbum();
+  const albumPhotos = useMemo(
+    () => rawAlbumPhotos.filter((p) => !p.deletedAt),
+    [rawAlbumPhotos],
+  );
   const { toast } = useToast();
 
   /* ── Pool: same logic as the collage page (captions first, then
@@ -120,7 +124,7 @@ export default function ReelPage() {
 
   /* ── Render lifecycle ── */
   const [phase, setPhase] = useState<Phase>('idle');
-  const [renderId, setRenderId] = useState<string | null>(null);
+  const [_renderId, setRenderId] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string>('');
   const [errorText, setErrorText] = useState<string>('');

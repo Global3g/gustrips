@@ -73,7 +73,7 @@ const ScrapbookTemplate = forwardRef<HTMLDivElement, Props>(function ScrapbookTe
       out.push(photos[out.length % photos.length]);
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [photos, seed, targetCount]);
 
   return (

@@ -354,7 +354,7 @@ export default function Slideshow({
       } catch (err) {
         // Helpful in DevTools; users see the CTA instead of a console.
         if (process.env.NODE_ENV !== 'production') {
-          // eslint-disable-next-line no-console
+           
           console.warn('[Slideshow] audio.play() blocked:', err);
         }
         setAudioBlocked(true);
@@ -377,7 +377,7 @@ export default function Slideshow({
       setAudioBlocked(false);
     } catch (err) {
       if (process.env.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
+         
         console.warn('[Slideshow] manual unlock failed:', err);
       }
       setAudioBlocked(true);

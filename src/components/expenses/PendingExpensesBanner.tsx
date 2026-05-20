@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Receipt, X, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
+import { Receipt, X, ChevronDown, AlertCircle } from 'lucide-react';
 // Events from layout-level TripDataProvider — this banner is only mounted
 // inside `/trips/[tripId]/page.tsx`.
 import { useEventsFromContext as useEvents } from '@/context/TripDataContext';

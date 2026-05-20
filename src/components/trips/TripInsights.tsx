@@ -54,7 +54,7 @@ interface TripInsightsProps {
   albumPhotos?: AlbumPhoto[];
 }
 
-export default function TripInsights({ trip, events, albumPhotos = [] }: TripInsightsProps) {
+export default function TripInsights({ trip: _trip, events, albumPhotos = [] }: TripInsightsProps) {
   const photoCount = useMemo(() => {
     const urls = new Set<string>();
     for (const p of albumPhotos) if (p.url) urls.add(p.url);

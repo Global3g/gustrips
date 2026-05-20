@@ -33,7 +33,7 @@
  * stay local to the pages that use them.
  */
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
@@ -68,6 +68,11 @@ interface TripDataValue {
   ) => Promise<{ migrated: number; failed: number; skipped: number; urlMap: Record<string, string> }>;
   markAllOptimized: () => Promise<number>;
   processPendingUploads: () => Promise<{ uploaded: number; failed: number }>;
+  // Review mode mutations.
+  markReviewed: (photo: AlbumPhoto, reviewed?: boolean) => Promise<void>;
+  markFavorite: (photo: AlbumPhoto, favorite?: boolean) => Promise<void>;
+  softDelete: (photo: AlbumPhoto) => Promise<void>;
+  restorePhoto: (photo: AlbumPhoto) => Promise<void>;
 }
 
 const TripDataContext = createContext<TripDataValue | undefined>(undefined);
@@ -84,32 +89,62 @@ export function TripDataProvider({ tripId, children }: TripDataProviderProps) {
   const eventsHook = useEvents(tripId);
   const albumHook = useAlbum(tripId, tripHook.trip);
 
-  // Inline value — we intentionally don't memoize. React will only re-render
-  // children when one of the underlying Firestore subscriptions actually
-  // fires (i.e. `trip`/`events`/`albumPhotos` change), and the bulk of the
-  // downstream work happens inside memoized derivations on each page.
-  const value: TripDataValue = {
-    trip: tripHook.trip,
-    tripLoading: tripHook.loading,
-    updateTrip: tripHook.updateTrip,
-    generateShareToken: tripHook.generateShareToken,
+  // Memoize the context value so consumers re-render only when one of the
+  // underlying subscriptions actually fires. Without this, every render of
+  // the provider creates a new object and propagates a re-render through
+  // the entire subtree.
+  const value: TripDataValue = useMemo(
+    () => ({
+      trip: tripHook.trip,
+      tripLoading: tripHook.loading,
+      updateTrip: tripHook.updateTrip,
+      generateShareToken: tripHook.generateShareToken,
 
-    events: eventsHook.events,
-    eventsLoading: eventsHook.loading,
-    createEvent: eventsHook.createEvent,
-    updateEvent: eventsHook.updateEvent,
-    deleteEvent: eventsHook.deleteEvent,
+      events: eventsHook.events,
+      eventsLoading: eventsHook.loading,
+      createEvent: eventsHook.createEvent,
+      updateEvent: eventsHook.updateEvent,
+      deleteEvent: eventsHook.deleteEvent,
 
-    albumPhotos: albumHook.albumPhotos,
-    addPhoto: albumHook.addPhoto,
-    deletePhoto: albumHook.deletePhoto,
-    updateCaption: albumHook.updateCaption,
-    updatePhoto: albumHook.updatePhoto,
-    realignEventPhotoDates: albumHook.realignEventPhotoDates,
-    migrateThumbnails: albumHook.migrateThumbnails,
-    markAllOptimized: albumHook.markAllOptimized,
-    processPendingUploads: albumHook.processPendingUploads,
-  };
+      albumPhotos: albumHook.albumPhotos,
+      addPhoto: albumHook.addPhoto,
+      deletePhoto: albumHook.deletePhoto,
+      updateCaption: albumHook.updateCaption,
+      updatePhoto: albumHook.updatePhoto,
+      realignEventPhotoDates: albumHook.realignEventPhotoDates,
+      migrateThumbnails: albumHook.migrateThumbnails,
+      markAllOptimized: albumHook.markAllOptimized,
+      processPendingUploads: albumHook.processPendingUploads,
+      markReviewed: albumHook.markReviewed,
+      markFavorite: albumHook.markFavorite,
+      softDelete: albumHook.softDelete,
+      restorePhoto: albumHook.restorePhoto,
+    }),
+    [
+      tripHook.trip,
+      tripHook.loading,
+      tripHook.updateTrip,
+      tripHook.generateShareToken,
+      eventsHook.events,
+      eventsHook.loading,
+      eventsHook.createEvent,
+      eventsHook.updateEvent,
+      eventsHook.deleteEvent,
+      albumHook.albumPhotos,
+      albumHook.addPhoto,
+      albumHook.deletePhoto,
+      albumHook.updateCaption,
+      albumHook.updatePhoto,
+      albumHook.realignEventPhotoDates,
+      albumHook.migrateThumbnails,
+      albumHook.markAllOptimized,
+      albumHook.processPendingUploads,
+      albumHook.markReviewed,
+      albumHook.markFavorite,
+      albumHook.softDelete,
+      albumHook.restorePhoto,
+    ],
+  );
 
   return <TripDataContext.Provider value={value}>{children}</TripDataContext.Provider>;
 }
@@ -177,6 +212,10 @@ export function useAlbumFromContext(): {
   migrateThumbnails: TripDataValue['migrateThumbnails'];
   markAllOptimized: TripDataValue['markAllOptimized'];
   processPendingUploads: TripDataValue['processPendingUploads'];
+  markReviewed: TripDataValue['markReviewed'];
+  markFavorite: TripDataValue['markFavorite'];
+  softDelete: TripDataValue['softDelete'];
+  restorePhoto: TripDataValue['restorePhoto'];
 } {
   const ctx = useTripData();
   return {
@@ -189,5 +228,9 @@ export function useAlbumFromContext(): {
     migrateThumbnails: ctx.migrateThumbnails,
     markAllOptimized: ctx.markAllOptimized,
     processPendingUploads: ctx.processPendingUploads,
+    markReviewed: ctx.markReviewed,
+    markFavorite: ctx.markFavorite,
+    softDelete: ctx.softDelete,
+    restorePhoto: ctx.restorePhoto,
   };
 }

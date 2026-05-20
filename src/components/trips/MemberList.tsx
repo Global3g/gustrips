@@ -28,7 +28,7 @@ interface MemberListProps {
   isOwner: boolean;
 }
 
-export default function MemberList({ members, onInvite, isOwner }: MemberListProps) {
+export default function MemberList({ members, onInvite, isOwner: _isOwner }: MemberListProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

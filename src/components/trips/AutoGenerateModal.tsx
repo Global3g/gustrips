@@ -20,7 +20,7 @@ interface AutoGenerateModalProps {
   tripId: string;
 }
 
-export default function AutoGenerateModal({ open, onClose, tripId }: AutoGenerateModalProps) {
+export default function AutoGenerateModal({ open, onClose, tripId: _tripId }: AutoGenerateModalProps) {
   const { trip, updateTrip } = useTrip();
   const { events, createEvent } = useEvents();
   const { toast } = useToast();
@@ -66,7 +66,7 @@ export default function AutoGenerateModal({ open, onClose, tripId }: AutoGenerat
 
       toast(`${count} eventos generados automaticamente`, 'success');
       onClose();
-    } catch (error) {
+    } catch {
       toast('Error al generar eventos', 'error');
     } finally {
       setLoading(false);

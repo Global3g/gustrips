@@ -66,8 +66,10 @@ export function useStoriesList(
           setLoading(false);
         }
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
+    // filterKey is a stable serialization of `filters` — we depend on it
+    // intentionally to avoid refetching on parent-render new object literals.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [filterKey],
   );
 

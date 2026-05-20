@@ -32,7 +32,7 @@ import Textarea from '@/components/ui/Textarea';
 import PlacesAutocomplete from '@/components/ui/PlacesAutocomplete';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
-import { classNames, nowISO, getInitials } from '@/lib/utils/helpers';
+import { classNames, getInitials } from '@/lib/utils/helpers';
 import type { TripEvent, EventType, ExpenseCategory, PaymentMethod } from '@/types';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
@@ -387,7 +387,6 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
 
   const titleManuallyEdited = useRef(!!initialData);
   const destinationRef = useRef<HTMLInputElement>(null);
-  const receiptInputRef = useRef<HTMLInputElement>(null);
   const receiptScanInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -485,7 +484,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   /* Smart default: restaurant time */
@@ -494,15 +493,6 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       setStartTime('20:00');
     }
   }, [type, startTime, initialData]);
-
-  /* Check if event date is in the past */
-  const isEventInPast = useMemo(() => {
-    if (!date) return false;
-    const eventDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return eventDate < today;
-  }, [date]);
 
   /* Handle receipt scanning */
   const handleScanReceipt = async (file: File) => {

@@ -18,6 +18,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getClientStorage } from '@/lib/firebase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/context/ToastContext';
 import { classNames, getInitials } from '@/lib/utils/helpers';
 import type { GlobalTraveler } from '@/types';
 
@@ -269,6 +270,7 @@ export default function GlobalTravelerForm({
   initialData,
 }: GlobalTravelerFormProps) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const isEditing = !!initialData;
 
   const [form, setForm] = useState<TravelerFormData>(() => {
@@ -325,8 +327,15 @@ export default function GlobalTravelerForm({
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       updateField(fieldKey, url as never);
+      toast(type === 'passport' ? 'Pasaporte cargado' : 'Visa cargada', 'success');
     } catch (err) {
       console.error(`Error al subir ${type}:`, err);
+      toast(
+        type === 'passport'
+          ? 'No se pudo subir la foto del pasaporte. Intenta de nuevo.'
+          : 'No se pudo subir la foto de la visa. Intenta de nuevo.',
+        'error',
+      );
     } finally {
       setUploading(false);
     }

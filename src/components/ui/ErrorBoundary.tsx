@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import * as Sentry from '@sentry/nextjs';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -27,6 +28,13 @@ export default class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error('[ErrorBoundary] Render error caught:', error, errorInfo);
+    // Forward to Sentry. No-op if the DSN env var is missing.
+    Sentry.captureException(error, {
+      tags: { boundary: 'ErrorBoundary' },
+      contexts: {
+        react: { componentStack: errorInfo.componentStack ?? null },
+      },
+    });
   }
 
   handleReload = (): void => {

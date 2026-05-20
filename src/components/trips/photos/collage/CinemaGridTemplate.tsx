@@ -54,7 +54,7 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
       }
     }
     return { cols: bestCols, rows: bestRows };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [NUM]);
 
   const usable = useMemo(() => {
@@ -64,7 +64,7 @@ const CinemaGridTemplate = forwardRef<HTMLDivElement, Props>(function CinemaGrid
       out.push(photos[out.length % photos.length]);
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [photos, seed, NUM]);
 
   return (

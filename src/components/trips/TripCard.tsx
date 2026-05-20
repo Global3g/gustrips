@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { MapPin, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { TRIP_STATUS, ROUTES } from '@/config/constants';
@@ -56,12 +57,13 @@ export default function TripCard({ trip, index = 0 }: TripCardProps) {
             }
           >
             {hasCover && (
-              <img
+              <Image
                 src={trip.coverImage!}
                 alt={trip.title}
-                loading="lazy"
+                fill
+                sizes="(max-width: 768px) 100vw, 33vw"
                 onLoad={() => setImgLoaded(true)}
-                className={`absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${imgLoaded ? 'img-loaded' : 'img-loading'}`}
+                className={`object-cover transition-transform duration-500 group-hover:scale-105 ${imgLoaded ? 'img-loaded' : 'img-loading'}`}
               />
             )}
 

@@ -4,7 +4,7 @@
  * `PendingPhotoSync` (background drain of the offline queue).
  */
 
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { nowISO } from '@/lib/utils/helpers';
@@ -130,37 +130,67 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
     compressImage(blobForCompression, 600, 0.75),
     compressImage(blobForCompression, 3000, 0.92),
   ]);
-  await Promise.all([
-    uploadBytes(storage_thumb, thumbBlob, { contentType: 'image/jpeg' }),
-    uploadBytes(storage_full, fullBlob, { contentType: 'image/jpeg' }),
-  ]);
-  const [url, fullUrl] = await Promise.all([
-    getDownloadURL(storage_thumb),
-    getDownloadURL(storage_full),
-  ]);
 
-  const photo: AlbumPhoto = {
-    url,
-    fullUrl,
-    optimized: true,
-    date,
-    uploadedAt: nowISO(),
-  };
-  if (caption) photo.caption = caption;
-  if (eventId) photo.eventId = eventId;
+  // Track which blobs landed in Storage so we can clean up if a later
+  // step fails — otherwise a failed upload leaves orphans that Storage
+  // bills us for forever.
+  let thumbUploaded = false;
+  let fullUploaded = false;
+  try {
+    const results = await Promise.allSettled([
+      uploadBytes(storage_thumb, thumbBlob, { contentType: 'image/jpeg' }),
+      uploadBytes(storage_full, fullBlob, { contentType: 'image/jpeg' }),
+    ]);
+    thumbUploaded = results[0].status === 'fulfilled';
+    fullUploaded = results[1].status === 'fulfilled';
+    if (!thumbUploaded || !fullUploaded) {
+      const reason = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      throw reason?.reason ?? new Error('uploadBytes failed');
+    }
 
-  // Write to the photos subcollection (new home). Each photo is its own
-  // small doc — trip docs stay light and the page can paginate later.
-  const photoId = photoIdFromUrl(url);
-  const photoRef = doc(db, 'trips', tripId, 'photos', photoId);
-  await setDoc(
-    photoRef,
-    cleanUndefined({
-      ...photo,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }),
-  );
+    const [url, fullUrl] = await Promise.all([
+      getDownloadURL(storage_thumb),
+      getDownloadURL(storage_full),
+    ]);
+
+    const photo: AlbumPhoto = {
+      url,
+      fullUrl,
+      optimized: true,
+      date,
+      uploadedAt: nowISO(),
+    };
+    if (caption) photo.caption = caption;
+    if (eventId) photo.eventId = eventId;
+
+    // Write to the photos subcollection (new home). Each photo is its own
+    // small doc — trip docs stay light and the page can paginate later.
+    const photoId = photoIdFromUrl(url);
+    const photoRef = doc(db, 'trips', tripId, 'photos', photoId);
+    await setDoc(
+      photoRef,
+      cleanUndefined({
+        ...photo,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+    );
+    // From here on, ownership is in Firestore — return inside the try.
+    await bumpTripUpdatedAt(tripId);
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    return photo;
+  } catch (err) {
+    // Best-effort cleanup of orphaned Storage objects.
+    await Promise.allSettled([
+      thumbUploaded ? deleteObject(storage_thumb) : Promise.resolve(),
+      fullUploaded ? deleteObject(storage_full) : Promise.resolve(),
+    ]);
+    throw err;
+  }
+}
+
+async function bumpTripUpdatedAt(tripId: string): Promise<void> {
+  const db = getClientDb();
 
   // Bump the trip's updatedAt so other listeners know something changed
   // (without re-writing the trip-wide albumPhotos array — that path is
@@ -173,10 +203,6 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
     // already succeeded so the photo is safe.
     console.warn('[uploadPhoto] trip.updatedAt bump failed:', err);
   });
-
-  try { markMutation(); } catch { /* localStorage may be unavailable */ }
-
-  return photo;
 }
 
 /** Upload a single queued pending photo. Caller handles success/failure. */

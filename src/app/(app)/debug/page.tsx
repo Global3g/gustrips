@@ -11,14 +11,19 @@ const MIGRATE_FN_URL =
 
 export default function DebugPage() {
   const { user } = useAuth();
-  const [allTrips, setAllTrips] = useState<any[]>([]);
-  const [myTrips, setMyTrips] = useState<any[]>([]);
+  const [allTrips, setAllTrips] = useState<Array<Record<string, unknown> & { id: string }>>([]);
+  const [myTrips, setMyTrips] = useState<Array<Record<string, unknown> & { id: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Album photos backfill (legacy array → subcollection)
   const [migrating, setMigrating] = useState(false);
-  const [migrateResult, setMigrateResult] = useState<any>(null);
+  const [migrateResult, setMigrateResult] = useState<{
+    totalCopied?: number;
+    tripsProcessed?: number;
+    durationMs?: number;
+    perTrip?: unknown;
+  } | null>(null);
   const [migrateError, setMigrateError] = useState<string | null>(null);
 
   const runMigration = async (): Promise<void> => {
@@ -85,9 +90,9 @@ export default function DebugPage() {
         setMyTrips(mine);
 
         setLoading(false);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error:', err);
-        setError(err.message);
+        setError(err instanceof Error ? err.message : 'Unknown error');
         setLoading(false);
       }
     };

@@ -10,8 +10,6 @@ import {
   orderBy,
 } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
-import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale/es';
 import { motion } from 'framer-motion';
 import {
   Plane,

@@ -471,9 +471,16 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Match the exact target URL (path-suffix) so a push for trip A
+      // doesn't get swallowed by an already-open tab on trip B.
       for (const client of clients) {
-        if (client.url.includes('/trips/') && 'focus' in client) {
-          return client.focus();
+        try {
+          const clientPath = new URL(client.url).pathname;
+          if (clientPath.endsWith(url) && 'focus' in client) {
+            return client.focus();
+          }
+        } catch {
+          /* malformed url, fall through */
         }
       }
       return self.clients.openWindow(url);

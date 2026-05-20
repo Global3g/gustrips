@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
   Plane,
@@ -62,8 +63,6 @@ const glass = {
   border: '1px solid rgba(255,255,255,0.08)',
   backdropFilter: 'blur(12px)',
 };
-
-const glassHover = 'hover:bg-white/[0.08] transition-all duration-200';
 
 /* ─── Trip Card (glass style) ────────────────────── */
 
@@ -156,10 +155,12 @@ function GlassTripCard({ trip, featured = false }: { trip: Trip; featured?: bool
         {/* Cover */}
         <div className={classNames('relative overflow-hidden', featured ? 'h-44' : 'h-32')}>
           {trip.coverImage ? (
-            <img
+            <Image
               src={trip.coverImage}
               alt={trip.title}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              fill
+              sizes="(max-width: 768px) 100vw, 50vw"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-[#1e3a5f] to-[#2a5a8f]" />

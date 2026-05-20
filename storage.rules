@@ -1,20 +1,53 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /trips/{tripId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+
+    function isSignedIn() {
+      return request.auth != null;
     }
+
+    function trip(tripId) {
+      return firestore.get(/databases/(default)/documents/trips/$(tripId)).data;
+    }
+
+    function isTripMember(tripId) {
+      let t = trip(tripId);
+      return isSignedIn() && (
+        t.createdBy == request.auth.uid
+        || (t.travelerIds is list && request.auth.uid in t.travelerIds)
+      );
+    }
+
+    function hasShareToken(tripId) {
+      let t = trip(tripId);
+      return t.shareToken is string && t.shareToken.size() > 0;
+    }
+
+    function isImageUnder(maxBytes) {
+      return request.resource == null
+             || (request.resource.size < maxBytes
+                 && request.resource.contentType.matches('image/.*'));
+    }
+
+    // Trip files (photos, documents). Read: members or public-via-shareToken.
+    // Write: only members. 25 MB cap on uploads.
+    match /trips/{tripId}/{allPaths=**} {
+      allow read: if isTripMember(tripId) || hasShareToken(tripId);
+      allow write: if isTripMember(tripId)
+                    && (request.resource == null
+                        || request.resource.size < 25 * 1024 * 1024);
+    }
+
     // Tripshistory photos: enforce image type + 10MB max
     match /users/{userId}/tripstories/{storyId}/{allPaths=**} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn()
                     && request.auth.uid == userId
-                    && (request.resource == null
-                        || (request.resource.size < 10 * 1024 * 1024
-                            && request.resource.contentType.matches('image/.*')));
+                    && isImageUnder(10 * 1024 * 1024);
     }
+
     match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }

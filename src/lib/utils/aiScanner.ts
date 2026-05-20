@@ -304,7 +304,9 @@ IMPORTANT:
     throw new Error('No response from AI');
   }
 
-  console.log('AI raw response (first 300 chars):', text.substring(0, 300));
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('AI raw response (first 300 chars):', text.substring(0, 300));
+  }
 
   // Extract JSON from response — handle markdown blocks, leading text, etc.
   let jsonStr = text.trim();
@@ -330,7 +332,7 @@ IMPORTANT:
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonStr);
-  } catch (parseErr) {
+  } catch {
     console.error('Failed to parse JSON:', jsonStr.substring(0, 300));
     throw new Error('Could not parse AI response as JSON');
   }

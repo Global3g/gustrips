@@ -80,7 +80,11 @@ export default function TripRecapPage() {
   const { trip } = useTrip();
   const { events } = useEvents();
   const { expenses } = useExpenses(tripId);
-  const { albumPhotos } = useAlbum();
+  const { albumPhotos: rawAlbumPhotos } = useAlbum();
+  const albumPhotos = useMemo(
+    () => rawAlbumPhotos.filter((p) => !p.deletedAt),
+    [rawAlbumPhotos],
+  );
   const { travelers: globalTravelers } = useGlobalTravelers();
   const { members } = useMembers(tripId);
   // Checklist hook is invoked for parity with previous export plumbing; not used by the recap PDF.

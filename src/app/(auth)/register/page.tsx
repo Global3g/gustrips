@@ -3,7 +3,8 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Plane, Eye, EyeOff } from 'lucide-react';
+import Image from 'next/image';
+import { Eye, EyeOff } from 'lucide-react';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/config/constants';
@@ -118,7 +119,14 @@ export default function RegisterPage() {
       <div className="glass rounded-2xl p-8 animate-auth-in">
         {/* Header */}
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="GusTrips" className="h-32 mx-auto mb-2" />
+          <Image
+            src="/logo.png"
+            alt="GusTrips"
+            width={238}
+            height={128}
+            priority
+            className="h-32 w-auto mx-auto mb-2"
+          />
           <h1 className="text-2xl font-bold text-gray-900">Crear Cuenta</h1>
         </div>
 

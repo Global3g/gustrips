@@ -29,11 +29,18 @@ export function generateId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  // Cryptographically secure fallback for environments without randomUUID.
+  // Builds a v4-shape UUID from getRandomValues. Math.random is not secure
+  // enough for shareToken / id collision resistance — we'd rather throw.
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant
+    const hex = Array.from(b, (n) => n.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  throw new Error('No secure RNG available (crypto.randomUUID / getRandomValues missing)');
 }
 
 export function formatCurrency(amount: number, currency: string = 'MXN'): string {

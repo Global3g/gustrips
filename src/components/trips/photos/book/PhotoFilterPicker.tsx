@@ -10,6 +10,7 @@
  */
 
 import { memo } from 'react';
+import Image from 'next/image';
 import { FILTER_LIST, PHOTO_FILTERS } from '@/lib/photobook/filters';
 import type { PhotoFilter } from '@/lib/photobook/types';
 
@@ -40,17 +41,19 @@ function PhotoFilterPickerImpl({ photoUrl, value, onChange }: PhotoFilterPickerP
             title={f.label}
           >
             <div
-              className="w-full aspect-square rounded overflow-hidden border border-white/10"
+              className="relative w-full aspect-square rounded overflow-hidden border border-white/10"
               style={{
                 background: photoUrl ? undefined : '#3b3b40',
               }}
             >
               {photoUrl ? (
-                <img
+                <Image
                   src={photoUrl}
                   alt=""
+                  fill
                   draggable={false}
-                  className="w-full h-full object-cover"
+                  sizes="80px"
+                  className="object-cover"
                   style={{
                     filter: PHOTO_FILTERS[f.id].css || undefined,
                   }}

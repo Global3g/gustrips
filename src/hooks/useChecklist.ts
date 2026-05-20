@@ -24,10 +24,17 @@ export function useChecklist(tripId: string) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One timer per deleted item id. Sharing a single ref let rapid
+  // successive deletes cancel each other and leave zombies in Firestore.
+  const undoTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     clearOldDeletedItems();
+    const timers = undoTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -99,21 +106,22 @@ export function useChecklist(tripId: string) {
       await updateDoc(itemRef, { deletedAt: nowISO() });
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
 
-      if (undoTimerRef.current) {
-        clearTimeout(undoTimerRef.current);
-      }
+      const timers = undoTimersRef.current;
+      const previous = timers.get(itemId);
+      if (previous) clearTimeout(previous);
 
       const undo = async () => {
-        if (undoTimerRef.current) {
-          clearTimeout(undoTimerRef.current);
-          undoTimerRef.current = null;
+        const t = timers.get(itemId);
+        if (t) {
+          clearTimeout(t);
+          timers.delete(itemId);
         }
         await updateDoc(itemRef, { deletedAt: null });
         try { markMutation(); } catch { /* localStorage may be unavailable */ }
         options?.onUndo?.();
       };
 
-      undoTimerRef.current = setTimeout(async () => {
+      const timer = setTimeout(async () => {
         try {
           await deleteDoc(itemRef);
           try { markMutation(); } catch { /* localStorage may be unavailable */ }
@@ -121,8 +129,9 @@ export function useChecklist(tripId: string) {
         } catch (err) {
           console.error('Error al eliminar item permanentemente:', err);
         }
-        undoTimerRef.current = null;
+        timers.delete(itemId);
       }, UNDO_DELAY_MS);
+      timers.set(itemId, timer);
 
       return { undo };
     },

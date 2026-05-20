@@ -159,6 +159,10 @@ export function useExpenses(tripId: string): UseExpensesReturn {
     const netBalance = new Map<string, number>();
 
     for (const expense of unsettledExpenses) {
+      // splitBetween may be missing or empty for legacy / partially-filled
+      // expenses; without a split there is no one to owe, skip cleanly to
+      // avoid producing Infinity/NaN balances.
+      if (!expense.splitBetween || expense.splitBetween.length === 0) continue;
       const share = expense.amount / expense.splitBetween.length;
 
       // Payer gets credited the full amount

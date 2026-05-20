@@ -42,13 +42,6 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error('Request failed'));
-  });
-}
-
 export async function listInbox(): Promise<SharedInboxItem[]> {
   if (!isAvailable()) return [];
   try {

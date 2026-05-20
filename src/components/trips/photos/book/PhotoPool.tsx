@@ -11,6 +11,7 @@
  */
 
 import { memo } from 'react';
+import Image from 'next/image';
 import { useDraggable } from '@dnd-kit/core';
 import { Search } from 'lucide-react';
 import type { AlbumPhoto } from '@/types';
@@ -50,12 +51,13 @@ function DragChip({ url, onTap }: DragChipProps) {
       onClick={onTap}
       className="relative aspect-square rounded-md overflow-hidden bg-black/40 border border-white/[0.06] hover:border-amber-300/50 transition-colors"
     >
-      <img
+      <Image
         src={url}
         alt=""
+        fill
         draggable={false}
-        loading="lazy"
-        className="w-full h-full object-cover pointer-events-none"
+        sizes="(max-width: 768px) 33vw, 200px"
+        className="object-cover pointer-events-none"
       />
     </button>
   );

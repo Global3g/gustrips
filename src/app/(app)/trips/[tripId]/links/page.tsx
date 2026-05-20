@@ -1,13 +1,9 @@
 'use client';
 
-import { useParams } from 'next/navigation';
 import { ExternalLink } from 'lucide-react';
 import QuickLinks from '@/components/trips/QuickLinks';
 
 export default function LinksPage() {
-  const params = useParams();
-  const tripId = params.tripId as string;
-
   return (
     <div>
       {/* Encabezado */}

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -76,10 +77,6 @@ export default function AppSidebar() {
     }
   };
 
-  // Time-based greeting
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-
   return (
     <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 lg:left-0 z-40">
       <div className="flex flex-col h-full relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #1e3a5f 0%, #1a3352 50%, #162d48 100%)' }}>
@@ -91,7 +88,14 @@ export default function AppSidebar() {
 
         {/* ── Logo ── */}
         <div className="relative flex items-center justify-center px-6 pt-6 pb-4">
-          <img src="/logo.png" alt="GusTrips" className="h-[135px] w-auto object-contain" />
+          <Image
+            src="/logo.png"
+            alt="GusTrips"
+            width={251}
+            height={135}
+            priority
+            className="h-[135px] w-auto object-contain"
+          />
         </div>
 
         {/* ── Divider ── */}

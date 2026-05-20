@@ -61,7 +61,7 @@ export default function DocumentUpload({
   onUpload,
   onDelete,
   loading,
-  eventId,
+  eventId: _eventId,
   category: presetCategory,
   hideCategorySelector = false,
   compact = false,

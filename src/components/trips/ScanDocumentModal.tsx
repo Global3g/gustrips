@@ -3,9 +3,7 @@
 import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FileSearch,
   Upload,
-  X,
   Check,
   AlertCircle,
   Plane,
@@ -34,7 +32,7 @@ import {
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import { scanBulkDocument, ScanNetworkError, type ScannedEvent } from '@/lib/utils/aiScanner';
-import { EVENT_TYPES, CURRENCIES, MAX_FILE_SIZE } from '@/config/constants';
+import { EVENT_TYPES, MAX_FILE_SIZE } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
 import type { EventType } from '@/types';
 
@@ -68,21 +66,6 @@ const TYPE_COLORS: Record<EventType, string> = {
   clothing: 'bg-rose-50 text-rose-600 border-rose-200',
   fuel: 'bg-lime-50 text-lime-600 border-lime-200',
   misc: 'bg-gray-50 text-gray-600 border-gray-200',
-};
-
-const TYPE_EMOJIS: Record<EventType, string> = {
-  flight: '\u2708\uFE0F',
-  hotel: '\uD83C\uDFE8',
-  car_rental: '\uD83D\uDE97',
-  restaurant: '\uD83C\uDF7D\uFE0F',
-  activity: '\uD83D\uDCCD',
-  transport: '\uD83D\uDE8C',
-  cruise: '\u26F4\uFE0F',
-  souvenirs: '\uD83C\uDF81',
-  snacks: '\u2615',
-  clothing: '\uD83D\uDECD\uFE0F',
-  fuel: '\u26FD',
-  misc: '\uD83D\uDCE6',
 };
 
 /* ---- Accepted file types ---- */
@@ -269,9 +252,7 @@ interface BulkEventRowProps {
 
 function BulkEventRow({ event, index, selected, expanded, onToggleSelect, onToggleExpand, onUpdateEvent }: BulkEventRowProps) {
   const TypeIcon = TYPE_ICONS[event.type] || HelpCircle;
-  const typeConfig = EVENT_TYPES[event.type];
   const typeColorClass = TYPE_COLORS[event.type] || TYPE_COLORS.misc;
-  const emoji = TYPE_EMOJIS[event.type] || '';
 
   const dateDisplay = event.date
     ? (() => {
@@ -568,7 +549,7 @@ export default function ScanDocumentModal({ open, onClose, onConfirm, defaultDat
         );
       }
     }
-  }, [defaultDate]);
+  }, [defaultDate, tripStartDate, tripEndDate, tripYear, travelerCount]);
 
   /* ---- Drag & Drop ---- */
 

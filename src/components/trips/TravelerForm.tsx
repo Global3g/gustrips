@@ -16,6 +16,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getClientStorage } from '@/lib/firebase/client';
+import { useToast } from '@/context/ToastContext';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
@@ -180,6 +181,7 @@ export default function TravelerForm({
   const [saving, setSaving] = useState(false);
   const [uploadingPassport, setUploadingPassport] = useState(false);
   const [uploadingVisa, setUploadingVisa] = useState(false);
+  const { toast } = useToast();
 
   const updateField = <K extends keyof TravelerInfo>(key: K, value: TravelerInfo[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -201,8 +203,15 @@ export default function TravelerForm({
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       updateField(fieldKey, url);
+      toast(type === 'passport' ? 'Pasaporte cargado' : 'Visa cargada', 'success');
     } catch (err) {
       console.error(`Error al subir ${type}:`, err);
+      toast(
+        type === 'passport'
+          ? 'No se pudo subir la foto del pasaporte. Intenta de nuevo.'
+          : 'No se pudo subir la foto de la visa. Intenta de nuevo.',
+        'error',
+      );
     } finally {
       setUploading(false);
     }
@@ -216,6 +225,7 @@ export default function TravelerForm({
       onClose();
     } catch (err) {
       console.error('Error al guardar info de viajero:', err);
+      toast('No se pudo guardar el viajero. Intenta de nuevo.', 'error');
     } finally {
       setSaving(false);
     }

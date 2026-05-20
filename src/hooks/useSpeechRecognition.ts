@@ -147,7 +147,7 @@ export function useSpeechRecognition(opts?: {
     };
 
     instance.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      // eslint-disable-next-line no-console
+       
       console.warn('[useSpeechRecognition] error', event.error, event.message ?? '');
       setListening(false);
     };
@@ -160,7 +160,7 @@ export function useSpeechRecognition(opts?: {
     try {
       instance.start();
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn('[useSpeechRecognition] start failed', err);
       setListening(false);
     }

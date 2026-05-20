@@ -293,7 +293,7 @@ function MonthGrid({ dates, selectedDate, onSelect }: {
 
 /* ─── Componente ──────────────────────────────────── */
 
-export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDuplicate, onReorder, onCreateAt, selectedDate, onSelectedDateChange, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
+export default function AgendaView({ events, onEdit, onUpdate, onDelete, onDuplicate, onReorder: _onReorder, onCreateAt, selectedDate, onSelectedDateChange, tripStartDate, tripEndDate, calendarView = 'full', onCalendarViewChange }: AgendaViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const colRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const dragInfoRef = useRef<{ event: TripEvent; durationMin: number; offsetY: number } | null>(null);

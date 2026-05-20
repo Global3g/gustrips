@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Users, Plus, X, Plane, Receipt, CalendarPlus, MapPin, ChevronRight, BookHeart } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
@@ -146,7 +147,13 @@ export default function AppBottomNav() {
                     className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-gray-50 hover:bg-blue-50 border border-gray-100 hover:border-blue-200 transition-all text-left group"
                   >
                     {trip.coverImage ? (
-                      <img src={trip.coverImage} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                      <Image
+                        src={trip.coverImage}
+                        alt=""
+                        width={48}
+                        height={48}
+                        className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                      />
                     ) : (
                       <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#1e3a5f] to-[#2a5a8f] flex items-center justify-center flex-shrink-0">
                         <MapPin className="w-5 h-5 text-white/70" />

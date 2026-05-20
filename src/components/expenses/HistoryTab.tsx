@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, parseISO, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -386,7 +387,6 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
   }
 
   const baseCurrency = trip?.budgetCurrency || 'MXN';
-  const activeCount = filteredExpenses.length;
   const totalCategories = (Object.keys(EXPENSE_CATEGORIES) as ExpenseCategory[]).length;
 
   return (
@@ -810,17 +810,19 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                                       <div className="flex gap-3 mt-3">
                                         {/* Receipt thumb */}
                                         {expense.receiptUrl && (
-                                          // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/anchor-is-valid
+                                           
                                           <a
                                             href={expense.receiptUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border border-white/15 hover:border-amber-300/50 transition-colors"
+                                            className="relative flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border border-white/15 hover:border-amber-300/50 transition-colors"
                                           >
-                                            <img
+                                            <Image
                                               src={expense.receiptUrl}
                                               alt="Recibo"
-                                              className="w-full h-full object-cover"
+                                              fill
+                                              sizes="80px"
+                                              className="object-cover"
                                             />
                                           </a>
                                         )}

@@ -10,7 +10,7 @@ import { TRIP_STATUS, CURRENCIES, DEFAULT_CURRENCY } from '@/config/constants';
 import { getClientStorage } from '@/lib/firebase/client';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { classNames, getInitials } from '@/lib/utils/helpers';
-import type { Trip, TripStatus, GlobalTraveler } from '@/types';
+import type { Trip, TripStatus } from '@/types';
 
 const COVER_MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const COVER_ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];

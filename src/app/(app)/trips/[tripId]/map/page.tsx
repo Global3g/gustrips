@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useParams } from 'next/navigation';
 import { format, parseISO, eachDayOfInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { motion } from 'framer-motion';
@@ -88,8 +87,6 @@ const MapView = dynamic(() => import('@/components/trips/MapView'), {
 });
 
 export default function MapPage() {
-  const params = useParams();
-  const tripId = params.tripId as string;
   const { trip } = useTrip();
   const { events, loading: eventsLoading } = useEvents();
   const { geocodedEvents, loading: geocoding } = useGeocode(events);

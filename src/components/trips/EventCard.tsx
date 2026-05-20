@@ -36,7 +36,7 @@ import DocumentUpload from '@/components/trips/DocumentUpload';
 import PhotoGallery from '@/components/trips/PhotoGallery';
 import EventPattern from '@/components/trips/EventPattern';
 import QuickExpenseModal from '@/components/expenses/QuickExpenseModal';
-import type { TripEvent, EventType, TripAttachment, DocumentCategory, TripExpense } from '@/types';
+import type { TripEvent, TripAttachment, DocumentCategory, TripExpense } from '@/types';
 
 /* ---- Icon map ---- */
 
@@ -261,6 +261,9 @@ export default function EventCard({
   const RenderedIcon = event.type === 'restaurant' ? getRestaurantIcon(event) : Icon;
   const typeColor = typeConfig.color;
 
+  // `tick` is in deps deliberately: it forces re-evaluation of the time-based
+  // status every minute even though it isn't read directly inside the memo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const status = useMemo(() => getEventStatus(event), [event, tick]);
 
   /* Past detection — independent of the badge's 6h cutoff. Mutes ALL past events. */
