@@ -28,7 +28,18 @@ function readOptimisticAuthed(): boolean {
 export default function AuthGuard({ children }: { children: ReactNode }) {
   const { loading, isAuthenticated } = useAuth();
   const router = useRouter();
-  const [optimistic, setOptimistic] = useState<boolean>(readOptimisticAuthed);
+  // Always `false` on the server (and on the very first client render so
+  // hydration matches). The "have we logged in before?" verdict is read
+  // from localStorage in the effect below, AFTER hydration is committed.
+  // Reading localStorage during render breaks hydration (server says false,
+  // client says true) — that triggers React #418 and then a cascading
+  // re-render storm (#301) once the error boundary catches it.
+  const [optimistic, setOptimistic] = useState<boolean>(false);
+
+  // Hydrate the optimistic verdict from localStorage after mount.
+  useEffect(() => {
+    setOptimistic(readOptimisticAuthed());
+  }, []);
 
   // Persist the verdict so the next visit can skip the spinner entirely.
   useEffect(() => {
