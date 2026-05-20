@@ -10,27 +10,35 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/trips/$(tripId)).data;
     }
 
-    function isTripMember(tripId) {
-      let t = tripData(tripId);
-      return isSignedIn() && (
-        t.createdBy == request.auth.uid
-        || (t.travelerIds is list && request.auth.uid in t.travelerIds)
-      );
-    }
-
     function hasValidShareToken(t) {
       return t.shareToken is string && t.shareToken.size() > 0;
     }
 
-    // Trips: members can read+write their trips. Trips with shareToken
+    // Trips: members can read + write their trips. Trips with shareToken
     // are publicly readable for the share view.
+    //
+    // The read permission is split into THREE separate `allow read`
+    // statements (one per access path) instead of one big OR'd condition.
+    // Firestore's static analyzer can match each clean condition against
+    // the corresponding query structure (where-clause, etc.) — it can NOT
+    // reliably match an `array-contains` query against an `in ... is list`
+    // clause buried inside an OR with other predicates. Symptom of the
+    // monolithic rule: "Missing or insufficient permissions" on a query
+    // that should obviously be allowed.
     match /trips/{tripId} {
-      allow read: if (isSignedIn() && (
-                       resource.data.createdBy == request.auth.uid
-                       || (resource.data.travelerIds is list
-                           && request.auth.uid in resource.data.travelerIds)
-                     ))
-                   || hasValidShareToken(resource.data);
+      // 1) Owner reads their own trip.
+      allow read: if isSignedIn()
+                   && resource.data.createdBy == request.auth.uid;
+
+      // 2) Invited traveler reads a trip they're listed on. Using
+      //    `.get('travelerIds', [])` so missing field doesn't throw —
+      //    `in []` is always false, which is what we want.
+      allow read: if isSignedIn()
+                   && request.auth.uid in resource.data.get('travelerIds', []);
+
+      // 3) Anyone with a valid shareToken can read (the /shared/[token]
+      //    public view). Query must filter by `where('shareToken','==',t)`.
+      allow read: if hasValidShareToken(resource.data);
 
       allow create: if isSignedIn()
                      && request.resource.data.createdBy == request.auth.uid;
@@ -43,19 +51,32 @@ service cloud.firestore {
       allow delete: if isSignedIn()
                      && resource.data.createdBy == request.auth.uid;
 
-      // Subcolecciones (members, events, documents, checklist, photos, pushSubscriptions)
-      // Lectura: members del trip o public via shareToken del trip padre.
-      // Escritura: solo members del trip.
+      // Subcollections (members, events, documents, checklist, photos).
+      // Read paths split per the same reasoning above.
       match /{subcollection}/{docId} {
-        allow read: if isTripMember(tripId)
-                     || hasValidShareToken(tripData(tripId));
-        allow write: if isTripMember(tripId);
+        allow read: if isSignedIn()
+                     && tripData(tripId).createdBy == request.auth.uid;
+        allow read: if isSignedIn()
+                     && request.auth.uid in tripData(tripId).get('travelerIds', []);
+        allow read: if hasValidShareToken(tripData(tripId));
 
-        // Deep subcollections (e.g. trips/{id}/photos/{id}/comments)
+        allow write: if isSignedIn()
+                      && tripData(tripId).createdBy == request.auth.uid;
+        allow write: if isSignedIn()
+                      && request.auth.uid in tripData(tripId).get('travelerIds', []);
+
+        // Deep subcollections (e.g. trips/{id}/photos/{id}/comments).
         match /{deep=**} {
-          allow read: if isTripMember(tripId)
-                       || hasValidShareToken(tripData(tripId));
-          allow write: if isTripMember(tripId);
+          allow read: if isSignedIn()
+                       && tripData(tripId).createdBy == request.auth.uid;
+          allow read: if isSignedIn()
+                       && request.auth.uid in tripData(tripId).get('travelerIds', []);
+          allow read: if hasValidShareToken(tripData(tripId));
+
+          allow write: if isSignedIn()
+                        && tripData(tripId).createdBy == request.auth.uid;
+          allow write: if isSignedIn()
+                        && request.auth.uid in tripData(tripId).get('travelerIds', []);
         }
       }
     }

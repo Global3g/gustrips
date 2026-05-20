@@ -70,6 +70,12 @@ export function useTrips(): UseTripsReturn {
     let shared: Trip[] = [];
     let ownedLoaded = false;
     let sharedLoaded = false;
+    // Track errors per-subscription so a transient retry on one doesn't
+    // flap the page's `error` state (which would re-render listeners and
+    // potentially loop). Error is "sticky": once either subscription
+    // errors, the user sees the message until they refresh.
+    let ownedError: string | null = null;
+    let sharedError: string | null = null;
 
     const emit = () => {
       // Merge + dedupe by id (the user can be BOTH owner and traveler).
@@ -81,13 +87,21 @@ export function useTrips(): UseTripsReturn {
       );
       setTrips(merged);
       if (ownedLoaded && sharedLoaded) setLoading(false);
-      setError(null);
+      // Only clear error if BOTH subscriptions are healthy now.
+      if (!ownedError && !sharedError) setError(null);
     };
 
-    const handleError = (label: string) => (err: unknown) => {
+    const handleError = (label: 'owned' | 'shared') => (err: unknown) => {
       console.error(`Error al escuchar viajes (${label}):`, err);
+      if (label === 'owned') ownedError = 'error';
+      else sharedError = 'error';
+      // Don't keep "loading" forever if the very first attempt errors —
+      // mark this subscription as "loaded" (with empty) so the merged
+      // view can render with whatever the other side has.
+      if (label === 'owned') ownedLoaded = true;
+      else sharedLoaded = true;
+      if (ownedLoaded && sharedLoaded) setLoading(false);
       setError('Error al cargar los viajes');
-      setLoading(false);
     };
 
     const unsubOwned = onSnapshot(
@@ -95,6 +109,7 @@ export function useTrips(): UseTripsReturn {
       (snapshot) => {
         owned = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Trip);
         ownedLoaded = true;
+        ownedError = null;
         emit();
       },
       handleError('owned'),
@@ -104,6 +119,7 @@ export function useTrips(): UseTripsReturn {
       (snapshot) => {
         shared = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as Trip);
         sharedLoaded = true;
+        sharedError = null;
         emit();
       },
       handleError('shared'),
