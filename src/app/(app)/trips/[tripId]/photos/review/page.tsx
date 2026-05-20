@@ -146,7 +146,12 @@ export default function PhotoReviewPage() {
   // shrink the queue after every Keep/Delete (since markReviewed flips
   // `reviewed:true`), causing the next `index + 1` to jump TWO photos
   // forward instead of one. Symptom the user reports as "advances too fast".
-  const [queue, setQueue] = useState<AlbumPhoto[]>([]);
+  //
+  // The queue stores URLs only (the navigation order). The actual photo
+  // data is looked up live from `albumPhotos` so caption/favorite/etc.
+  // edits made during this session are reflected immediately when the
+  // user navigates back to a photo with handleBack().
+  const [queueUrls, setQueueUrls] = useState<string[]>([]);
   const queueInitialized = useRef(false);
 
   // Per-photo decisions. The map persists across "Atrás" navigation so
@@ -166,12 +171,12 @@ export default function PhotoReviewPage() {
   // Re-snapshot on filter change. setIndex(0) resets the cursor.
   useEffect(() => {
     if (!queueInitialized.current && albumPhotos.length === 0) return;
-    setQueue(buildQueue(albumPhotos, filter));
+    setQueueUrls(buildQueue(albumPhotos, filter).map((p) => p.url));
     setIndex(0);
     setDecisions(new Map());
     setFavoritedUrls(new Set());
     queueInitialized.current = true;
-    // albumPhotos intentionally omitted — see the comment on `queue` above.
+    // albumPhotos intentionally omitted — see the comment on `queueUrls` above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
@@ -180,14 +185,25 @@ export default function PhotoReviewPage() {
   useEffect(() => {
     if (queueInitialized.current) return;
     if (albumPhotos.length === 0) return;
-    setQueue(buildQueue(albumPhotos, filter));
+    setQueueUrls(buildQueue(albumPhotos, filter).map((p) => p.url));
     queueInitialized.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [albumPhotos]);
 
   /* ─── Derived data ─────────────────────────────────────────────────── */
-  const currentPhoto: AlbumPhoto | undefined = queue[index];
-  const showSummary = queue.length > 0 && index >= queue.length;
+  // Live map of URL → photo. Whenever Firestore updates a photo (e.g. we
+  // save a caption), the new data flows here on next render. The queue
+  // (just URLs) stays stable, so we keep our navigation order.
+  const photoByUrl = useMemo(() => {
+    const m = new Map<string, AlbumPhoto>();
+    for (const p of albumPhotos) m.set(p.url, p);
+    return m;
+  }, [albumPhotos]);
+
+  const currentUrl = queueUrls[index];
+  const currentPhoto: AlbumPhoto | undefined = currentUrl ? photoByUrl.get(currentUrl) : undefined;
+  const queueLength = queueUrls.length;
+  const showSummary = queueLength > 0 && index >= queueLength;
 
   const stats = useMemo<ReviewStats>(() => {
     let kept = 0;
@@ -502,7 +518,8 @@ export default function PhotoReviewPage() {
 
   /* ─── Preload next photo ──────────────────────────────────────────── */
   useEffect(() => {
-    const next = queue[index + 1];
+    const nextUrl = queueUrls[index + 1];
+    const next = nextUrl ? photoByUrl.get(nextUrl) : undefined;
     if (!next) return;
     if (typeof window === 'undefined') return;
     const src = next.fullUrl || next.url;
@@ -510,7 +527,7 @@ export default function PhotoReviewPage() {
     const img = new window.Image();
     img.src = src;
     // No cleanup needed — the browser caches the bytes.
-  }, [queue, index]);
+  }, [queueUrls, index, photoByUrl]);
 
   /* ─── Swipe handling ──────────────────────────────────────────────── */
   const handleDragEnd = useCallback(
@@ -543,7 +560,7 @@ export default function PhotoReviewPage() {
 
   // Empty state (no photos to review at all under the current filter, and
   // we haven't gone through a session yet)
-  const emptyOnLoad = queue.length === 0 && stats.kept + stats.deleted === 0;
+  const emptyOnLoad = queueLength === 0 && stats.kept + stats.deleted === 0;
 
   return (
     <div
@@ -562,10 +579,10 @@ export default function PhotoReviewPage() {
         </button>
 
         <div className="absolute left-1/2 -translate-x-1/2 text-white/55 text-xs sm:text-sm font-medium tabular-nums">
-          {queue.length > 0 ? (
+          {queueLength > 0 ? (
             <>
-              {Math.min(index + 1, queue.length)}{' '}
-              <span className="text-white/30">de</span> {queue.length}
+              {Math.min(index + 1, queueLength)}{' '}
+              <span className="text-white/30">de</span> {queueLength}
             </>
           ) : (
             <span className="text-white/30">Sin fotos</span>
@@ -879,13 +896,18 @@ export default function PhotoReviewPage() {
       ) : null}
 
       {/* Invisible preload of next image for instant transitions */}
-      {queue[index + 1] && (
-        <link
-          rel="preload"
-          as="image"
-          href={queue[index + 1].fullUrl || queue[index + 1].url}
-        />
-      )}
+      {(() => {
+        const nextUrl = queueUrls[index + 1];
+        const next = nextUrl ? photoByUrl.get(nextUrl) : undefined;
+        if (!next) return null;
+        return (
+          <link
+            rel="preload"
+            as="image"
+            href={next.fullUrl || next.url}
+          />
+        );
+      })()}
     </div>
   );
 }
