@@ -210,22 +210,29 @@ export default function PhotoReviewPage() {
 
   /* ─── Caption sync ──────────────────────────────────────────────────
      When the photo changes we reset the textarea to whatever caption is
-     persisted on the new photo. We adjust state during render (the
-     "previous state" pattern from the React docs) rather than via an
-     effect — this avoids the extra render the effect would produce. */
-  const [trackedPhotoUrl, setTrackedPhotoUrl] = useState<string | null>(
-    currentPhoto?.url ?? null,
-  );
-  if (currentPhoto?.url !== trackedPhotoUrl) {
-    setTrackedPhotoUrl(currentPhoto?.url ?? null);
+     persisted on the new photo. Done via useEffect on the photo URL
+     (single primitive dep) — the "adjust state during render" pattern is
+     too easy to misuse with our context-fed deps and was triggering a
+     render loop in production. */
+  const photoUrl = currentPhoto?.url ?? null;
+  useEffect(() => {
     const c = currentPhoto?.caption ?? '';
     setCaption(c);
     setOriginalCaption(c);
-  }
+    // We deliberately depend on `photoUrl` only — the caption value
+    // comes off the same photo, so we don't need it in deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoUrl]);
 
   /* ─── Speech recognition ──────────────────────────────────────────── */
   const speech = useSpeechRecognition({ lang: 'es-MX', continuous: true, interimResults: true });
   const speechBaseRef = useRef<string>('');
+  // Stable ref to .reset() so we don't have to depend on the whole
+  // `speech` object (which is a new reference on every render and would
+  // make this effect fire every render → speech.reset → setState in the
+  // hook → re-render → infinite loop. That was the React #301 in prod.)
+  const speechResetRef = useRef(speech.reset);
+  speechResetRef.current = speech.reset;
 
   // When dictation finalizes, the latest transcript is committed to the
   // caption. We capture the caption value at start time in `speechBaseRef`
@@ -237,9 +244,9 @@ export default function PhotoReviewPage() {
         ? `${base.trimEnd()} ${speech.transcript.trim()}`
         : speech.transcript.trim();
       setCaption(appended.slice(0, CAPTION_MAX));
-      speech.reset();
+      speechResetRef.current();
     }
-  }, [speech.listening, speech.transcript, speech]);
+  }, [speech.listening, speech.transcript]);
 
   const toggleDictation = useCallback(() => {
     if (speech.listening) {
