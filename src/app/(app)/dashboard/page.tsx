@@ -477,7 +477,33 @@ export default function DashboardPage() {
       )}
 
       {/* ── Empty state ── */}
-      {!loading && trips.length === 0 && !error && <DashboardEmptyState />}
+      {!loading && trips.length === 0 && !error && (
+        <>
+          {user?.email && (
+            <div className="max-w-2xl mx-auto mb-6 rounded-2xl border border-amber-300/30 bg-amber-50/95 p-4 sm:p-5">
+              <p className="text-amber-900 text-sm font-semibold mb-2">
+                ¿No ves tus viajes?
+              </p>
+              <p className="text-amber-900/85 text-xs sm:text-sm mb-3">
+                Estás logueado como <strong>{user.email}</strong>. Si tus viajes están en
+                otra cuenta o tu sesión está atascada, limpia todo y vuelve a iniciar
+                sesión con la cuenta correcta.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { resetSessionAndReload } = await import('@/lib/utils/resetSession');
+                  await resetSessionAndReload();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors"
+              >
+                Limpiar sesión y volver a iniciar
+              </button>
+            </div>
+          )}
+          <DashboardEmptyState />
+        </>
+      )}
 
       {/* ── Hero trip ── */}
       {!loading && heroTrip && (
