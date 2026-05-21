@@ -37,6 +37,7 @@ import { extractReceiptData } from '@/lib/utils/receiptOCR';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
 import Particles from '@/components/ui/Particles';
 import { classNames, getInitials, formatCurrency, formatDateES } from '@/lib/utils/helpers';
+import { groupAndOrderEvents, todayISO } from '@/lib/utils/eventOrdering';
 import type { ExpenseCategory, PaymentMethod } from '@/types';
 import type { LucideIcon } from 'lucide-react';
 
@@ -565,25 +566,22 @@ export function CaptureTab({ tripId }: CaptureTabProps) {
                       className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-amber-300/60 backdrop-blur-sm transition-colors [color-scheme:dark]"
                     >
                       <option value="">Sin vincular</option>
-                      {(() => {
-                        const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
-                        const grouped = new Map<string, typeof events>();
-                        for (const ev of sorted) {
-                          const list = grouped.get(ev.date) || [];
-                          list.push(ev);
-                          grouped.set(ev.date, list);
-                        }
-                        return [...grouped.entries()].map(([dateStr, evts]) => (
-                          <optgroup key={dateStr} label={formatDateES(dateStr)}>
-                            {evts.map((ev) => (
+                      {groupAndOrderEvents(events).map(([dateStr, evts]) => (
+                        <optgroup
+                          key={dateStr}
+                          label={dateStr === todayISO() ? `Hoy · ${formatDateES(dateStr)}` : formatDateES(dateStr)}
+                        >
+                          {evts
+                            .slice()
+                            .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
+                            .map((ev) => (
                               <option key={ev.id} value={ev.id}>
                                 {ev.startTime ? `${ev.startTime} - ` : ''}
                                 {ev.title}
                               </option>
                             ))}
-                          </optgroup>
-                        ));
-                      })()}
+                        </optgroup>
+                      ))}
                     </select>
                   </div>
 

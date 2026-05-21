@@ -49,6 +49,7 @@ import { SwipeActions, type SwipeAction } from '@/components/SwipeActions';
 import { EmptyState } from '@/components/EmptyState';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
 import { classNames, formatCurrency, getInitials, formatDateES } from '@/lib/utils/helpers';
+import { groupAndOrderEvents, todayISO } from '@/lib/utils/eventOrdering';
 import type { ExpenseCategory, TripExpense, PaymentMethod } from '@/types';
 import type { LucideIcon } from 'lucide-react';
 
@@ -1052,7 +1053,22 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-700 outline-none focus:border-amber-400"
             >
               <option value="">Sin vincular</option>
-              {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.title} — {formatDateES(ev.date)}</option>)}
+              {groupAndOrderEvents(events).map(([dateStr, evts]) => (
+                <optgroup
+                  key={dateStr}
+                  label={dateStr === todayISO() ? `Hoy · ${formatDateES(dateStr)}` : formatDateES(dateStr)}
+                >
+                  {evts
+                    .slice()
+                    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
+                    .map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.startTime ? `${ev.startTime} - ` : ''}
+                        {ev.title}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
             </select>
           </div>
 

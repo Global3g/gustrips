@@ -47,7 +47,8 @@ import { useExchangeRates } from '@/hooks/useExchangeRates';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Button from '@/components/ui/Button';
-import { classNames, formatCurrency, getInitials } from '@/lib/utils/helpers';
+import { classNames, formatCurrency, getInitials, formatDateES } from '@/lib/utils/helpers';
+import { groupAndOrderEvents, todayISO } from '@/lib/utils/eventOrdering';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useToast } from '@/context/ToastContext';
 import { EVENT_TYPES, CURRENCIES } from '@/config/constants';
@@ -438,10 +439,27 @@ function AddExpenseModal({
     value: m.uid,
     label: m.displayName || m.email,
   }));
-  const eventOptions = [
-    { value: '', label: 'Sin vincular' },
-    ...events.map((e) => ({ value: e.id, label: e.title })),
-  ];
+  // Order with today first, then upcoming days, then past days (reverse).
+  // Flat list with date prefix so the Select component (no optgroup support)
+  // still shows the temporal grouping in the label.
+  const eventOptions = useMemo(() => {
+    const ordered = groupAndOrderEvents(events);
+    const today = todayISO();
+    const opts: { value: string; label: string }[] = [
+      { value: '', label: 'Sin vincular' },
+    ];
+    for (const [dateStr, evts] of ordered) {
+      const dayLabel = dateStr === today ? `Hoy · ${formatDateES(dateStr)}` : formatDateES(dateStr);
+      const sortedEvts = evts.slice().sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      for (const e of sortedEvts) {
+        opts.push({
+          value: e.id,
+          label: `${dayLabel} — ${e.startTime ? `${e.startTime} ` : ''}${e.title}`,
+        });
+      }
+    }
+    return opts;
+  }, [events]);
 
   const toggleMember = (uid: string) => {
     setSplitBetween((prev) =>
