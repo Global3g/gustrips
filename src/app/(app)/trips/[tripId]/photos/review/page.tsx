@@ -895,19 +895,11 @@ export default function PhotoReviewPage() {
         </main>
       ) : null}
 
-      {/* Invisible preload of next image for instant transitions */}
-      {(() => {
-        const nextUrl = queueUrls[index + 1];
-        const next = nextUrl ? photoByUrl.get(nextUrl) : undefined;
-        if (!next) return null;
-        return (
-          <link
-            rel="preload"
-            as="image"
-            href={next.fullUrl || next.url}
-          />
-        );
-      })()}
+      {/* The next photo is already pre-fetched by the `new Image()` call in
+          the preload effect above. We used to also drop a `<link rel="preload">`
+          here, but that fired a "preload not used within a few seconds" console
+          warning when the user lingered on a photo. The JS preload reaches the
+          same browser HTTP cache without that noise. */}
     </div>
   );
 }
