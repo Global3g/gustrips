@@ -183,9 +183,23 @@ export default function AppSidebar() {
                 <p className="text-white/95 text-[10px] truncate">{user.email}</p>
               </div>
               <button
-                onClick={() => signOut()}
+                onClick={async () => {
+                  // Nuclear reset: clears SW + caches + IndexedDB + cookies
+                  // before redirect. Standard signOut() doesn't always clear
+                  // a corrupted Firebase Auth state cached in IndexedDB,
+                  // which leaves requests sent without a token (403). This
+                  // path is the supported "stuck session" escape hatch.
+                  try {
+                    await signOut();
+                  } catch {
+                    /* signOut may fail if state is already broken; we
+                       still want to clear the rest. */
+                  }
+                  const { resetSessionAndReload } = await import('@/lib/utils/resetSession');
+                  await resetSessionAndReload();
+                }}
                 className="text-white/90 hover:text-rose-400 transition-colors duration-200 p-1.5 rounded-lg hover:bg-white/[0.05]"
-                title="Cerrar sesion"
+                title="Cerrar sesion (limpia cache + sesion)"
                 aria-label="Cerrar sesion"
               >
                 <LogOut className="w-4 h-4" />

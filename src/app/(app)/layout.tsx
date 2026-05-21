@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import AuthGuard from '@/components/layout/AuthGuard';
-import { useAuth } from '@/hooks/useAuth';
 import AppSidebar from '@/components/layout/AppSidebar';
 import AppBottomNav from '@/components/layout/AppBottomNav';
 import ErrorBoundary from '@/components/ui/ErrorBoundary';
@@ -52,47 +51,6 @@ function isInsideTrip(pathname: string): boolean {
   return !!match && match[1] !== 'new';
 }
 
-function DebugAuthBanner() {
-  const { user, firebaseUser } = useAuth();
-  const [fbCurrentUserUid, setFbCurrentUserUid] = useState<string | null>(null);
-  const [tokenInfo, setTokenInfo] = useState<string>('cargando...');
-
-  useEffect(() => {
-    void (async () => {
-      const { getClientAuth } = await import('@/lib/firebase/client');
-      const auth = getClientAuth();
-      const fb = auth.currentUser;
-      setFbCurrentUserUid(fb ? fb.uid : null);
-      if (fb) {
-        try {
-          const token = await fb.getIdToken();
-          setTokenInfo(`OK · len=${token.length}`);
-        } catch (e) {
-          setTokenInfo('FALLÓ: ' + (e instanceof Error ? e.message : 'error'));
-        }
-      } else {
-        setTokenInfo('no hay currentUser');
-      }
-    })();
-  }, [user]);
-
-  return (
-    <div
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-        background: '#fff59d', color: '#000', fontSize: '11px',
-        fontFamily: 'monospace', padding: '6px 12px', lineHeight: 1.5,
-        borderBottom: '2px solid #f57c00',
-      }}
-    >
-      <div><strong>tu uid (app):</strong> {user?.uid ?? '(NO LOGUEADO)'}</div>
-      <div><strong>firebaseUser (SDK):</strong> {firebaseUser?.uid ?? '(NULL)'}</div>
-      <div><strong>auth.currentUser:</strong> {fbCurrentUserUid ?? '(NULL — sesión rota)'}</div>
-      <div><strong>token:</strong> {tokenInfo}</div>
-    </div>
-  );
-}
-
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const inTrip = isInsideTrip(pathname);
@@ -101,7 +59,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <AuthGuard>
       <ToastProvider>
         <ErrorBoundary>
-          <DebugAuthBanner />
           <div className="flex min-h-screen" style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #0c1929 0%, #132438 50%, #0f1f33 100%)' }}>
             {/* Sidebar - desktop only, hidden inside trip views */}
             {!inTrip && <AppSidebar />}

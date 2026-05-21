@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
 import TripSidebar from '@/components/trips/TripSidebar';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
@@ -34,33 +33,7 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const tripId = params.tripId as string;
   const { trip, updateTrip, events, createEvent } = useTripData();
-  const { user } = useAuth();
 
-  // TEMP DEBUG: verify Firebase Auth state directly — separately from our
-  // optimistic app-level `user`. If `auth.currentUser` is null, the
-  // Storage SDK has no token to send → 403 even with permissive rules.
-  useEffect(() => {
-    void (async () => {
-      const { getClientAuth } = await import('@/lib/firebase/client');
-      const auth = getClientAuth();
-      const fb = auth.currentUser;
-      console.log('[debug-auth] app user.uid:', user?.uid ?? '(NONE)');
-      console.log('[debug-auth] firebase auth.currentUser:', fb ? fb.uid : '(NULL — sesión rota)');
-      if (fb) {
-        try {
-          const token = await fb.getIdToken();
-          console.log('[debug-auth] token length:', token.length, '(should be ~900+)');
-          console.log('[debug-auth] token first 40:', token.slice(0, 40));
-        } catch (e) {
-          console.log('[debug-auth] getIdToken FAILED:', e);
-        }
-      }
-      if (trip) {
-        console.log('[debug-auth] trip.createdBy:', trip.createdBy);
-        console.log('[debug-auth] match auth vs createdBy:', fb?.uid === trip.createdBy);
-      }
-    })();
-  }, [trip, user]);
   // The layout only needs the upload action — not the live documents list —
   // so we use the write-only variant. Otherwise we'd pay for a permanent
   // onSnapshot listener on the attachments subcollection on every trip page.
@@ -131,21 +104,6 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-[calc(100vh-5rem)] lg:h-screen">
-      {/* TEMP DEBUG BANNER — visible on every trip page until 403 is resolved */}
-      <div
-        style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-          background: '#ffeb3b', color: '#000', fontSize: '11px',
-          fontFamily: 'monospace', padding: '6px 12px', lineHeight: 1.4,
-          borderBottom: '2px solid #f57c00',
-        }}
-      >
-        <div>tu uid: {user?.uid ?? '(NO LOGUEADO)'}</div>
-        <div>trip.createdBy: {trip?.createdBy ?? '(NO CARGÓ)'}</div>
-        <div>trip.travelerIds: {JSON.stringify(trip?.travelerIds ?? null)}</div>
-        <div>coinciden: {trip && user ? (trip.createdBy === user.uid ? '✅ SI' : '❌ NO') : '...'}</div>
-      </div>
-
       {/* Trip Sidebar - desktop */}
       <div className="hidden lg:block w-[280px] border-r border-white/[0.04] bg-[#1e3a5f] overflow-y-auto flex-shrink-0">
         <TripSidebar
