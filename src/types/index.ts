@@ -70,6 +70,9 @@ export interface AlbumPhoto {
   caption?: string;
   eventId?: string;
   uploadedAt: string;
+  // SHA-256 of the original file bytes (hex). Set by photoUploader on new
+  // uploads; used to detect duplicate uploads at pick-time.
+  contentHash?: string;
   // Review mode (see /photos/review). Set when the user has triaged the
   // photo so the review flow can skip already-seen ones.
   reviewed?: boolean;

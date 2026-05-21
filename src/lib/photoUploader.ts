@@ -10,6 +10,7 @@ import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
 import { isHeicFile, normalizeImageFile } from '@/lib/heic';
+import { computeFileHash } from '@/lib/utils/photoHash';
 import type { AlbumPhoto } from '@/types';
 import type { PendingPhoto } from '@/lib/pendingPhotos';
 
@@ -110,6 +111,15 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
   const db = getClientDb();
   const timestamp = Date.now();
 
+  // Fingerprint the raw bytes BEFORE any conversion. This way re-uploading
+  // the same camera-roll item (same HEIC, same JPEG) always yields the
+  // same `contentHash` — even if we change the HEIC pipeline tomorrow.
+  // Hashing runs in parallel with HEIC conversion to keep upload fast.
+  const hashPromise = computeFileHash(fileBlob).catch((err) => {
+    console.warn('[uploadPhoto] hash failed, skipping dedup fingerprint:', err);
+    return null;
+  });
+
   // HEIC from Photos.app can't be decoded by canvas. Convert to JPEG up-front
   // so the rest of the pipeline (compression, upload, thumbnails) works.
   let workingFile: File =
@@ -153,6 +163,8 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
       getDownloadURL(storage_full),
     ]);
 
+    const contentHash = await hashPromise;
+
     const photo: AlbumPhoto = {
       url,
       fullUrl,
@@ -162,6 +174,7 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
     };
     if (caption) photo.caption = caption;
     if (eventId) photo.eventId = eventId;
+    if (contentHash) photo.contentHash = contentHash;
 
     // Write to the photos subcollection (new home). Each photo is its own
     // small doc — trip docs stay light and the page can paginate later.

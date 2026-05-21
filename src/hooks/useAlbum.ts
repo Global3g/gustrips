@@ -198,6 +198,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
               reviewedAt: typeof data.reviewedAt === 'string' ? data.reviewedAt : undefined,
               favorite: data.favorite,
               deletedAt: typeof data.deletedAt === 'string' ? data.deletedAt : undefined,
+              contentHash: typeof data.contentHash === 'string' ? data.contentHash : undefined,
             }) as AlbumPhoto,
           );
         });

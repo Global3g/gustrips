@@ -60,6 +60,10 @@ const MobileScrollHelper = dynamic(
   () => import('@/components/trips/photos/MobileScrollHelper'),
   { ssr: false },
 );
+const DuplicateCheckModal = dynamic(
+  () => import('@/components/trips/photos/DuplicateCheckModal'),
+  { ssr: false },
+);
 import LazySection from '@/components/trips/photos/LazySection';
 import { PullToRefreshIndicator } from '@/components/PullToRefreshIndicator';
 import { EmptyState } from '@/components/EmptyState';
@@ -154,6 +158,13 @@ export default function PhotosPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [showLinkModal, setShowLinkModal] = useState(false);
+  // Duplicate detection: when the user picks files, we hash them and check
+  // against `albumPhotos[].contentHash`. If any match, we surface a modal
+  // before opening the regular upload form.
+  const [pendingDuplicates, setPendingDuplicates] = useState<
+    Array<{ file: File; existing: AlbumPhoto }>
+  >([]);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [modalCity, setModalCity] = useState('');
   const [modalCountry, setModalCountry] = useState('');
   const [modalEventName, setModalEventName] = useState('');
@@ -411,9 +422,7 @@ export default function PhotosPage() {
   }, []);
 
   /* ── Upload handlers ── */
-  const handleFiles = useCallback((files: FileList | File[]) => {
-    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
-    if (fileArray.length === 0) return;
+  const openUploadForm = useCallback((fileArray: File[]) => {
     setPendingFiles(fileArray);
     setSelectedEventId('');
     setModalCity('');
@@ -421,6 +430,76 @@ export default function PhotosPage() {
     setModalEventName('');
     setModalEventType('');
     setShowLinkModal(true);
+  }, []);
+
+  const handleFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+      if (fileArray.length === 0) return;
+
+      // Build the index of existing fingerprints once. Only photos that have
+      // been uploaded WITH a contentHash participate in dedup; legacy photos
+      // (pre-fingerprinting) are invisible to the check.
+      const existingByHash = new Map<string, AlbumPhoto>();
+      for (const p of albumPhotos) {
+        if (p.contentHash) existingByHash.set(p.contentHash, p);
+      }
+
+      // If we have nothing to compare against, skip hashing entirely —
+      // a clean trip with no prior photos can never have duplicates.
+      if (existingByHash.size === 0) {
+        openUploadForm(fileArray);
+        return;
+      }
+
+      try {
+        const { computeFileHashes } = await import('@/lib/utils/photoHash');
+        const hashes = await computeFileHashes(fileArray);
+        const dupes: Array<{ file: File; existing: AlbumPhoto }> = [];
+        for (let i = 0; i < fileArray.length; i++) {
+          const h = hashes[i];
+          if (!h) continue;
+          const match = existingByHash.get(h);
+          if (match) dupes.push({ file: fileArray[i], existing: match });
+        }
+        if (dupes.length > 0) {
+          setPendingFiles(fileArray);
+          setPendingDuplicates(dupes);
+          setShowDuplicateModal(true);
+          return;
+        }
+      } catch (err) {
+        console.warn('[photos] dedup check failed, proceeding with upload:', err);
+      }
+
+      openUploadForm(fileArray);
+    },
+    [albumPhotos, openUploadForm],
+  );
+
+  const handleDuplicateUploadAll = useCallback(() => {
+    setShowDuplicateModal(false);
+    setPendingDuplicates([]);
+    openUploadForm(pendingFiles);
+  }, [pendingFiles, openUploadForm]);
+
+  const handleDuplicateUploadUniqueOnly = useCallback(() => {
+    const duplicateRefs = new Set(pendingDuplicates.map((d) => d.file));
+    const unique = pendingFiles.filter((f) => !duplicateRefs.has(f));
+    setShowDuplicateModal(false);
+    setPendingDuplicates([]);
+    if (unique.length === 0) {
+      setPendingFiles([]);
+      toast('Todas las fotos ya están en el álbum', 'info');
+      return;
+    }
+    openUploadForm(unique);
+  }, [pendingFiles, pendingDuplicates, openUploadForm, toast]);
+
+  const handleDuplicateCancel = useCallback(() => {
+    setShowDuplicateModal(false);
+    setPendingDuplicates([]);
+    setPendingFiles([]);
   }, []);
 
   const uploadFiles = useCallback(
@@ -1557,6 +1636,16 @@ export default function PhotosPage() {
           </LazySection>
         </div>
       )}
+
+      {/* ── Duplicate check modal — shown after picking files if hashes match ── */}
+      <DuplicateCheckModal
+        open={showDuplicateModal}
+        duplicates={pendingDuplicates}
+        totalPicked={pendingFiles.length}
+        onCancel={handleDuplicateCancel}
+        onUploadUniqueOnly={handleDuplicateUploadUniqueOnly}
+        onUploadAll={handleDuplicateUploadAll}
+      />
 
       {/* ── Link to event modal (dark glass) ── */}
       <AnimatePresence>
