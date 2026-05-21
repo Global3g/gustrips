@@ -2,53 +2,41 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function tripDoc(tripId) {
-      return firestore.get(/databases/(default)/documents/trips/$(tripId)).data;
-    }
-
-    // 25 MB upload cap for trip photos. `request.resource` is null on delete,
-    // so we only apply the cap to actual writes.
-    function uploadSizeOk() {
-      return request.resource == null
-             || request.resource.size < 25 * 1024 * 1024;
-    }
-
-    // Trip files (photos, documents). Read+write split into individual
-    // allow statements so Storage's rule engine can match each clean
-    // condition against the operation — the monolithic OR'd version
-    // with `is list` returned 403 on write even for the trip owner.
+    // Trip files (photos, documents). Rules inlined — no helper functions —
+    // because helper-style isTripMember() returned 403 to the trip owner
+    // even when the inlined equivalent should pass. The rule engine's
+    // analysis of cross-service firestore.get() inside a helper is what
+    // tripped it.
     match /trips/{tripId}/{allPaths=**} {
-      // ── READ ─────────────────────────────────────────────
-      // 1) Owner reads their own trip files.
-      allow read: if isSignedIn()
-                   && tripDoc(tripId).createdBy == request.auth.uid;
+      // ── READ ────────────────────────────────────────────────────────
+      // Owner.
+      allow read: if request.auth != null
+                   && firestore.get(/databases/(default)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+      // Invited traveler.
+      allow read: if request.auth != null
+                   && request.auth.uid in firestore.get(/databases/(default)/documents/trips/$(tripId)).data.get('travelerIds', []);
+      // Public share-link reader.
+      allow read: if firestore.get(/databases/(default)/documents/trips/$(tripId)).data.shareToken is string
+                   && firestore.get(/databases/(default)/documents/trips/$(tripId)).data.shareToken.size() > 0;
 
-      // 2) Invited traveler.
-      allow read: if isSignedIn()
-                   && request.auth.uid in tripDoc(tripId).get('travelerIds', []);
-
-      // 3) Public share — anyone with a valid token can read.
-      allow read: if tripDoc(tripId).shareToken is string
-                   && tripDoc(tripId).shareToken.size() > 0;
-
-      // ── WRITE ────────────────────────────────────────────
-      allow write: if isSignedIn()
-                    && tripDoc(tripId).createdBy == request.auth.uid
-                    && uploadSizeOk();
-
-      allow write: if isSignedIn()
-                    && request.auth.uid in tripDoc(tripId).get('travelerIds', [])
-                    && uploadSizeOk();
+      // ── WRITE ───────────────────────────────────────────────────────
+      // Owner. 25 MB cap; `request.resource` is null on delete so we don't
+      // gate deletes on size.
+      allow write: if request.auth != null
+                    && firestore.get(/databases/(default)/documents/trips/$(tripId)).data.createdBy == request.auth.uid
+                    && (request.resource == null
+                        || request.resource.size < 25 * 1024 * 1024);
+      // Invited traveler.
+      allow write: if request.auth != null
+                    && request.auth.uid in firestore.get(/databases/(default)/documents/trips/$(tripId)).data.get('travelerIds', [])
+                    && (request.resource == null
+                        || request.resource.size < 25 * 1024 * 1024);
     }
 
     // Tripshistory photos: enforce image type + 10MB max
     match /users/{userId}/tripstories/{storyId}/{allPaths=**} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
-      allow write: if isSignedIn()
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null
                     && request.auth.uid == userId
                     && (request.resource == null
                         || (request.resource.size < 10 * 1024 * 1024
@@ -56,7 +44,7 @@ service firebase.storage {
     }
 
     match /users/{userId}/{allPaths=**} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
