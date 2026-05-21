@@ -131,6 +131,21 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-[calc(100vh-5rem)] lg:h-screen">
+      {/* TEMP DEBUG BANNER — visible on every trip page until 403 is resolved */}
+      <div
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          background: '#ffeb3b', color: '#000', fontSize: '11px',
+          fontFamily: 'monospace', padding: '6px 12px', lineHeight: 1.4,
+          borderBottom: '2px solid #f57c00',
+        }}
+      >
+        <div>tu uid: {user?.uid ?? '(NO LOGUEADO)'}</div>
+        <div>trip.createdBy: {trip?.createdBy ?? '(NO CARGÓ)'}</div>
+        <div>trip.travelerIds: {JSON.stringify(trip?.travelerIds ?? null)}</div>
+        <div>coinciden: {trip && user ? (trip.createdBy === user.uid ? '✅ SI' : '❌ NO') : '...'}</div>
+      </div>
+
       {/* Trip Sidebar - desktop */}
       <div className="hidden lg:block w-[280px] border-r border-white/[0.04] bg-[#1e3a5f] overflow-y-auto flex-shrink-0">
         <TripSidebar
