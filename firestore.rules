@@ -6,77 +6,60 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function tripData(tripId) {
-      return get(/databases/$(database)/documents/trips/$(tripId)).data;
-    }
-
-    function hasValidShareToken(t) {
-      return t.shareToken is string && t.shareToken.size() > 0;
-    }
-
-    // Trips: members can read + write their trips. Trips with shareToken
-    // are publicly readable for the share view.
-    //
-    // The read permission is split into THREE separate `allow read`
-    // statements (one per access path) instead of one big OR'd condition.
-    // Firestore's static analyzer can match each clean condition against
-    // the corresponding query structure (where-clause, etc.) — it can NOT
-    // reliably match an `array-contains` query against an `in ... is list`
-    // clause buried inside an OR with other predicates. Symptom of the
-    // monolithic rule: "Missing or insufficient permissions" on a query
-    // that should obviously be allowed.
+    // Trips: split allow statements per access path so the rule analyzer
+    // can match each clean condition against the query.
     match /trips/{tripId} {
       // 1) Owner reads their own trip.
       allow read: if isSignedIn()
                    && resource.data.createdBy == request.auth.uid;
 
-      // 2) Invited traveler reads a trip they're listed on. Using
-      //    `.get('travelerIds', [])` so missing field doesn't throw —
-      //    `in []` is always false, which is what we want.
+      // 2) Invited traveler.
       allow read: if isSignedIn()
                    && request.auth.uid in resource.data.get('travelerIds', []);
 
-      // 3) Anyone with a valid shareToken can read (the /shared/[token]
-      //    public view). Query must filter by `where('shareToken','==',t)`.
-      allow read: if hasValidShareToken(resource.data);
+      // 3) Public share-link viewer.
+      allow read: if resource.data.shareToken is string
+                   && resource.data.shareToken.size() > 0;
 
       allow create: if isSignedIn()
                      && request.resource.data.createdBy == request.auth.uid;
 
       allow update: if isSignedIn()
                      && resource.data.createdBy == request.auth.uid
-                     // owner cannot be reassigned via update
                      && request.resource.data.createdBy == resource.data.createdBy;
 
       allow delete: if isSignedIn()
                      && resource.data.createdBy == request.auth.uid;
 
       // Subcollections (members, events, documents, checklist, photos).
-      // Read paths split per the same reasoning above.
+      // Inline get() — no helper function — because helper-style had been
+      // unreliable across rule paths. Each allow is a single condition.
       match /{subcollection}/{docId} {
         allow read: if isSignedIn()
-                     && tripData(tripId).createdBy == request.auth.uid;
+                     && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
         allow read: if isSignedIn()
-                     && request.auth.uid in tripData(tripId).get('travelerIds', []);
-        allow read: if hasValidShareToken(tripData(tripId));
+                     && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
+        allow read: if get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken is string
+                     && get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken.size() > 0;
 
         allow write: if isSignedIn()
-                      && tripData(tripId).createdBy == request.auth.uid;
+                      && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
         allow write: if isSignedIn()
-                      && request.auth.uid in tripData(tripId).get('travelerIds', []);
+                      && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
 
         // Deep subcollections (e.g. trips/{id}/photos/{id}/comments).
         match /{deep=**} {
           allow read: if isSignedIn()
-                       && tripData(tripId).createdBy == request.auth.uid;
+                       && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
           allow read: if isSignedIn()
-                       && request.auth.uid in tripData(tripId).get('travelerIds', []);
-          allow read: if hasValidShareToken(tripData(tripId));
+                       && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
+          allow read: if get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken is string
+                       && get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken.size() > 0;
 
           allow write: if isSignedIn()
-                        && tripData(tripId).createdBy == request.auth.uid;
+                        && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
           allow write: if isSignedIn()
-                        && request.auth.uid in tripData(tripId).get('travelerIds', []);
+                        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
         }
       }
     }
