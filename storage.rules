@@ -2,38 +2,18 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Trip files (photos, documents). Rules inlined — no helper functions —
-    // because helper-style isTripMember() returned 403 to the trip owner
-    // even when the inlined equivalent should pass. The rule engine's
-    // analysis of cross-service firestore.get() inside a helper is what
-    // tripped it.
+    // TEMP DIAGNOSTIC: trip photos/documents readable + writable by any
+    // signed-in user. If uploads work now, we've confirmed the issue is
+    // with the cross-service firestore.get() in the ownership check
+    // and we can restore a working strict rule using a different pattern.
+    // Single-user environment so this is briefly safe. Will be reverted.
     match /trips/{tripId}/{allPaths=**} {
-      // ── READ ────────────────────────────────────────────────────────
-      // Owner.
-      allow read: if request.auth != null
-                   && firestore.get(/databases/(default)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
-      // Invited traveler.
-      allow read: if request.auth != null
-                   && request.auth.uid in firestore.get(/databases/(default)/documents/trips/$(tripId)).data.get('travelerIds', []);
-      // Public share-link reader.
-      allow read: if firestore.get(/databases/(default)/documents/trips/$(tripId)).data.shareToken is string
-                   && firestore.get(/databases/(default)/documents/trips/$(tripId)).data.shareToken.size() > 0;
-
-      // ── WRITE ───────────────────────────────────────────────────────
-      // Owner. 25 MB cap; `request.resource` is null on delete so we don't
-      // gate deletes on size.
-      allow write: if request.auth != null
-                    && firestore.get(/databases/(default)/documents/trips/$(tripId)).data.createdBy == request.auth.uid
-                    && (request.resource == null
-                        || request.resource.size < 25 * 1024 * 1024);
-      // Invited traveler.
-      allow write: if request.auth != null
-                    && request.auth.uid in firestore.get(/databases/(default)/documents/trips/$(tripId)).data.get('travelerIds', [])
-                    && (request.resource == null
-                        || request.resource.size < 25 * 1024 * 1024);
+      allow read, write: if request.auth != null
+                          && (request.resource == null
+                              || request.resource.size < 25 * 1024 * 1024);
     }
 
-    // Tripshistory photos: enforce image type + 10MB max
+    // Tripshistory photos: enforce image type + 10MB max (unchanged)
     match /users/{userId}/tripstories/{storyId}/{allPaths=**} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if request.auth != null

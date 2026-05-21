@@ -36,16 +36,30 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
   const { trip, updateTrip, events, createEvent } = useTripData();
   const { user } = useAuth();
 
-  // TEMP DEBUG: print ownership info to help diagnose the storage 403.
-  // Remove once verified.
+  // TEMP DEBUG: verify Firebase Auth state directly — separately from our
+  // optimistic app-level `user`. If `auth.currentUser` is null, the
+  // Storage SDK has no token to send → 403 even with permissive rules.
   useEffect(() => {
-    if (trip && user) {
-      console.log('[debug-ownership] tu uid:', user.uid);
-      console.log('[debug-ownership] trip.id:', trip.id);
-      console.log('[debug-ownership] trip.createdBy:', trip.createdBy);
-      console.log('[debug-ownership] trip.travelerIds:', trip.travelerIds);
-      console.log('[debug-ownership] coinciden createdBy === uid:', trip.createdBy === user.uid);
-    }
+    void (async () => {
+      const { getClientAuth } = await import('@/lib/firebase/client');
+      const auth = getClientAuth();
+      const fb = auth.currentUser;
+      console.log('[debug-auth] app user.uid:', user?.uid ?? '(NONE)');
+      console.log('[debug-auth] firebase auth.currentUser:', fb ? fb.uid : '(NULL — sesión rota)');
+      if (fb) {
+        try {
+          const token = await fb.getIdToken();
+          console.log('[debug-auth] token length:', token.length, '(should be ~900+)');
+          console.log('[debug-auth] token first 40:', token.slice(0, 40));
+        } catch (e) {
+          console.log('[debug-auth] getIdToken FAILED:', e);
+        }
+      }
+      if (trip) {
+        console.log('[debug-auth] trip.createdBy:', trip.createdBy);
+        console.log('[debug-auth] match auth vs createdBy:', fb?.uid === trip.createdBy);
+      }
+    })();
   }, [trip, user]);
   // The layout only needs the upload action — not the live documents list —
   // so we use the write-only variant. Otherwise we'd pay for a permanent
