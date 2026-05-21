@@ -6,36 +6,43 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function trip(tripId) {
+    function tripDoc(tripId) {
       return firestore.get(/databases/(default)/documents/trips/$(tripId)).data;
     }
 
-    function isTripMember(tripId) {
-      let t = trip(tripId);
-      return isSignedIn() && (
-        t.createdBy == request.auth.uid
-        || (t.travelerIds is list && request.auth.uid in t.travelerIds)
-      );
-    }
-
-    function hasShareToken(tripId) {
-      let t = trip(tripId);
-      return t.shareToken is string && t.shareToken.size() > 0;
-    }
-
-    function isImageUnder(maxBytes) {
+    // 25 MB upload cap for trip photos. `request.resource` is null on delete,
+    // so we only apply the cap to actual writes.
+    function uploadSizeOk() {
       return request.resource == null
-             || (request.resource.size < maxBytes
-                 && request.resource.contentType.matches('image/.*'));
+             || request.resource.size < 25 * 1024 * 1024;
     }
 
-    // Trip files (photos, documents). Read: members or public-via-shareToken.
-    // Write: only members. 25 MB cap on uploads.
+    // Trip files (photos, documents). Read+write split into individual
+    // allow statements so Storage's rule engine can match each clean
+    // condition against the operation — the monolithic OR'd version
+    // with `is list` returned 403 on write even for the trip owner.
     match /trips/{tripId}/{allPaths=**} {
-      allow read: if isTripMember(tripId) || hasShareToken(tripId);
-      allow write: if isTripMember(tripId)
-                    && (request.resource == null
-                        || request.resource.size < 25 * 1024 * 1024);
+      // ── READ ─────────────────────────────────────────────
+      // 1) Owner reads their own trip files.
+      allow read: if isSignedIn()
+                   && tripDoc(tripId).createdBy == request.auth.uid;
+
+      // 2) Invited traveler.
+      allow read: if isSignedIn()
+                   && request.auth.uid in tripDoc(tripId).get('travelerIds', []);
+
+      // 3) Public share — anyone with a valid token can read.
+      allow read: if tripDoc(tripId).shareToken is string
+                   && tripDoc(tripId).shareToken.size() > 0;
+
+      // ── WRITE ────────────────────────────────────────────
+      allow write: if isSignedIn()
+                    && tripDoc(tripId).createdBy == request.auth.uid
+                    && uploadSizeOk();
+
+      allow write: if isSignedIn()
+                    && request.auth.uid in tripDoc(tripId).get('travelerIds', [])
+                    && uploadSizeOk();
     }
 
     // Tripshistory photos: enforce image type + 10MB max
@@ -43,7 +50,9 @@ service firebase.storage {
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow write: if isSignedIn()
                     && request.auth.uid == userId
-                    && isImageUnder(10 * 1024 * 1024);
+                    && (request.resource == null
+                        || (request.resource.size < 10 * 1024 * 1024
+                            && request.resource.contentType.matches('image/.*')));
     }
 
     match /users/{userId}/{allPaths=**} {
