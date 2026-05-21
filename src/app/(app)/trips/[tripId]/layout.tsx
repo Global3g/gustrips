@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
 import TripSidebar from '@/components/trips/TripSidebar';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
@@ -33,6 +34,19 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const tripId = params.tripId as string;
   const { trip, updateTrip, events, createEvent } = useTripData();
+  const { user } = useAuth();
+
+  // TEMP DEBUG: print ownership info to help diagnose the storage 403.
+  // Remove once verified.
+  useEffect(() => {
+    if (trip && user) {
+      console.log('[debug-ownership] tu uid:', user.uid);
+      console.log('[debug-ownership] trip.id:', trip.id);
+      console.log('[debug-ownership] trip.createdBy:', trip.createdBy);
+      console.log('[debug-ownership] trip.travelerIds:', trip.travelerIds);
+      console.log('[debug-ownership] coinciden createdBy === uid:', trip.createdBy === user.uid);
+    }
+  }, [trip, user]);
   // The layout only needs the upload action — not the live documents list —
   // so we use the write-only variant. Otherwise we'd pay for a permanent
   // onSnapshot listener on the attachments subcollection on every trip page.
