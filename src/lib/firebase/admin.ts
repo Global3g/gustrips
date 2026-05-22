@@ -3,7 +3,7 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 let _app: App | undefined;
 
-function getAdminApp(): App {
+export function getAdminApp(): App {
   if (_app) return _app;
 
   const existing = getApps();

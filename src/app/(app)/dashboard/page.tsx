@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuth } from '@/hooks/useAuth';
+import TripHeroCard from '@/components/trips/TripHeroCard';
 import { useToast } from '@/context/ToastContext';
 // OnboardingModal is shown only to first-time users; ship it lazily so the
 // dashboard JS stays lean for the 99% of visits where it never renders.
@@ -365,24 +366,42 @@ export default function DashboardPage() {
   const userName = getUserName(user);
   const greeting = getGreeting();
 
-  /* ─── Hero trip ─────────────────────────────────── */
-  const { heroTrip } = useMemo(() => {
+  /* ─── Hero trip + active trip detection ─────────── */
+  const { heroTrip, activeTrip } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const activeTrip = trips.find((trip) => {
+    const active = trips.find((trip) => {
       try {
         return isWithinInterval(today, { start: parseISO(trip.startDate), end: parseISO(trip.endDate) });
       } catch { return false; }
     });
-    if (activeTrip) return { heroTrip: activeTrip };
+    if (active) return { heroTrip: active, activeTrip: active };
 
     const future = trips
       .filter((t) => { try { return parseISO(t.startDate) >= today; } catch { return false; } })
       .sort((a, b) => parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime());
 
-    return { heroTrip: future[0] ?? null };
+    return { heroTrip: future[0] ?? null, activeTrip: null };
   }, [trips]);
+
+  /* ─── Today-as-home redirect ─────────────────────
+     When the user has a trip whose dates contain today, the dashboard is
+     not the right landing — we drop them into the trip's /today view so
+     the first thing they see during the trip is "what to do now," not a
+     list. The session-storage gate stops the redirect from firing every
+     visit so they can navigate back to the dashboard intentionally and
+     keep it there for the rest of the session.
+  */
+  const router = useRouter();
+  useEffect(() => {
+    if (!activeTrip || loading) return;
+    if (typeof window === 'undefined') return;
+    const SKIP_KEY = 'gustrips:skip-today-redirect';
+    if (window.sessionStorage.getItem(SKIP_KEY) === '1') return;
+    window.sessionStorage.setItem(SKIP_KEY, '1');
+    router.replace(`/trips/${activeTrip.id}/today`);
+  }, [activeTrip, loading, router]);
 
   /* ─── Stats ─────────────────────────────────────── */
   const stats = useMemo(() => ({
@@ -505,14 +524,14 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ── Hero trip ── */}
+      {/* ── Hero trip — three-pillar mode-aware card ── */}
       {!loading && heroTrip && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.15 }}
         >
-          <GlassTripCard trip={heroTrip} featured />
+          <TripHeroCard trip={heroTrip} />
         </motion.div>
       )}
 
