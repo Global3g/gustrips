@@ -40,7 +40,15 @@ export type ThemeId =
   | 'y2k'         // Cybernetic neon gradients + holographic accents
   | 'zine'        // Punk DIY collage with mixed type + washi tape
   | 'glass'       // Glassmorphism: frosted translucent layers + soft blur
-  | 'psychedelic';// 70s maximalist: vibrant dreamy gradients + groovy frame
+  | 'psychedelic' // 70s maximalist: vibrant dreamy gradients + groovy frame
+  | 'wes'         // Wes Anderson Symétrie: powdered pastels + symmetric crests
+  | 'postal'      // Postal Vintage Junk Drawer: stamps + washi tape + airmail
+  | 'cinemagraph' // Editorial Cinema: bone cream + deep cherry + serif display
+  | 'riso'        // Risograph: 2-color flat halftone + offset registration
+  | 'japandi'     // Japandi / Wabi-Sabi: smokey jade + walnut, enso accent
+  | 'earthy'      // Neo-Minimal Earthy: olive + chocolate + ivory, grid 12
+  | 'botanical'   // Botanical Press: pressed flowers + latin labels herbarium
+  | 'doodle';     // Naive Doodle / Notes App Chic: handdrawn arrows + smileys
 
 export type BookSize = 'a4' | 'square' | 'letter';
 
@@ -114,7 +122,15 @@ export interface BookTheme {
     | 'neon-glow'         // y2k: glowing accent strokes + scanlines
     | 'tape-strips'       // zine: angled washi-tape corners
     | 'glass-blur'        // glassmorphism: soft translucent overlay rect
-    | 'psychedelic-frame'; // maximalist: concentric color rings in corners
+    | 'psychedelic-frame' // maximalist: concentric color rings in corners
+    | 'wes-symmetry'      // wes anderson: 8-point stars + double rule frame
+    | 'postal-junk'       // postal junk drawer: stamps + washi tape + stripes
+    | 'editorial-cinema'  // editorial cinema: hairline rule + romanish folio
+    | 'riso-halftone'     // risograph: halftone dots + offset 2-color frames
+    | 'enso-accent'       // japandi: lone hairline circle + vertical hairline
+    | 'linen-grid'        // earthy: linen texture + 12-col gridlines + folio
+    | 'herbarium-press'   // botanical: pressed leaves + latin label band
+    | 'doodle-marks';     // naive: scribbled arrows + smiley sun + asterisks
   /** A handful of curated swatches for quick page-bg picks. */
   swatches: string[];
 }

@@ -803,7 +803,15 @@ function renderDecorations(
     | 'neon-glow'
     | 'tape-strips'
     | 'glass-blur'
-    | 'psychedelic-frame',
+    | 'psychedelic-frame'
+    | 'wes-symmetry'
+    | 'postal-junk'
+    | 'editorial-cinema'
+    | 'riso-halftone'
+    | 'enso-accent'
+    | 'linen-grid'
+    | 'herbarium-press'
+    | 'doodle-marks',
   w: number,
   h: number,
   accent: string,
@@ -1009,6 +1017,516 @@ function renderDecorations(
         <div style={ring(40, 3, '#f472b6', { top: -10, left: -10 })} />
         <div style={ring(80, 5, '#a855f7', { bottom: -30, right: -30 })} />
         <div style={ring(50, 3, '#38bdf8', { bottom: -15, right: -15 })} />
+      </>
+    );
+  }
+
+  // ── Wes Anderson: symmetric crest + 8-point stars in each corner ──
+  if (kind === 'wes-symmetry') {
+    const starSize = Math.min(w, h) * 0.04;
+    const star = (pos: React.CSSProperties): React.CSSProperties => ({
+      position: 'absolute',
+      width: starSize,
+      height: starSize,
+      color: accent,
+      fontSize: starSize,
+      lineHeight: 1,
+      pointerEvents: 'none',
+      fontFamily: 'serif',
+      textAlign: 'center',
+      ...pos,
+    });
+    return (
+      <>
+        {/* Outer thin frame (gold) */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 14,
+            border: `1px solid ${accent}`,
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Inner double rule (very tight) */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 17,
+            border: `0.5px solid ${rule}`,
+            pointerEvents: 'none',
+          }}
+        />
+        {/* 8-point stars at each corner */}
+        <div style={star({ top: 6, left: 6 })}>✦</div>
+        <div style={star({ top: 6, right: 6 })}>✦</div>
+        <div style={star({ bottom: 6, left: 6 })}>✦</div>
+        <div style={star({ bottom: 6, right: 6 })}>✦</div>
+      </>
+    );
+  }
+
+  // ── Postal Junk Drawer: stamps + washi tape scraps + airmail stripes ──
+  if (kind === 'postal-junk') {
+    const stampW = Math.min(w, h) * 0.14;
+    const stampH = stampW * 1.25;
+    // The "perforated edge" comes from a dashed border with very short
+    // dashes — close enough to read as a real stamp on screen.
+    const stamp = (pos: React.CSSProperties, color: string): React.CSSProperties => ({
+      position: 'absolute',
+      width: stampW,
+      height: stampH,
+      border: `2px dashed ${color}`,
+      background: 'rgba(255,255,255,0.5)',
+      pointerEvents: 'none',
+      transform: 'rotate(-4deg)',
+      boxShadow: 'inset 0 0 0 2px #fff',
+      ...pos,
+    });
+    return (
+      <>
+        {/* Top-left stamp */}
+        <div style={stamp({ top: 10, left: 10 }, accent)}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 4,
+              border: `1px solid ${accent}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'serif',
+              fontSize: stampW * 0.18,
+              color: accent,
+              fontWeight: 700,
+              letterSpacing: 1,
+            }}
+          >
+            ◈
+          </div>
+        </div>
+        {/* Bottom-right stamp, opposite color for variety */}
+        <div style={{ ...stamp({ bottom: 10, right: 10 }, '#1a2d3a'), transform: 'rotate(3deg)' }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 4,
+              border: `1px solid #1a2d3a`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'serif',
+              fontSize: stampW * 0.18,
+              color: '#1a2d3a',
+              fontWeight: 700,
+              letterSpacing: 1,
+            }}
+          >
+            ✈
+          </div>
+        </div>
+        {/* Airmail red/blue striped border along the top */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 6,
+            backgroundImage:
+              `repeating-linear-gradient(135deg, ${accent} 0 8px, transparent 8px 14px, #1a2d3a 14px 22px, transparent 22px 28px)`,
+            pointerEvents: 'none',
+            opacity: 0.85,
+          }}
+        />
+        {/* Same stripe along the bottom */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 6,
+            backgroundImage:
+              `repeating-linear-gradient(135deg, ${accent} 0 8px, transparent 8px 14px, #1a2d3a 14px 22px, transparent 22px 28px)`,
+            pointerEvents: 'none',
+            opacity: 0.85,
+          }}
+        />
+        {/* Washi tape scrap — top-right, mustard, slight rotation. The
+            translucent fill lets the page show through, like real tape. */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 22,
+            right: -10,
+            width: w * 0.22,
+            height: 14,
+            background:
+              'linear-gradient(180deg, rgba(212,165,116,0.85) 0%, rgba(212,165,116,0.7) 100%)',
+            transform: 'rotate(18deg)',
+            pointerEvents: 'none',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+          }}
+        />
+        {/* Second washi tape scrap — bottom-left, navy, opposite rotation. */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 30,
+            left: -8,
+            width: w * 0.18,
+            height: 12,
+            background:
+              'linear-gradient(180deg, rgba(26,45,58,0.7) 0%, rgba(26,45,58,0.55) 100%)',
+            transform: 'rotate(-12deg)',
+            pointerEvents: 'none',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+          }}
+        />
+      </>
+    );
+  }
+
+  // ── Editorial Cinema: hairline frame + cherry corner notch + romanish folio
+  //    The luxury-magazine read (Cereal / Kinfolk / Sight & Sound). All the
+  //    work happens at the edges so the photos stay the main event. ──
+  if (kind === 'editorial-cinema') {
+    return (
+      <>
+        {/* Very thin rule frame in the soft accent tone. */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 14,
+            border: `0.5px solid ${rule}`,
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Cherry-red corner notch top-right — the only saturated mark on
+            the page, like a Vogue cover-line dot. */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            width: 10,
+            height: 10,
+            background: accent,
+            pointerEvents: 'none',
+          }}
+        />
+        {/* Greige hairline running horizontally across the bottom margin —
+            evokes a foot-of-page rule from print magazines. */}
+        <div
+          style={{
+            position: 'absolute',
+            left: w * 0.08,
+            right: w * 0.08,
+            bottom: 22,
+            height: 0.5,
+            background: rule,
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    );
+  }
+
+  // ── Japandi / Wabi-Sabi: one enso brush circle + a single vertical hairline
+  //    Restraint is the decoration. Letting the page breathe IS the point. ──
+  if (kind === 'enso-accent') {
+    const ensoSize = Math.min(w, h) * 0.18;
+    return (
+      <>
+        {/* Brushed enso circle in smokey jade — open ring, top-right. The
+            mask-image trick draws a circle with a "gap" so it reads as a
+            single brushstroke, not a closed ring. */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 14,
+            right: 14,
+            width: ensoSize,
+            height: ensoSize,
+            borderRadius: '50%',
+            border: `3px solid ${accent}`,
+            // Soft offset so it looks brushed, not stamped.
+            borderTopColor: 'transparent',
+            transform: 'rotate(-35deg)',
+            pointerEvents: 'none',
+            opacity: 0.75,
+          }}
+        />
+        {/* Single vertical hairline running 60% of the page height, left
+            margin. Anchors the layout without enclosing it. */}
+        <div
+          style={{
+            position: 'absolute',
+            left: w * 0.08,
+            top: h * 0.18,
+            width: 0.5,
+            height: h * 0.6,
+            background: rule,
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    );
+  }
+
+  // ── Neo-Minimal Earthy: 12-col linen grid + olive folio dot
+  //    A whisper of structure. Reads as confident and quiet. ──
+  if (kind === 'linen-grid') {
+    return (
+      <>
+        {/* Linen-like noise overlay (radial spots, mixed via multiply). */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background:
+              'radial-gradient(circle at 14% 22%, rgba(0,0,0,0.04) 0%, transparent 50%),' +
+              'radial-gradient(circle at 68% 78%, rgba(0,0,0,0.05) 0%, transparent 55%),' +
+              'radial-gradient(circle at 88% 14%, rgba(0,0,0,0.03) 0%, transparent 40%)',
+            mixBlendMode: 'multiply',
+          }}
+        />
+        {/* 12-col gridlines — extremely subtle, only visible up close. */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background:
+              `repeating-linear-gradient(90deg, transparent 0 ${w / 12 - 0.5}px, rgba(0,0,0,0.05) ${w / 12 - 0.5}px ${w / 12}px)`,
+          }}
+        />
+        {/* Olive folio dot at the bottom-center — a wink at editorial
+            page numbers without committing to actual numbers. */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 10,
+            left: '50%',
+            width: 4,
+            height: 4,
+            background: accent,
+            borderRadius: '50%',
+            transform: 'translateX(-50%)',
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    );
+  }
+
+  // ── Botanical Press: SVG leaf silhouettes + latin name band
+  //    Herbarium-card vibe. The leaves anchor opposite corners. ──
+  if (kind === 'herbarium-press') {
+    const leafSize = Math.min(w, h) * 0.13;
+    // Hand-drawn olive leaf path. Same shape, flipped for the opposite
+    // corner — keeps the SVG asset count to one inline shape.
+    const leafPath =
+      'M50 5 Q70 25 65 50 Q60 75 50 90 Q40 75 35 50 Q30 25 50 5 Z M50 5 L50 90';
+    return (
+      <>
+        {/* Top-left leaf, rotated naturally */}
+        <svg
+          viewBox="0 0 100 100"
+          style={{
+            position: 'absolute',
+            top: 6,
+            left: 6,
+            width: leafSize,
+            height: leafSize,
+            transform: 'rotate(-30deg)',
+            pointerEvents: 'none',
+            opacity: 0.55,
+          }}
+        >
+          <path d={leafPath} fill={accent} stroke={accent} strokeWidth="1" />
+        </svg>
+        {/* Bottom-right leaf, mirrored */}
+        <svg
+          viewBox="0 0 100 100"
+          style={{
+            position: 'absolute',
+            bottom: 6,
+            right: 6,
+            width: leafSize,
+            height: leafSize,
+            transform: 'rotate(150deg) scaleX(-1)',
+            pointerEvents: 'none',
+            opacity: 0.55,
+          }}
+        >
+          <path d={leafPath} fill={accent} stroke={accent} strokeWidth="1" />
+        </svg>
+        {/* Latin-style label band along the bottom edge — empty rule that
+            sets up the herbarium card feel. */}
+        <div
+          style={{
+            position: 'absolute',
+            left: w * 0.18,
+            right: w * 0.18,
+            bottom: 16,
+            height: 0.6,
+            background: rule,
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    );
+  }
+
+  // ── Naive Doodle / Notes App Chic: hand-drawn arrow + smiley sun + dots
+  //    Intentionally wobbly. The off-center placement IS the aesthetic. ──
+  if (kind === 'doodle-marks') {
+    return (
+      <>
+        {/* Smiley sun, top-right. Yellow with hand-drawn rays. */}
+        <svg
+          viewBox="0 0 60 60"
+          style={{
+            position: 'absolute',
+            top: 8,
+            right: 10,
+            width: 42,
+            height: 42,
+            pointerEvents: 'none',
+          }}
+        >
+          {/* Rays */}
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+            const angle = (i * 45 * Math.PI) / 180;
+            const r1 = 18;
+            const r2 = 26;
+            const cx = 30;
+            const cy = 30;
+            return (
+              <line
+                key={i}
+                x1={cx + Math.cos(angle) * r1}
+                y1={cy + Math.sin(angle) * r1}
+                x2={cx + Math.cos(angle) * r2}
+                y2={cy + Math.sin(angle) * r2}
+                stroke={rule}
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            );
+          })}
+          {/* Face circle */}
+          <circle cx="30" cy="30" r="15" fill={rule} stroke="#1d1d1d" strokeWidth="1.5" />
+          {/* Eyes */}
+          <circle cx="25" cy="28" r="1.5" fill="#1d1d1d" />
+          <circle cx="35" cy="28" r="1.5" fill="#1d1d1d" />
+          {/* Smile */}
+          <path d="M24 34 Q30 39 36 34" stroke="#1d1d1d" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+        </svg>
+        {/* Squiggly arrow, bottom-left, pointing diagonally up-right. */}
+        <svg
+          viewBox="0 0 100 60"
+          style={{
+            position: 'absolute',
+            bottom: 10,
+            left: 12,
+            width: 60,
+            height: 36,
+            pointerEvents: 'none',
+          }}
+        >
+          <path
+            d="M5 50 Q20 38 30 42 Q42 47 50 32 Q58 18 78 18"
+            stroke={accent}
+            strokeWidth="2.5"
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Arrowhead */}
+          <polyline
+            points="72,12 80,18 73,25"
+            stroke={accent}
+            strokeWidth="2.5"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {/* Scattered chunky dots in the palette — like crayon marks. */}
+        <div
+          style={{
+            position: 'absolute',
+            top: h * 0.55,
+            right: w * 0.15,
+            width: 8,
+            height: 8,
+            background: '#4d96ff',
+            borderRadius: '50%',
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            top: h * 0.7,
+            left: w * 0.4,
+            width: 6,
+            height: 6,
+            background: '#6bcb77',
+            borderRadius: '50%',
+            pointerEvents: 'none',
+          }}
+        />
+      </>
+    );
+  }
+
+  // ── Risograph: halftone dot pattern + offset double frame ──
+  if (kind === 'riso-halftone') {
+    return (
+      <>
+        {/* Halftone dots filling the page very lightly */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background:
+              `radial-gradient(circle, ${accent} 1px, transparent 1.6px)`,
+            backgroundSize: '14px 14px',
+            opacity: 0.18,
+            mixBlendMode: 'multiply',
+          }}
+        />
+        {/* "Pink" border, offset down-right */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 12,
+            left: 12,
+            right: 8,
+            bottom: 8,
+            border: `2px solid ${accent}`,
+            pointerEvents: 'none',
+            opacity: 0.85,
+          }}
+        />
+        {/* "Blue" border, offset up-left — the misregistration */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            right: 12,
+            bottom: 12,
+            border: `2px solid ${rule}`,
+            pointerEvents: 'none',
+            opacity: 0.85,
+            mixBlendMode: 'multiply',
+          }}
+        />
       </>
     );
   }

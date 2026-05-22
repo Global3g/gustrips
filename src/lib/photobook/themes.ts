@@ -215,6 +215,215 @@ export const THEMES: Record<ThemeId, BookTheme> = {
     decorations: 'psychedelic-frame',
     swatches: ['#fb923c', '#f472b6', '#a855f7', '#38bdf8', '#fde047'],
   },
+
+  /* ── New "WOW" themes ────────────────────────────────────
+     The previous batch leaned on color shifts and font swaps; these four
+     bring strong visual signatures (symmetric crests, postage stamps,
+     drop caps, halftone offsets) so each book feels unmistakably itself. */
+
+  wes: {
+    id: 'wes',
+    label: 'Wes Anderson',
+    // The Grand Budapest pastel palette: dusty pink with a dusty blue
+    // counterpoint. Subtle so the photos read first, decorations second.
+    background: '#f4d9d0',
+    paper: '#fbeae3',
+    ink: '#4a3c2f',
+    inkSoft: '#7a6a55',
+    accent: '#b85c1f',
+    rule: '#c9a878',
+    fontFamily: {
+      // Futura is the canonical Wes typeface; we fall back through a stack
+      // of geometric sans options so something good shows up everywhere.
+      serif: '"Fraunces", "Playfair Display", Georgia, serif',
+      sans: '"Futura", "Avenir Next", "Avenir", "Century Gothic", "Inter", system-ui, sans-serif',
+      script: '"Caveat", cursive',
+    },
+    titleFontKey: 'sans',
+    bodyFontKey: 'sans',
+    sepia: false,
+    decorations: 'wes-symmetry',
+    swatches: ['#f4d9d0', '#b4c5d6', '#e8c87a', '#a8c4a2', '#4a3c2f'],
+  },
+
+  postal: {
+    id: 'postal',
+    label: 'Postal · Junk Drawer',
+    // Kraft cream. Reads as a real travel journal with stamps AND
+    // washi-tape scraps (added 2026 to lean into the "vintage junk drawer"
+    // / European scrapbook revival flagged in industry trend reports).
+    background: '#e8dcc0',
+    paper: '#f1e7cf',
+    ink: '#3d2818',
+    inkSoft: '#6b4e2e',
+    accent: '#b8472a',
+    rule: '#d4a574',
+    fontFamily: {
+      // Stamped serif headline + typewriter for postmark text.
+      serif: '"Cormorant Garamond", "Playfair Display", Georgia, serif',
+      sans: '"Special Elite", "Courier New", monospace',
+      script: '"Tangerine", "Apple Chancery", cursive',
+    },
+    titleFontKey: 'serif',
+    bodyFontKey: 'sans',
+    sepia: true,
+    decorations: 'postal-junk',
+    swatches: ['#e8dcc0', '#b8472a', '#3d2818', '#d4a574', '#1a2d3a'],
+  },
+
+  cinemagraph: {
+    id: 'cinemagraph',
+    label: 'Editorial Cinema',
+    // Bone-white cream (Pantone "Cloud Dancer" 2026 territory) with a
+    // single deep cherry accent — the Cereal / Kinfolk / Sight & Sound
+    // luxury-magazine read. Photos breathe; the type carries the mood.
+    background: '#f9f8f3',
+    paper: '#fdfcf7',
+    ink: '#1d1d1d',
+    inkSoft: '#776b63',
+    accent: '#480003',
+    rule: '#dad5cc',
+    fontFamily: {
+      // High-contrast display serif (Canela / GT Sectra would be ideal —
+      // Fraunces is the closest broadly-available stand-in). Neutral sans
+      // body so captions read like footnotes, not headlines.
+      serif: '"Fraunces", "Playfair Display", "Bodoni Moda", Georgia, serif',
+      sans: '"Inter", system-ui, -apple-system, "Helvetica Neue", sans-serif',
+      script: '"Caveat", cursive',
+    },
+    titleFontKey: 'serif',
+    bodyFontKey: 'sans',
+    sepia: false,
+    decorations: 'editorial-cinema',
+    swatches: ['#f9f8f3', '#1d1d1d', '#480003', '#776b63', '#57372a'],
+  },
+
+  riso: {
+    id: 'riso',
+    label: 'Risograph',
+    // Cream stock with two flat ink colors layered slightly off-register.
+    // The vibrant fluo pink + cobalt blue is the most identifiable Riso
+    // pairing.
+    background: '#f4e8d8',
+    paper: '#fdf6ea',
+    ink: '#0a0a0a',
+    inkSoft: '#3a3a3a',
+    accent: '#ff3d8c',
+    rule: '#1e40af',
+    fontFamily: {
+      serif: '"Fraunces", "Playfair Display", Georgia, serif',
+      sans: '"Archivo Black", "Anton", "Impact", "Helvetica Neue", sans-serif',
+      script: '"Caveat", cursive',
+    },
+    titleFontKey: 'sans',
+    bodyFontKey: 'sans',
+    sepia: false,
+    decorations: 'riso-halftone',
+    swatches: ['#f4e8d8', '#ff3d8c', '#1e40af', '#ffb800', '#0a0a0a'],
+  },
+
+  /* ── 2026 research-backed batch ─────────────────────────
+     Added after looking at Mixbook / Artifact Uprising / Behance and the
+     Designmantic + Kittl trend reports for 2026. Each one was picked for
+     being clearly distinguishable from the others in the picker. */
+
+  japandi: {
+    id: 'japandi',
+    label: 'Japandi',
+    // Cloud Dancer cream (Pantone 2026) + Smokey Jade (2026 color trend)
+    // + walnut. Whitespace and stillness are the actual decorations here.
+    background: '#f4f0e6',
+    paper: '#fbf8ef',
+    ink: '#2a2620',
+    inkSoft: '#5c4a3a',
+    accent: '#4a635d',
+    rule: '#d3cec3',
+    fontFamily: {
+      // Tenor Sans / Cormorant for the contemplative serif, Inter for any
+      // sans. Shippori Mincho would be the JP accent but lazy-loaded fonts
+      // aren't in scope today; Cormorant has the same calm proportions.
+      serif: '"Cormorant Garamond", "Tenor Sans", Georgia, serif',
+      sans: '"Inter", system-ui, -apple-system, sans-serif',
+      script: '"Caveat", cursive',
+    },
+    titleFontKey: 'serif',
+    bodyFontKey: 'serif',
+    sepia: false,
+    decorations: 'enso-accent',
+    swatches: ['#f4f0e6', '#dfddda', '#4a635d', '#5c4a3a', '#e0e0ce'],
+  },
+
+  earthy: {
+    id: 'earthy',
+    label: 'Neo-Minimal Earthy',
+    // Warm ivory + olive sage + chocolate, captions in mono. The 12-col
+    // grid lives in the decoration layer — see drawDecorations.
+    background: '#f5f0e1',
+    paper: '#faf6e7',
+    ink: '#2e2a26',
+    inkSoft: '#6b5e4a',
+    accent: '#5e6d3f',
+    rule: '#d6cdb8',
+    fontFamily: {
+      // Confident weights for the title, mono for captions so they read
+      // as photo metadata rather than chitchat.
+      serif: '"Fraunces", "GT Super Display", Georgia, serif',
+      sans: '"JetBrains Mono", "Space Mono", "Courier New", monospace',
+      script: '"Caveat", cursive',
+    },
+    titleFontKey: 'serif',
+    bodyFontKey: 'sans',
+    sepia: false,
+    decorations: 'linen-grid',
+    swatches: ['#f5f5dc', '#5e6d3f', '#4e342e', '#c8a887', '#2e2a26'],
+  },
+
+  botanical: {
+    id: 'botanical',
+    label: 'Botanical Press',
+    // Herbarium-card palette: parchment cream, olive ink, brick red
+    // accents for the latin name labels.
+    background: '#f2ebdc',
+    paper: '#f6f1e3',
+    ink: '#1a1f16',
+    inkSoft: '#5e6d3f',
+    accent: '#884c42',
+    rule: '#b5a98a',
+    fontFamily: {
+      serif: '"Cormorant Garamond", "EB Garamond", Georgia, serif',
+      sans: '"Cormorant Garamond", Georgia, serif',
+      script: '"Tangerine", "Apple Chancery", cursive',
+    },
+    titleFontKey: 'serif',
+    bodyFontKey: 'serif',
+    sepia: false,
+    decorations: 'herbarium-press',
+    swatches: ['#f2ebdc', '#5e6d3f', '#884c42', '#c9a66b', '#1a1f16'],
+  },
+
+  doodle: {
+    id: 'doodle',
+    label: 'Naive Doodle',
+    // Notes-app chic / naive design — intentionally a little awkward,
+    // primary-school-art palette. The doodles in the decoration layer
+    // sell the rest.
+    background: '#fffdf3',
+    paper: '#ffffff',
+    ink: '#1d1d1d',
+    inkSoft: '#4d96ff',
+    accent: '#ff6b6b',
+    rule: '#ffd93d',
+    fontFamily: {
+      serif: '"Patrick Hand", "Caveat", "Comic Sans MS", cursive',
+      sans: '"DM Sans", "Patrick Hand", system-ui, sans-serif',
+      script: '"Caveat", cursive',
+    },
+    titleFontKey: 'serif',
+    bodyFontKey: 'sans',
+    sepia: false,
+    decorations: 'doodle-marks',
+    swatches: ['#ffd93d', '#ff6b6b', '#4d96ff', '#6bcb77', '#1d1d1d'],
+  },
 };
 
 export const THEME_LIST: BookTheme[] = [
@@ -227,6 +436,17 @@ export const THEME_LIST: BookTheme[] = [
   THEMES.zine,
   THEMES.glass,
   THEMES.psychedelic,
+  // Wow batch — keep these grouped so the picker tells them apart from
+  // the older themes at a glance.
+  THEMES.wes,
+  THEMES.postal,
+  THEMES.cinemagraph,
+  THEMES.riso,
+  // 2026 research-backed batch.
+  THEMES.japandi,
+  THEMES.earthy,
+  THEMES.botanical,
+  THEMES.doodle,
 ];
 
 export function getTheme(id: ThemeId): BookTheme {

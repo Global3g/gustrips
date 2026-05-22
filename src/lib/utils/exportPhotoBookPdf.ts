@@ -411,6 +411,298 @@ function drawDecorations(ctx: DrawCtx) {
     }
     return;
   }
+
+  // ── Wes Anderson: double rule frame + 8-point stars in corners ──
+  if (theme.decorations === 'wes-symmetry') {
+    const [ar, ag, ab] = hexToRgb(theme.accent);
+    const [rr, rg, rb] = hexToRgb(theme.rule);
+    // Outer accent frame
+    pdf.setDrawColor(ar, ag, ab);
+    pdf.setLineWidth(0.4);
+    pdf.rect(5, 5, pageW - 10, pageH - 10, 'S');
+    // Inner rule frame (very tight, almost ghostly)
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.15);
+    pdf.rect(6.5, 6.5, pageW - 13, pageH - 13, 'S');
+    // 8-point stars at each corner. jsPDF has no glyph for ✦ so we paint
+    // a tiny diamond + cross of filled triangles.
+    pdf.setFillColor(ar, ag, ab);
+    const star = (cx: number, cy: number) => {
+      const r = 1.6;
+      // Vertical lozenge
+      pdf.triangle(cx, cy - r, cx - r * 0.5, cy, cx + r * 0.5, cy, 'F');
+      pdf.triangle(cx, cy + r, cx - r * 0.5, cy, cx + r * 0.5, cy, 'F');
+      // Horizontal lozenge
+      pdf.triangle(cx - r, cy, cx, cy - r * 0.5, cx, cy + r * 0.5, 'F');
+      pdf.triangle(cx + r, cy, cx, cy - r * 0.5, cx, cy + r * 0.5, 'F');
+    };
+    star(3, 3);
+    star(pageW - 3, 3);
+    star(3, pageH - 3);
+    star(pageW - 3, pageH - 3);
+    return;
+  }
+
+  // ── Postal Junk Drawer: stamps + airmail stripes + 2 washi-tape scraps ──
+  if (theme.decorations === 'postal-junk') {
+    const [ar, ag, ab] = hexToRgb(theme.accent);
+    const navy: RGB = [26, 45, 58]; // #1a2d3a
+    // Airmail stripes top & bottom (alternating accent / navy diagonal).
+    const stripeH = 1.8;
+    const stripeWidth = 3;
+    for (let x = 0; x < pageW; x += stripeWidth * 2) {
+      // Accent diagonal
+      pdf.setFillColor(ar, ag, ab);
+      pdf.rect(x, 0, stripeWidth, stripeH, 'F');
+      pdf.rect(x, pageH - stripeH, stripeWidth, stripeH, 'F');
+      // Navy diagonal
+      pdf.setFillColor(navy[0], navy[1], navy[2]);
+      pdf.rect(x + stripeWidth, 0, stripeWidth, stripeH, 'F');
+      pdf.rect(x + stripeWidth, pageH - stripeH, stripeWidth, stripeH, 'F');
+    }
+    // Stamp helper — draws a small rectangle with dashed border and a glyph.
+    const drawStamp = (x: number, y: number, w: number, h: number, color: RGB, glyph: string) => {
+      // Solid fill
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(x, y, w, h, 'F');
+      // Outer dashed (perforated) border — approximated with short dashes
+      pdf.setDrawColor(color[0], color[1], color[2]);
+      pdf.setLineWidth(0.3);
+      const dash = 1.2;
+      const gap = 0.8;
+      const step = dash + gap;
+      for (let xx = x; xx < x + w; xx += step) {
+        pdf.line(xx, y, Math.min(xx + dash, x + w), y);
+        pdf.line(xx, y + h, Math.min(xx + dash, x + w), y + h);
+      }
+      for (let yy = y; yy < y + h; yy += step) {
+        pdf.line(x, yy, x, Math.min(yy + dash, y + h));
+        pdf.line(x + w, yy, x + w, Math.min(yy + dash, y + h));
+      }
+      // Inner thin border
+      pdf.setLineWidth(0.15);
+      pdf.rect(x + 1.2, y + 1.2, w - 2.4, h - 2.4, 'S');
+      // Center glyph
+      pdf.setTextColor(color[0], color[1], color[2]);
+      pdf.setFontSize(h * 1.4);
+      pdf.text(glyph, x + w / 2, y + h * 0.7, { align: 'center', baseline: 'alphabetic' });
+    };
+    const stampW = 16;
+    const stampH = 20;
+    // Top-left stamp (red, diamond glyph)
+    drawStamp(5, 4, stampW, stampH, [ar, ag, ab], '*');
+    // Bottom-right stamp (navy, plane-ish glyph — '>' as a stand-in)
+    drawStamp(pageW - 5 - stampW, pageH - 4 - stampH, stampW, stampH, navy, '>');
+    // Washi-tape scrap, top-right, mustard-ish (#d4a574). jsPDF can't
+    // rotate a filled rect natively, so we fake "rotated tape" with a
+    // parallelogram via two triangles. Looks plausible at print size.
+    const mustard: RGB = [212, 165, 116];
+    pdf.setFillColor(mustard[0], mustard[1], mustard[2]);
+    const tapeW = pageW * 0.18;
+    const tapeH = 5;
+    const t1x = pageW - tapeW - 6;
+    const t1y = 18;
+    const skew = 4; // px of slant — the visual "rotation"
+    pdf.triangle(t1x, t1y, t1x + tapeW, t1y + skew, t1x + tapeW, t1y + tapeH + skew, 'F');
+    pdf.triangle(t1x, t1y, t1x + tapeW, t1y + tapeH + skew, t1x, t1y + tapeH, 'F');
+    // Second tape scrap, bottom-left, navy with opposite slant.
+    pdf.setFillColor(navy[0], navy[1], navy[2]);
+    const t2x = 6;
+    const t2y = pageH - 26;
+    pdf.triangle(t2x, t2y + skew, t2x + tapeW, t2y, t2x + tapeW, t2y + tapeH, 'F');
+    pdf.triangle(t2x, t2y + skew, t2x + tapeW, t2y + tapeH, t2x, t2y + tapeH + skew, 'F');
+    return;
+  }
+
+  // ── Editorial Cinema: hairline frame + cherry corner notch + folio rule
+  if (theme.decorations === 'editorial-cinema') {
+    const [ar, ag, ab] = hexToRgb(theme.accent);
+    const [rr, rg, rb] = hexToRgb(theme.rule);
+    // Hairline frame in soft rule tone.
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.15);
+    pdf.rect(8, 8, pageW - 16, pageH - 16, 'S');
+    // Cherry square top-right — the one saturated note on the page.
+    pdf.setFillColor(ar, ag, ab);
+    pdf.rect(pageW - 8, 4, 4, 4, 'F');
+    // Foot-of-page hairline — short, anchored toward center.
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.15);
+    const footY = pageH - 14;
+    pdf.line(pageW * 0.18, footY, pageW * 0.82, footY);
+    return;
+  }
+
+  // ── Japandi: lone enso brushstroke + vertical hairline ──
+  if (theme.decorations === 'enso-accent') {
+    const [ar, ag, ab] = hexToRgb(theme.accent);
+    const [rr, rg, rb] = hexToRgb(theme.rule);
+    // Approximate the "open brushstroke" enso with two arc strokes. jsPDF
+    // doesn't have arc(), so we polyline a 3/4 circle at top-right.
+    pdf.setDrawColor(ar, ag, ab);
+    pdf.setLineWidth(0.8);
+    const cx = pageW - 22;
+    const cy = 22;
+    const r = 12;
+    const steps = 30;
+    // Skip the last ~quarter to leave the brushstroke "open" — that's
+    // what makes it read as enso, not as a circle.
+    const startAngle = Math.PI * 0.25;
+    const endAngle = Math.PI * 1.85;
+    let prevX = cx + Math.cos(startAngle) * r;
+    let prevY = cy + Math.sin(startAngle) * r;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const a = startAngle + (endAngle - startAngle) * t;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      pdf.line(prevX, prevY, x, y);
+      prevX = x;
+      prevY = y;
+    }
+    // Vertical hairline anchoring the left margin.
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.15);
+    pdf.line(pageW * 0.08, pageH * 0.18, pageW * 0.08, pageH * 0.78);
+    return;
+  }
+
+  // ── Neo-Minimal Earthy: linen grain + 12-col gridlines + folio dot ──
+  if (theme.decorations === 'linen-grid') {
+    const [ar, ag, ab] = hexToRgb(theme.accent);
+    // Linen-like grain at low density.
+    pdf.setFillColor(0, 0, 0);
+    let s = 9988776;
+    for (let i = 0; i < 120; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const x = (s % 1000) / 1000 * pageW;
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const y = (s % 1000) / 1000 * pageH;
+      pdf.circle(x, y, 0.12, 'F');
+    }
+    // 12-col gridlines — thinnest possible.
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.05);
+    for (let i = 1; i < 12; i++) {
+      const x = (pageW / 12) * i;
+      pdf.line(x, 4, x, pageH - 4);
+    }
+    // Olive folio dot at bottom-center.
+    pdf.setFillColor(ar, ag, ab);
+    pdf.circle(pageW / 2, pageH - 8, 0.9, 'F');
+    return;
+  }
+
+  // ── Botanical Press: SVG leaves (top-left + bottom-right) + label band ──
+  if (theme.decorations === 'herbarium-press') {
+    const [ar, ag, ab] = hexToRgb(theme.accent);
+    const [rr, rg, rb] = hexToRgb(theme.rule);
+    // Hand-drawn leaf — a teardrop using a sequence of triangles for the
+    // venation pattern. Two corners (mirrored) like a real herbarium card.
+    pdf.setFillColor(ar, ag, ab);
+    const drawLeaf = (cx: number, cy: number, scale: number, mirror: boolean) => {
+      const m = mirror ? -1 : 1;
+      // Body — diamond/teardrop shape via two triangles.
+      pdf.triangle(
+        cx,           cy - 14 * scale,
+        cx + 7 * scale * m, cy,
+        cx,           cy + 14 * scale,
+        'F',
+      );
+      pdf.triangle(
+        cx,           cy - 14 * scale,
+        cx - 7 * scale * m, cy,
+        cx,           cy + 14 * scale,
+        'F',
+      );
+      // Central vein.
+      pdf.setDrawColor(rr, rg, rb);
+      pdf.setLineWidth(0.2);
+      pdf.line(cx, cy - 14 * scale, cx, cy + 14 * scale);
+    };
+    drawLeaf(14, 18, 0.85, false);
+    drawLeaf(pageW - 14, pageH - 18, 0.85, true);
+    // Label band along the bottom.
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.2);
+    pdf.line(pageW * 0.18, pageH - 14, pageW * 0.82, pageH - 14);
+    return;
+  }
+
+  // ── Naive Doodle: smiley sun + squiggle arrow + crayon dots ──
+  if (theme.decorations === 'doodle-marks') {
+    const [ar, ag, ab] = hexToRgb(theme.accent); // coral
+    const yellow: RGB = [255, 217, 61];
+    const blue: RGB = [77, 150, 255];
+    const green: RGB = [107, 203, 119];
+    // Sun face — top-right, yellow disk + 8 rays + simple smiley.
+    const sx = pageW - 18;
+    const sy = 16;
+    const sr = 6;
+    pdf.setFillColor(yellow[0], yellow[1], yellow[2]);
+    pdf.circle(sx, sy, sr, 'F');
+    pdf.setDrawColor(yellow[0], yellow[1], yellow[2]);
+    pdf.setLineWidth(0.6);
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      pdf.line(
+        sx + Math.cos(a) * (sr + 1.5),
+        sy + Math.sin(a) * (sr + 1.5),
+        sx + Math.cos(a) * (sr + 3.5),
+        sy + Math.sin(a) * (sr + 3.5),
+      );
+    }
+    // Face details — eyes + smile.
+    pdf.setFillColor(29, 29, 29);
+    pdf.circle(sx - 1.8, sy - 0.8, 0.4, 'F');
+    pdf.circle(sx + 1.8, sy - 0.8, 0.4, 'F');
+    pdf.setDrawColor(29, 29, 29);
+    pdf.setLineWidth(0.35);
+    // Smile arc — approximated with 3 segments.
+    pdf.line(sx - 2, sy + 1, sx - 1, sy + 2);
+    pdf.line(sx - 1, sy + 2, sx + 1, sy + 2);
+    pdf.line(sx + 1, sy + 2, sx + 2, sy + 1);
+    // Squiggle arrow — bottom-left, coral, simple polyline.
+    pdf.setDrawColor(ar, ag, ab);
+    pdf.setLineWidth(0.7);
+    const ax = 12;
+    const ay = pageH - 14;
+    pdf.line(ax, ay, ax + 8, ay - 5);
+    pdf.line(ax + 8, ay - 5, ax + 16, ay - 2);
+    pdf.line(ax + 16, ay - 2, ax + 28, ay - 12);
+    // Arrowhead.
+    pdf.line(ax + 28, ay - 12, ax + 24, ay - 10);
+    pdf.line(ax + 28, ay - 12, ax + 26, ay - 16);
+    // Crayon dots scattered.
+    pdf.setFillColor(blue[0], blue[1], blue[2]);
+    pdf.circle(pageW * 0.78, pageH * 0.55, 1.4, 'F');
+    pdf.setFillColor(green[0], green[1], green[2]);
+    pdf.circle(pageW * 0.42, pageH * 0.7, 1.1, 'F');
+    return;
+  }
+
+  // ── Risograph: halftone dot pattern + offset 2-color frames ──
+  if (theme.decorations === 'riso-halftone') {
+    const [ar, ag, ab] = hexToRgb(theme.accent); // pink
+    const [rr, rg, rb] = hexToRgb(theme.rule);   // cobalt blue
+    // Halftone dots — accent color at low density
+    pdf.setFillColor(ar, ag, ab);
+    const spacing = 5;
+    for (let x = spacing / 2; x < pageW; x += spacing) {
+      for (let y = spacing / 2; y < pageH; y += spacing) {
+        pdf.circle(x, y, 0.25, 'F');
+      }
+    }
+    // Pink frame, offset down-right
+    pdf.setDrawColor(ar, ag, ab);
+    pdf.setLineWidth(0.7);
+    pdf.rect(8, 8, pageW - 12, pageH - 12, 'S');
+    // Blue frame, offset up-left — produces the misregistered look
+    pdf.setDrawColor(rr, rg, rb);
+    pdf.setLineWidth(0.7);
+    pdf.rect(5, 5, pageW - 12, pageH - 12, 'S');
+    return;
+  }
 }
 
 /**
