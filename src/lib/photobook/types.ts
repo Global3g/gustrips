@@ -217,10 +217,25 @@ export interface BookPage {
   photoFrames?: (PhotoFrame | null)[];
   /** Per-slot captions (used by polaroid-grid, timeline-strip, etc.). */
   slotCaptions?: (string | null)[];
+  /** Per-slot custom crop (overrides default cover-fit framing). */
+  slotCrops?: (SlotCrop | null)[];
   /** Decorative stickers floating on top of the page. */
   stickers?: Sticker[];
   /** Pattern overlay on top of the bg color. */
   backgroundPattern?: BookPatternId;
+}
+
+/**
+ * Manual crop rectangle for a photo inside a slot. All values are normalized
+ * 0..1 against the original image's natural dimensions, so the same crop
+ * survives when the slot is resized by a layout change. When absent the
+ * renderer falls back to centered cover-fit (the default behaviour).
+ */
+export interface SlotCrop {
+  x: number; // left edge (0..1)
+  y: number; // top edge (0..1)
+  w: number; // width (0..1)
+  h: number; // height (0..1)
 }
 
 export interface BookState {

@@ -33,6 +33,7 @@ import type {
   LayoutDefinition,
   PhotoFilter,
   PhotoFrame,
+  SlotCrop,
   Sticker,
   StickerKind,
   ThemeId,
@@ -83,23 +84,52 @@ function pdfFontFor(theme: BookTheme, kind: 'title' | 'body'): PdfFontFamily {
 
 // ─── Image fetching ───────────────────────────────────────
 
+/**
+ * In-memory cache shared across one export run. Pre-warmed in parallel
+ * before the render loop so each photo is fetched at most once even if it
+ * appears in multiple pages, and so the network phase doesn't bottleneck
+ * the (already CPU-bound) PDF rendering. Cleared at the start of every
+ * exportPhotoBookPdf call.
+ */
+const imageCache = new Map<string, string>();
+
 async function fetchImageAsDataUrl(url: string): Promise<string | null> {
+  const cached = imageCache.get(url);
+  if (cached) return cached;
+  // Cap each fetch so a single hanging photo can't freeze the whole export.
+  // Firebase Storage downloads of large originals (HEIC-converted JPEGs can
+  // easily hit 20-30MB) sometimes stall on flaky connections — a finite
+  // timeout lets the loop skip and continue with the rest of the book.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
   try {
     const isFirebase = url.includes('firebasestorage.googleapis.com');
     const fetchUrl = isFirebase
       ? `/api/photo-proxy?url=${encodeURIComponent(url)}`
       : url;
-    const res = await fetch(fetchUrl);
-    if (!res.ok) return null;
+    const res = await fetch(fetchUrl, { signal: controller.signal });
+    if (!res.ok) {
+      console.warn('[PhotoBookPdf] fetch non-ok', res.status, url.slice(0, 80));
+      return null;
+    }
     const blob = await res.blob();
-    return await new Promise<string>((resolve, reject) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result as string);
       r.onerror = () => reject(r.error);
       r.readAsDataURL(blob);
     });
-  } catch {
+    imageCache.set(url, dataUrl);
+    return dataUrl;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      console.warn('[PhotoBookPdf] fetch timed out (>30s)', url.slice(0, 80));
+    } else {
+      console.warn('[PhotoBookPdf] fetch failed', err, url.slice(0, 80));
+    }
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -548,6 +578,7 @@ async function placeImageCover(
   filter: PhotoFilter | null,
   frame: PhotoFrame | null,
   slotCaption: string | null,
+  slotCrop: SlotCrop | null = null,
 ) {
   // Frame wrapper (polaroid card, vintage pad) is drawn first so the photo
   // sits ON TOP of it. Then we compute the inner rect respecting frame
@@ -593,16 +624,28 @@ async function placeImageCover(
       i.src = dataUrl;
     });
 
-    // Compute cover-fit crop.
-    const slotRatio = w / h;
-    const imgRatio = img.naturalWidth / img.naturalHeight;
-    let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
-    if (imgRatio > slotRatio) {
-      sw = img.naturalHeight * slotRatio;
-      sx = (img.naturalWidth - sw) / 2;
+    // Compute source rect: user crop (normalized 0..1) wins; otherwise fall
+    // back to centered cover-fit so the slot is fully filled.
+    let sx: number, sy: number, sw: number, sh: number;
+    if (slotCrop) {
+      sx = slotCrop.x * img.naturalWidth;
+      sy = slotCrop.y * img.naturalHeight;
+      sw = slotCrop.w * img.naturalWidth;
+      sh = slotCrop.h * img.naturalHeight;
     } else {
-      sh = img.naturalWidth / slotRatio;
-      sy = (img.naturalHeight - sh) / 2;
+      const slotRatio = w / h;
+      const imgRatio = img.naturalWidth / img.naturalHeight;
+      sx = 0;
+      sy = 0;
+      sw = img.naturalWidth;
+      sh = img.naturalHeight;
+      if (imgRatio > slotRatio) {
+        sw = img.naturalHeight * slotRatio;
+        sx = (img.naturalWidth - sw) / 2;
+      } else {
+        sh = img.naturalWidth / slotRatio;
+        sy = (img.naturalHeight - sh) / 2;
+      }
     }
 
     const canvas = document.createElement('canvas');
@@ -1099,11 +1142,12 @@ async function renderPage(ctx: DrawCtx, page: BookPage) {
     const filter = page.photoFilters?.[i] ?? null;
     let frame = page.photoFrames?.[i] ?? null;
     const caption = page.slotCaptions?.[i] ?? null;
+    const slotCrop = page.slotCrops?.[i] ?? null;
     // Polaroid-grid implicitly uses the polaroid frame.
     if (isPolaroidGrid && (!frame || frame === 'none')) {
       frame = 'polaroid';
     }
-    await placeImageCover(pdf, url, x, y, w, h, theme, filter, frame, caption);
+    await placeImageCover(pdf, url, x, y, w, h, theme, filter, frame, caption, slotCrop);
   }
 
   // 5. Photo overlays (cover scrim / panorama scrim).
@@ -1137,10 +1181,77 @@ export type PhotoBookStyle = ThemeId;
  * Generate the Photo Book and return it as a Blob.
  * Browser-only.
  */
-export async function exportPhotoBookPdf(state: BookState): Promise<Blob> {
+export type PhotoBookExportProgress = {
+  phase: 'fetching' | 'rendering';
+  current: number;
+  total: number;
+};
+
+/** Collect every photo URL that appears anywhere in the book (cover + pages). */
+function collectPhotoUrls(state: BookState): string[] {
+  const set = new Set<string>();
+  const pages = [state.cover, ...state.pages];
+  for (const page of pages) {
+    for (const url of page.photoUrls) {
+      if (url) set.add(url);
+    }
+  }
+  return Array.from(set);
+}
+
+/**
+ * Pre-warm the imageCache by fetching URLs in parallel with a concurrency
+ * cap. The cap keeps us from saturating the browser's network slots (Chrome
+ * tops out around 6 per origin anyway) while still being dramatically faster
+ * than the previous one-at-a-time loop hidden inside renderPage.
+ */
+async function prefetchImages(
+  urls: string[],
+  concurrency: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  if (urls.length === 0) return;
+  let nextIndex = 0;
+  let completed = 0;
+  const total = urls.length;
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = nextIndex++;
+      if (i >= total) return;
+      await fetchImageAsDataUrl(urls[i]); // result lands in imageCache
+      completed += 1;
+      onProgress?.(completed, total);
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, total) }, worker);
+  await Promise.all(workers);
+}
+
+export async function exportPhotoBookPdf(
+  state: BookState,
+  onProgress?: (info: PhotoBookExportProgress) => void,
+): Promise<Blob> {
   const theme = getTheme(state.theme);
   const [w, h] = SIZE_MM[state.size];
+  const totalPages = state.pages.length + 1; // +1 cover
+  const startedAt = performance.now();
 
+  // Fresh cache per export so we don't leak data-URLs across runs.
+  imageCache.clear();
+
+  // ── Phase 1: fetch all photos in parallel ──
+  const allUrls = collectPhotoUrls(state);
+  console.log(`[PhotoBookPdf] prefetching ${allUrls.length} unique photos`);
+  if (allUrls.length > 0) {
+    onProgress?.({ phase: 'fetching', current: 0, total: allUrls.length });
+  }
+  const fetchStart = performance.now();
+  await prefetchImages(allUrls, 6, (done, totalUrls) => {
+    onProgress?.({ phase: 'fetching', current: done, total: totalUrls });
+  });
+  console.log(`[PhotoBookPdf] prefetch done in ${Math.round(performance.now() - fetchStart)}ms`);
+
+  // ── Phase 2: render pages (fetches now hit the cache instantly) ──
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -1151,21 +1262,33 @@ export async function exportPhotoBookPdf(state: BookState): Promise<Blob> {
   const pageH = pdf.internal.pageSize.getHeight();
   const ctx: DrawCtx = { pdf, theme, pageW, pageH };
 
+  console.log(`[PhotoBookPdf] rendering ${totalPages} pages`);
+  console.log('[PhotoBookPdf] page 1/' + totalPages + ' (cover)');
+  onProgress?.({ phase: 'rendering', current: 1, total: totalPages });
   await renderPage(ctx, state.cover);
 
-  for (const page of state.pages) {
+  for (let i = 0; i < state.pages.length; i++) {
     pdf.addPage();
-    await renderPage(ctx, page);
+    const pageNum = i + 2;
+    console.log(`[PhotoBookPdf] page ${pageNum}/${totalPages}`);
+    onProgress?.({ phase: 'rendering', current: pageNum, total: totalPages });
+    await renderPage(ctx, state.pages[i]);
   }
 
-  return pdf.output('blob');
+  const blob = pdf.output('blob');
+  console.log(
+    `[PhotoBookPdf] done in ${Math.round(performance.now() - startedAt)}ms — ${Math.round(blob.size / 1024)}KB`,
+  );
+  imageCache.clear();
+  return blob;
 }
 
 export async function exportAndDownloadPhotoBookPdf(
   state: BookState,
   filename: string,
+  onProgress?: (info: PhotoBookExportProgress) => void,
 ): Promise<void> {
-  const blob = await exportPhotoBookPdf(state);
+  const blob = await exportPhotoBookPdf(state, onProgress);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

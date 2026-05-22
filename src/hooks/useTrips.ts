@@ -27,17 +27,68 @@ interface UseTripsReturn {
   deleteTrip: (id: string) => Promise<void>;
 }
 
+// Local mirror of the trips list, scoped per-uid. Lets the dashboard
+// render immediately on mobile / cold-cache loads instead of staring at
+// an empty page while Firebase Auth restores and Firestore round-trips.
+const TRIPS_CACHE_PREFIX = 'gustrips:trips:';
+const TRIPS_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+
+function loadCachedTrips(uid: string): Trip[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(TRIPS_CACHE_PREFIX + uid);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { savedAt: number; trips: Trip[] };
+    if (!parsed?.trips || !Array.isArray(parsed.trips)) return null;
+    if (Date.now() - parsed.savedAt > TRIPS_CACHE_TTL_MS) return null;
+    return parsed.trips;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedTrips(uid: string, trips: Trip[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      TRIPS_CACHE_PREFIX + uid,
+      JSON.stringify({ savedAt: Date.now(), trips }),
+    );
+  } catch {
+    // Quota or private mode — best-effort cache, drop silently.
+  }
+}
+
 export function useTrips(): UseTripsReturn {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid) {
+      // If auth is still restoring (typical on mobile cold start, where
+      // Firebase reads its IndexedDB-backed session synchronously but slowly),
+      // keep the skeleton up instead of flashing the empty state. The empty
+      // state used to appear for a beat before the snapshot landed, which
+      // looked like "the app forgot my trips".
+      if (authLoading) {
+        setLoading(true);
+        return;
+      }
       setTrips([]);
       setLoading(false);
       return;
+    }
+
+    // Optimistic hydration: paint the cached list before Firestore even
+    // opens its socket. We still spin up the live listeners below so the
+    // user gets fresh data once the network resolves — they just don't
+    // have to stare at an empty dashboard in the meantime.
+    const cached = loadCachedTrips(user.uid);
+    if (cached && cached.length > 0) {
+      setTrips(cached);
+      setLoading(false);
     }
 
     const db = getClientDb();
@@ -86,7 +137,12 @@ export function useTrips(): UseTripsReturn {
         (b.createdAt ?? '').localeCompare(a.createdAt ?? ''),
       );
       setTrips(merged);
-      if (ownedLoaded && sharedLoaded) setLoading(false);
+      if (ownedLoaded && sharedLoaded) {
+        setLoading(false);
+        // Persist a copy for the next cold start. Only after we've heard
+        // back from BOTH listeners so we don't cache a half-merged view.
+        saveCachedTrips(uid, merged);
+      }
       // Only clear error if BOTH subscriptions are healthy now.
       if (!ownedError && !sharedError) setError(null);
     };
@@ -129,7 +185,7 @@ export function useTrips(): UseTripsReturn {
       unsubOwned();
       unsubShared();
     };
-  }, [user?.uid]);
+  }, [user?.uid, authLoading]);
 
   const createTrip = useCallback(
     async (data: Omit<Trip, 'id' | 'createdBy' | 'createdAt' | 'updatedAt'>): Promise<string> => {

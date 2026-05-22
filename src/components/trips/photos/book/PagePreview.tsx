@@ -39,6 +39,7 @@ import type {
   BookSize,
   PhotoFilter,
   PhotoFrame,
+  SlotCrop,
   Sticker,
   ThemeId,
 } from '@/lib/photobook/types';
@@ -60,6 +61,8 @@ interface PagePreviewProps {
   /** Slot index currently selected (highlights the slot border). */
   selectedSlot?: number | null;
   onSelectSlot?: (slotIndex: number) => void;
+  /** Fired on double-click of a filled slot — opens the crop modal. */
+  onCropSlot?: (slotIndex: number) => void;
   onTextChange?: (
     field: 'title' | 'subtitle' | 'caption' | 'body' | 'date' | 'location',
     value: string,
@@ -93,7 +96,10 @@ interface SlotProps {
   caption?: string | null;
   /** Optional rotation in degrees for the whole slot (used by polaroid-grid). */
   rotateDeg?: number;
+  /** User-defined crop rect (0..1 normalized). Null = default cover-fit. */
+  crop?: SlotCrop | null;
   onSelect?: () => void;
+  onCropOpen?: () => void;
 }
 
 /**
@@ -121,7 +127,9 @@ function Slot({
   frame,
   caption,
   rotateDeg,
+  crop,
   onSelect,
+  onCropOpen,
 }: SlotProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `slot:${pageId}:${index}`,
@@ -237,10 +245,36 @@ function Slot({
     wrapperShadow = (wrapperShadow ? wrapperShadow + ', ' : '') + '0 0 0 3px rgba(245,158,11,0.5)';
   }
 
+  // When the user has applied a custom crop, we can't use Next/Image's
+  // objectFit:'cover' (which centers the image). Instead we scale the image
+  // up so that the crop rect fills the slot, and translate it so that the
+  // crop's top-left aligns with the slot's top-left. Math:
+  //   imageWidthPercent  = 100 / crop.w
+  //   leftPercent        = -(crop.x / crop.w) * 100
+  // (and analogous for height/top).
+  const useCustomCrop = !!(photoUrl && crop);
+  const cropTransform = useCustomCrop && crop
+    ? {
+        width: `${100 / crop.w}%`,
+        height: `${100 / crop.h}%`,
+        left: `${-(crop.x / crop.w) * 100}%`,
+        top: `${-(crop.y / crop.h) * 100}%`,
+      }
+    : null;
+
   return (
     <div
       ref={setNodeRef}
       onClick={interactive ? onSelect : undefined}
+      onDoubleClick={
+        interactive && photoUrl && onCropOpen
+          ? (e) => {
+              e.stopPropagation();
+              onCropOpen();
+            }
+          : undefined
+      }
+      title={interactive && photoUrl ? 'Doble click para reencuadrar' : undefined}
       style={{
         position: 'absolute',
         left,
@@ -273,19 +307,36 @@ function Slot({
         }}
       >
         {photoUrl ? (
-          <Image
-            src={photoUrl}
-            alt=""
-            fill
-            draggable={false}
-            sizes="(max-width: 768px) 100vw, 50vw"
-            style={{
-              objectFit: 'cover',
-              display: 'block',
-              filter: effectiveFilter,
-              userSelect: 'none',
-            }}
-          />
+          useCustomCrop ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={photoUrl}
+              alt=""
+              draggable={false}
+              style={{
+                position: 'absolute',
+                objectFit: 'fill',
+                display: 'block',
+                filter: effectiveFilter,
+                userSelect: 'none',
+                ...cropTransform,
+              }}
+            />
+          ) : (
+            <Image
+              src={photoUrl}
+              alt=""
+              fill
+              draggable={false}
+              sizes="(max-width: 768px) 100vw, 50vw"
+              style={{
+                objectFit: 'cover',
+                display: 'block',
+                filter: effectiveFilter,
+                userSelect: 'none',
+              }}
+            />
+          )
         ) : interactive ? (
           <div
             style={{
@@ -443,6 +494,7 @@ function PagePreviewImpl({
   interactive = false,
   selectedSlot = null,
   onSelectSlot,
+  onCropSlot,
   onTextChange,
   thumbnail = false,
   selectedStickerId = null,
@@ -571,7 +623,9 @@ function PagePreviewImpl({
             frame={frame}
             caption={caption}
             rotateDeg={rotateDeg}
+            crop={page.slotCrops?.[idx] ?? null}
             onSelect={() => onSelectSlot?.(idx)}
+            onCropOpen={() => onCropSlot?.(idx)}
           />
         );
       })}

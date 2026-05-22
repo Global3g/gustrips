@@ -157,6 +157,32 @@ export function seedBookFromTrip(
 }
 
 /**
+ * Empty starting state: cover takes only the trip title/destination (no
+ * auto-picked photo) and a single blank 1-hero page. Lets the user build the
+ * book photo-by-photo from the pool.
+ */
+export function seedEmptyBook(trip: Trip): BookState {
+  const cover: BookPage = {
+    id: newId('cover'),
+    layoutId: 'cover',
+    photoUrls: [trip.coverImage || null],
+    title: trip.title || 'Mi viaje',
+    subtitle: [
+      trip.destination,
+      trip.startDate && trip.endDate ? formatDateRangeES(trip.startDate, trip.endDate) : null,
+    ]
+      .filter(Boolean)
+      .join('  ·  '),
+  };
+  return {
+    theme: 'editorial',
+    size: 'a4',
+    cover,
+    pages: [blankPage('1-hero')],
+  };
+}
+
+/**
  * Resize a page's photoUrls (and matching per-slot arrays) when its layout
  * changes. Preserves existing photos / filters / frames / captions for
  * matching slot indexes and pads/truncates as needed.
@@ -185,6 +211,15 @@ export function applyLayout(page: BookPage, layoutId: LayoutId): BookPage {
         (_, i) => page.slotCaptions?.[i] ?? null,
       )
     : undefined;
+  // slotCrops carry source-image coordinates (0..1) so they survive a layout
+  // change unchanged — what they describe is the chunk of the photo to show,
+  // not where in the page it goes.
+  const nextCrops = page.slotCrops
+    ? Array.from(
+        { length: def.slotCount },
+        (_, i) => page.slotCrops?.[i] ?? null,
+      )
+    : undefined;
   return {
     ...page,
     layoutId,
@@ -192,6 +227,7 @@ export function applyLayout(page: BookPage, layoutId: LayoutId): BookPage {
     photoFilters: nextFilters,
     photoFrames: nextFrames,
     slotCaptions: nextCaptions,
+    slotCrops: nextCrops,
   };
 }
 

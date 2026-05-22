@@ -27,7 +27,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, MoreVertical, Plus, Copy, Trash2 } from 'lucide-react';
+import { GripVertical, MoreVertical, Plus, Copy, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import PagePreview from './PagePreview';
 import type { BookPage, BookState, ThemeId } from '@/lib/photobook/types';
 
@@ -38,6 +38,7 @@ interface PageListProps {
   onReorder: (orderedPageIds: string[]) => void;
   onDuplicate: (pageId: string) => void;
   onDelete: (pageId: string) => void;
+  onMove: (pageId: string, direction: 'up' | 'down') => void;
   onAdd: () => void;
 }
 
@@ -48,9 +49,13 @@ interface RowProps {
   size: BookState['size'];
   isActive: boolean;
   isCover: boolean;
+  isFirst?: boolean;
+  isLast?: boolean;
   onSelect: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
 function PageRow({
@@ -60,9 +65,13 @@ function PageRow({
   size,
   isActive,
   isCover,
+  isFirst = false,
+  isLast = false,
   onSelect,
   onDuplicate,
   onDelete,
+  onMoveUp,
+  onMoveDown,
 }: RowProps) {
   const sortable = useSortable({ id: page.id, disabled: isCover });
   const style = {
@@ -94,13 +103,15 @@ function PageRow({
           <span
             {...sortable.attributes}
             {...sortable.listeners}
-            className="flex-shrink-0 w-5 h-12 flex items-center justify-center text-white/40 hover:text-white/70 cursor-grab active:cursor-grabbing"
+            title="Arrastrá para reordenar"
+            aria-label="Arrastrá para reordenar"
+            className="flex-shrink-0 w-6 h-12 flex items-center justify-center text-white/70 hover:text-amber-200 cursor-grab active:cursor-grabbing rounded-md hover:bg-white/[0.08]"
             onClick={(e) => e.stopPropagation()}
           >
-            <GripVertical className="w-3.5 h-3.5" />
+            <GripVertical className="w-4 h-4" />
           </span>
         ) : (
-          <span className="flex-shrink-0 w-5 h-12" />
+          <span className="flex-shrink-0 w-6 h-12" />
         )}
 
         {/* Thumbnail. 90px wide is enough to be readable, small enough to
@@ -124,6 +135,39 @@ function PageRow({
           </div>
         </div>
       </button>
+
+      {/* Up/Down arrows (cover excluded, mirror the drag handle for users
+          who don't realise they can drag). */}
+      {!isCover && (onMoveUp || onMoveDown) && (
+        <div className="absolute top-1.5 right-9 flex flex-col gap-0.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isFirst) onMoveUp?.();
+            }}
+            disabled={isFirst}
+            aria-label="Mover hacia arriba"
+            title="Mover hacia arriba"
+            className="w-6 h-5 rounded-md bg-black/30 border border-white/10 flex items-center justify-center text-white/70 hover:bg-black/50 hover:text-amber-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-black/30 disabled:hover:text-white/70"
+          >
+            <ChevronUp className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isLast) onMoveDown?.();
+            }}
+            disabled={isLast}
+            aria-label="Mover hacia abajo"
+            title="Mover hacia abajo"
+            className="w-6 h-5 rounded-md bg-black/30 border border-white/10 flex items-center justify-center text-white/70 hover:bg-black/50 hover:text-amber-200 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-black/30 disabled:hover:text-white/70"
+          >
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        </div>
+      )}
 
       {/* Per-page menu — duplicate/delete (cover excluded). */}
       {!isCover && (onDuplicate || onDelete) && (
@@ -187,6 +231,7 @@ export default function PageList({
   onReorder,
   onDuplicate,
   onDelete,
+  onMove,
   onAdd,
 }: PageListProps) {
   const sensors = useSensors(
@@ -234,9 +279,13 @@ export default function PageList({
               size={state.size}
               isActive={page.id === activePageId}
               isCover={false}
+              isFirst={i === 0}
+              isLast={i === state.pages.length - 1}
               onSelect={() => onSelectPage(page.id)}
               onDuplicate={() => onDuplicate(page.id)}
               onDelete={() => onDelete(page.id)}
+              onMoveUp={() => onMove(page.id, 'up')}
+              onMoveDown={() => onMove(page.id, 'down')}
             />
           ))}
         </SortableContext>

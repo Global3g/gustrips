@@ -35,6 +35,7 @@ import {
   Sparkles,
   Palette,
   Paintbrush,
+  FileText,
 } from 'lucide-react';
 import {
   DndContext,
@@ -54,6 +55,7 @@ import { useToast } from '@/context/ToastContext';
 
 import PagePreview from '@/components/trips/photos/book/PagePreview';
 import PageList from '@/components/trips/photos/book/PageList';
+import PhotoCropModal from '@/components/trips/photos/book/PhotoCropModal';
 import LayoutPicker from '@/components/trips/photos/book/LayoutPicker';
 import PhotoPool from '@/components/trips/photos/book/PhotoPool';
 import TextEditor from '@/components/trips/photos/book/TextEditor';
@@ -71,6 +73,7 @@ import {
   layoutForPhotoCount,
   newId,
   seedBookFromTrip,
+  seedEmptyBook,
 } from '@/lib/photobook/seed';
 import type {
   BookPage,
@@ -80,6 +83,7 @@ import type {
   LayoutId,
   PhotoFilter,
   PhotoFrame,
+  SlotCrop,
   Sticker,
   ThemeId,
   TextZoneKind,
@@ -143,10 +147,24 @@ export default function PhotoBookPage() {
   const [activeTab, setActiveTab] = useState<EditorTab>('photos');
   const [poolQuery, setPoolQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{
+    phase: 'fetching' | 'rendering';
+    current: number;
+    total: number;
+  } | null>(null);
   const [previewWidth, setPreviewWidth] = useState(420);
+  // True when this is the first visit for the trip (no localStorage state)
+  // and the user has not yet picked between auto-seed vs blank.
+  const [needsSetup, setNeedsSetup] = useState(false);
+  // Slot crop dialog state. Open when the user double-clicks a filled slot.
+  const [cropTarget, setCropTarget] = useState<{
+    pageId: string;
+    slotIndex: number;
+    photoUrl: string;
+  } | null>(null);
   const previewWrapRef = useRef<HTMLDivElement | null>(null);
 
-  /* ─── Initialisation (load or seed) ───────────────────── */
+  /* ─── Initialisation (load or prompt) ──────────────────── */
   const seededRef = useRef(false);
   useEffect(() => {
     if (!trip || seededRef.current) return;
@@ -156,11 +174,27 @@ export default function PhotoBookPage() {
       setState(restored);
       setActivePageId(restored.cover.id);
     } else {
-      const fresh = seedBookFromTrip(trip, events, albumPhotos);
-      setState(fresh);
-      setActivePageId(fresh.cover.id);
+      // First visit: don't auto-seed. Show the setup picker so the user
+      // chooses between "generate from events" and "start blank".
+      setNeedsSetup(true);
     }
-  }, [trip, tripId, events, albumPhotos]);
+  }, [trip, tripId]);
+
+  const handleSeedFromEvents = useCallback(() => {
+    if (!trip) return;
+    const fresh = seedBookFromTrip(trip, events, albumPhotos);
+    setState(fresh);
+    setActivePageId(fresh.cover.id);
+    setNeedsSetup(false);
+  }, [trip, events, albumPhotos]);
+
+  const handleSeedEmpty = useCallback(() => {
+    if (!trip) return;
+    const fresh = seedEmptyBook(trip);
+    setState(fresh);
+    setActivePageId(fresh.cover.id);
+    setNeedsSetup(false);
+  }, [trip]);
 
   /* ─── Persist on every change ──────────────────────────── */
   useEffect(() => {
@@ -270,6 +304,59 @@ export default function PhotoBookPage() {
     });
   }, []);
 
+  const handleSlotCropOpen = useCallback(
+    (slotIndex: number) => {
+      if (!activePage) return;
+      const photoUrl = activePage.photoUrls[slotIndex];
+      if (!photoUrl) return;
+      setCropTarget({ pageId: activePage.id, slotIndex, photoUrl });
+    },
+    [activePage],
+  );
+
+  const handleSlotCropConfirm = useCallback(
+    (crop: SlotCrop) => {
+      if (!cropTarget) return;
+      const { pageId, slotIndex } = cropTarget;
+      updatePage(pageId, (p) => {
+        const existing = p.slotCrops ?? Array.from({ length: p.photoUrls.length }, () => null);
+        const next = [...existing];
+        next[slotIndex] = crop;
+        return { ...p, slotCrops: next };
+      });
+      setCropTarget(null);
+    },
+    [cropTarget, updatePage],
+  );
+
+  const handleSlotCropReset = useCallback(() => {
+    if (!cropTarget) return;
+    const { pageId, slotIndex } = cropTarget;
+    updatePage(pageId, (p) => {
+      if (!p.slotCrops) return p;
+      const next = [...p.slotCrops];
+      next[slotIndex] = null;
+      // Drop the array entirely if every entry is null — keeps state lean.
+      const allNull = next.every((c) => c === null);
+      return { ...p, slotCrops: allNull ? undefined : next };
+    });
+    setCropTarget(null);
+  }, [cropTarget, updatePage]);
+
+  const handleMovePage = useCallback((pageId: string, direction: 'up' | 'down') => {
+    setState((cur) => {
+      if (!cur) return cur;
+      const idx = cur.pages.findIndex((p) => p.id === pageId);
+      if (idx < 0) return cur;
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= cur.pages.length) return cur;
+      const next = [...cur.pages];
+      const [moved] = next.splice(idx, 1);
+      next.splice(targetIdx, 0, moved);
+      return { ...cur, pages: next };
+    });
+  }, []);
+
   const handleAutoFill = useCallback(() => {
     if (!state || !trip) return;
     const sortedEvents = [...events].sort((a, b) => {
@@ -313,18 +400,15 @@ export default function PhotoBookPage() {
     toast(`Se agregaron ${additions.length} páginas`, 'success');
   }, [state, trip, events, albumPhotos, toast]);
 
+  // Re-open the setup picker so the user can choose between auto-seed
+  // (from events) or starting blank. The picker itself shows a warning
+  // that the current book will be replaced when state already exists.
   const handleReset = useCallback(() => {
     if (!trip) return;
-    const ok = typeof window !== 'undefined'
-      ? window.confirm('¿Regenerar el libro desde los eventos? Vas a perder los cambios actuales.')
-      : true;
-    if (!ok) return;
-    const fresh = seedBookFromTrip(trip, events, albumPhotos);
-    setState(fresh);
-    setActivePageId(fresh.cover.id);
+    setNeedsSetup(true);
     setSelectedSlot(null);
     setSelectedStickerId(null);
-  }, [trip, events, albumPhotos]);
+  }, [trip]);
 
   /* ─── DnD: photo pool → slot ───────────────────────────── */
   const sensors = useSensors(
@@ -345,7 +429,15 @@ export default function PhotoBookPage() {
       updatePage(pageId, (p) => {
         const next = [...p.photoUrls];
         next[index] = url;
-        return { ...p, photoUrls: next };
+        // Dropping a new photo into a slot invalidates whatever crop was
+        // there before (the crop rect refers to the OLD image).
+        let slotCrops = p.slotCrops;
+        if (slotCrops && slotCrops[index] != null) {
+          const cropsNext = [...slotCrops];
+          cropsNext[index] = null;
+          slotCrops = cropsNext.every((c) => c === null) ? undefined : cropsNext;
+        }
+        return { ...p, photoUrls: next, slotCrops };
       });
     },
     [updatePage],
@@ -368,7 +460,14 @@ export default function PhotoBookPage() {
       updatePage(activePage.id, (p) => {
         const next = [...p.photoUrls];
         next[i] = url;
-        return { ...p, photoUrls: next };
+        // Same reasoning as the drag handler — clear the stale crop.
+        let slotCrops = p.slotCrops;
+        if (slotCrops && slotCrops[i] != null) {
+          const cropsNext = [...slotCrops];
+          cropsNext[i] = null;
+          slotCrops = cropsNext.every((c) => c === null) ? undefined : cropsNext;
+        }
+        return { ...p, photoUrls: next, slotCrops };
       });
     },
     [activePage, selectedSlot, updatePage, toast],
@@ -492,18 +591,119 @@ export default function PhotoBookPage() {
   const handleExport = useCallback(async () => {
     if (!state || !trip) return;
     setIsExporting(true);
+    setExportProgress(null);
     try {
       const mod = await import('@/lib/utils/exportPhotoBookPdf');
       const slug = (trip.title || 'viaje').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
-      await mod.exportAndDownloadPhotoBookPdf(state, `photobook_${slug}.pdf`);
+      await mod.exportAndDownloadPhotoBookPdf(
+        state,
+        `photobook_${slug}.pdf`,
+        (info) => setExportProgress(info),
+      );
       toast('Photo book descargado', 'success');
     } catch (err) {
       console.error('Photo book export failed:', err);
       toast('Error al generar el photo book', 'error');
     } finally {
       setIsExporting(false);
+      setExportProgress(null);
     }
   }, [state, trip, toast]);
+
+  /* ─── First-visit setup picker ─────────────────────────── */
+  if (trip && needsSetup) {
+    // Quick stats so the user knows what "automatic" would actually pull.
+    const eventPhotoCount = events.reduce((n, ev) => n + (ev.photos?.length ?? 0), 0);
+    const totalPhotos = eventPhotoCount + albumPhotos.length;
+    const eventsWithPhotos = events.filter((ev) => {
+      if ((ev.photos?.length ?? 0) > 0) return true;
+      return albumPhotos.some((p) => p.eventId === ev.id);
+    }).length;
+    const willGenerateContent = totalPhotos > 0 && eventsWithPhotos > 0;
+    const isReplacing = state !== null; // came from Reiniciar, not first visit
+
+    return (
+      <div className="max-w-[1400px] mx-auto pb-16">
+        <div
+          className="relative rounded-3xl border border-white/[0.06] shadow-2xl shadow-black/30 p-6 sm:p-10 space-y-8"
+          style={{ background: 'linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 50%, #28406a 100%)' }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (isReplacing) {
+                setNeedsSetup(false);
+              } else {
+                router.push(`/trips/${tripId}/photos`);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/85 hover:text-white text-xs font-semibold transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            {isReplacing ? 'Cancelar' : 'Volver a fotos'}
+          </button>
+
+          <div className="text-center space-y-2 pt-2">
+            <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+              ¿Cómo querés armar tu photobook?
+            </h1>
+            <p className="text-sm text-white/60">
+              {isReplacing
+                ? 'Esto va a reemplazar el photobook actual.'
+                : 'Podés cambiar de idea después con el botón Reiniciar.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
+            <button
+              type="button"
+              onClick={handleSeedFromEvents}
+              disabled={!willGenerateContent}
+              className="group relative text-left rounded-2xl border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] hover:border-amber-300/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/[0.04] disabled:hover:border-white/[0.08] p-6 transition-all"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-300/15 border border-amber-300/30 flex items-center justify-center">
+                  <Wand2 className="w-5 h-5 text-amber-200" />
+                </div>
+                <h2 className="text-base font-semibold text-white">Desde mis eventos</h2>
+              </div>
+              <p className="text-sm text-white/70 leading-relaxed">
+                Genero una página por cada evento del viaje que tenga fotos. Listo en segundos.
+              </p>
+              <div className="mt-4 pt-4 border-t border-white/[0.06] text-xs text-white/55">
+                {willGenerateContent ? (
+                  <>
+                    {eventsWithPhotos} {eventsWithPhotos === 1 ? 'página' : 'páginas'} · {totalPhotos} {totalPhotos === 1 ? 'foto' : 'fotos'}
+                  </>
+                ) : (
+                  <span className="text-amber-200/80">Todavía no hay eventos con fotos.</span>
+                )}
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSeedEmpty}
+              className="group relative text-left rounded-2xl border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] hover:border-sky-300/30 p-6 transition-all"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-300/15 border border-sky-300/30 flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-sky-200" />
+                </div>
+                <h2 className="text-base font-semibold text-white">Empezar desde cero</h2>
+              </div>
+              <p className="text-sm text-white/70 leading-relaxed">
+                Arrancás con una portada y una página vacía. Vos elegís cada foto desde el pool.
+              </p>
+              <div className="mt-4 pt-4 border-t border-white/[0.06] text-xs text-white/55">
+                Control total · más manual
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ─── Loading state ────────────────────────────────────── */
   if (!trip || !state || !activePage) {
@@ -583,7 +783,7 @@ export default function PhotoBookPage() {
                 type="button"
                 onClick={handleReset}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white/85 hover:text-white text-xs font-semibold transition-colors"
-                title="Regenerar desde los eventos del viaje"
+                title="Elegir entre regenerar desde eventos o empezar desde cero"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Reiniciar
@@ -604,10 +804,16 @@ export default function PhotoBookPage() {
                 type="button"
                 onClick={handleExport}
                 disabled={isExporting}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-zinc-900 font-bold text-sm shadow-lg shadow-amber-500/20 transition-shadow disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-zinc-900 font-bold text-sm shadow-lg shadow-amber-500/20 transition-shadow disabled:opacity-40 disabled:cursor-not-allowed min-w-[180px] justify-center"
               >
                 {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                {isExporting ? 'Generando…' : 'Descargar PDF'}
+                {isExporting
+                  ? exportProgress
+                    ? exportProgress.phase === 'fetching'
+                      ? `Cargando ${exportProgress.current}/${exportProgress.total} fotos`
+                      : `Página ${exportProgress.current}/${exportProgress.total}`
+                    : 'Preparando…'
+                  : 'Descargar PDF'}
               </button>
             </div>
           </div>
@@ -640,6 +846,7 @@ export default function PhotoBookPage() {
                 onReorder={handleReorderPages}
                 onDuplicate={handleDuplicatePage}
                 onDelete={handleDeletePage}
+                onMove={handleMovePage}
                 onAdd={handleAddPage}
               />
             </aside>
@@ -658,6 +865,7 @@ export default function PhotoBookPage() {
                 interactive
                 selectedSlot={selectedSlot}
                 onSelectSlot={setSelectedSlot}
+                onCropSlot={handleSlotCropOpen}
                 onTextChange={handleTextChange}
                 selectedStickerId={selectedStickerId}
                 onSelectSticker={setSelectedStickerId}
@@ -818,6 +1026,36 @@ export default function PhotoBookPage() {
           </div>
         </div>
       </div>
+
+      {/* Photo crop dialog — opens on slot double-click. */}
+      {cropTarget && (() => {
+        const targetPage =
+          state.cover.id === cropTarget.pageId
+            ? state.cover
+            : state.pages.find((p) => p.id === cropTarget.pageId);
+        if (!targetPage) return null;
+        const slotDef = LAYOUTS[targetPage.layoutId]?.slots?.[cropTarget.slotIndex];
+        if (!slotDef) return null;
+        const PAGE_RATIOS: Record<BookSize, number> = {
+          a4: 210 / 297,
+          square: 1,
+          letter: 216 / 279,
+        };
+        // The slot's w/h are in page-relative units (0..1). Real-world aspect
+        // also depends on the page's own aspect ratio.
+        const aspect = (slotDef.w / slotDef.h) * PAGE_RATIOS[state.size];
+        const currentCrop = targetPage.slotCrops?.[cropTarget.slotIndex] ?? null;
+        return (
+          <PhotoCropModal
+            photoUrl={cropTarget.photoUrl}
+            aspect={aspect}
+            initialCrop={currentCrop}
+            onConfirm={handleSlotCropConfirm}
+            onReset={currentCrop ? handleSlotCropReset : undefined}
+            onCancel={() => setCropTarget(null)}
+          />
+        );
+      })()}
     </DndContext>
   );
 }
