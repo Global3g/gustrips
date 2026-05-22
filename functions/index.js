@@ -40,6 +40,7 @@ if (tripshistoryApp) {
   exports.tripshistory = onRequest(
     {
       region: 'us-central1',
+      secrets: ['SENTRY_DSN'],
       // Express handles its own body parsing; let onRequest pass the raw body through.
     },
     tripshistoryApp,
@@ -59,6 +60,7 @@ exports.heicToJpeg = onRequest(
     region: 'us-central1',
     timeoutSeconds: 120,
     memory: '1GiB',
+    secrets: ['SENTRY_DSN'],
     // Avoid request pile-up: each instance handles 1 conversion at a time.
     // Cloud Run autoscales by creating more instances when traffic spikes,
     // which is what we want for parallel uploads.
@@ -149,7 +151,7 @@ function photoIdFromUrl(url) {
 }
 
 exports.migrateAlbumPhotos = onRequest(
-  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB', cors: true },
+  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB', cors: true, secrets: ['SENTRY_DSN'] },
   async (req, res) => {
     const t0 = Date.now();
     try {
@@ -308,6 +310,7 @@ exports.checkEventReminders = onSchedule(
     schedule: 'every 5 minutes',
     timeZone: 'America/Mexico_City',
     region: 'us-central1',
+    secrets: ['SENTRY_DSN'],
   },
   async () => {
     const now = new Date();
