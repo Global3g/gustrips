@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-dm-sans);
+  --font-sans: var(--font-inter, var(--font-dm-sans));
+  --font-display: var(--font-fraunces);
+  --font-script: var(--font-caveat);
   --color-background: #f9fafb;
   --color-foreground: #111827;
   --color-primary: oklch(55% 0.18 45);
@@ -108,7 +110,80 @@ body {
   overflow-x: hidden;
 }
 
+/* ============================================
+   THREE-PILLAR MODE PALETTES
+   Each maps to a moment in the trip lifecycle. Apply by adding the class
+   to a wrapping element (root layout, page section, modal, etc).
+   - mode-planning  → BEFORE the trip. Cream cloud-dancer + deep ocean.
+                      Quiet, organized, anticipation. Use on dashboard
+                      when no trip is active.
+   - mode-active    → DURING the trip. Dark/dynamic with coral urgency.
+                      Decision-oriented. Use on /today and during dates.
+   - mode-memories  → AFTER the trip. Sepia warm + gold sentimental.
+                      Reflective. Use on /recap and past trip pages.
+   - mode-money     → Financial pillar surfaces (budget/expenses).
+                      Restrained green, never competes with photos.
+   ============================================ */
+
+.mode-planning {
+  --pillar-bg: #fafaf7;           /* cloud dancer cream */
+  --pillar-surface: #ffffff;
+  --pillar-ink: #1a1a1a;
+  --pillar-ink-soft: #5c5247;
+  --pillar-accent: #1a3d62;       /* deep ocean — calm authority */
+  --pillar-accent-soft: #4e6b85;
+  --pillar-rule: #e6e1d7;
+  --pillar-warm: #e8c87a;         /* mustard warm secondary */
+}
+
+.mode-active {
+  --pillar-bg: #0d1320;           /* night sky — keeps photos as protagonists */
+  --pillar-surface: rgba(255,255,255,0.06);
+  --pillar-ink: #f4f0e6;
+  --pillar-ink-soft: #b8b0a3;
+  --pillar-accent: #ff6b6b;       /* coral — urgency / now */
+  --pillar-accent-soft: #ff9595;
+  --pillar-rule: rgba(255,255,255,0.12);
+  --pillar-warm: #f5c062;
+}
+
+.mode-memories {
+  --pillar-bg: #f4ecd8;           /* sepia warm */
+  --pillar-surface: #faf4e3;
+  --pillar-ink: #3d2818;
+  --pillar-ink-soft: #6b4e2e;
+  --pillar-accent: #c8902a;       /* gold sentimental */
+  --pillar-accent-soft: #d4a574;
+  --pillar-rule: #d4c4a3;
+  --pillar-warm: #b8472a;         /* brick red — anchored, not loud */
+}
+
+.mode-money {
+  /* Used as overlay inside other modes (e.g. money card on planning bg). */
+  --pillar-money: #2f6b4f;        /* deep restrained green */
+  --pillar-money-soft: #4e8a78;
+  --pillar-money-bg: rgba(78, 138, 120, 0.08);
+}
+
 /* --- Typography Scale --- */
+
+/* Editorial display — high-contrast serif for hero numbers, trip names,
+   countdown values. Uses Fraunces with opsz axis so the renderer picks
+   a heavier optical cut at large sizes. */
+.text-editorial {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variation-settings: "opsz" 144;
+}
+
+.text-editorial-italic {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variation-settings: "opsz" 144;
+}
 
 .text-display {
   font-size: 2.5rem;
@@ -116,6 +191,37 @@ body {
   letter-spacing: -0.03em;
   font-weight: 700;
   color: #111827;
+}
+
+/* Hero — for trip names, countdowns, page-defining titles. Tied to the
+   editorial serif so the page has a "magazine cover" anchor. */
+.text-hero {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: clamp(2.5rem, 5vw + 1rem, 4.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  font-weight: 600;
+  font-variation-settings: "opsz" 144;
+}
+
+/* Eyebrow — small uppercase label above hero. Section markers. */
+.text-eyebrow {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Footnote — for tiny annotations, "as of" timestamps, attribution. */
+.text-footnote {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--pillar-ink-soft, #6b7280);
 }
 
 .text-headline {

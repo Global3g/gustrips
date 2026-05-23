@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
-import { uploadPhoto, uploadOnePending } from '@/lib/photoUploader';
+import { uploadPhoto, uploadOnePending, bumpTripUpdatedAtOnce } from '@/lib/photoUploader';
 import { isHeicFile, normalizeImageFile } from '@/lib/heic';
 import {
   enqueuePhoto,
@@ -138,7 +138,13 @@ function photoIdFromUrl(url: string): string {
 
 interface UseAlbumReturn {
   albumPhotos: AlbumPhoto[];
-  addPhoto: (file: File, date: string, caption?: string, eventId?: string) => Promise<AlbumPhoto>;
+  addPhoto: (
+    file: File,
+    date: string,
+    caption?: string,
+    eventId?: string,
+    options?: { skipTripBump?: boolean },
+  ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
@@ -236,7 +242,13 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
   }, [legacyPhotos, subPhotos]);
 
   const addPhoto = useCallback(
-    async (file: File, date: string, caption?: string, eventId?: string): Promise<AlbumPhoto> => {
+    async (
+      file: File,
+      date: string,
+      caption?: string,
+      eventId?: string,
+      options?: { skipTripBump?: boolean },
+    ): Promise<AlbumPhoto> => {
       // Normalize HEIC → JPEG before anything else so neither path (online
       // upload nor offline queue) holds an unrenderable blob.
       const normalized = isHeicFile(file) ? await normalizeImageFile(file) : file;
@@ -274,6 +286,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         fileBlob: normalized,
         fileName: normalized.name,
         fileType: normalized.type,
+        skipTripBump: options?.skipTripBump,
       });
     },
     [tripId],
@@ -287,7 +300,10 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       const items = await listPending(tripId);
       for (const item of items) {
         try {
-          await uploadOnePending(item);
+          // Defer the per-photo trip.updatedAt write — we bump once at the
+          // end of the drain to avoid firing N onSnapshot rounds when the
+          // queue has multiple pending items for this trip.
+          await uploadOnePending(item, { skipTripBump: true });
           await removePending(item.id);
           uploaded++;
         } catch (err) {
@@ -296,6 +312,15 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           }
           await bumpAttempts(item.id);
           failed++;
+        }
+      }
+      if (uploaded > 0) {
+        try {
+          await bumpTripUpdatedAtOnce(tripId);
+        } catch (err) {
+          if (typeof console !== 'undefined') {
+            console.warn('[useAlbum] trip bump after drain failed', err);
+          }
         }
       }
       return { uploaded, failed };

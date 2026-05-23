@@ -12,9 +12,11 @@ const ChatbotPanel = dynamic(
   () => import('./ChatbotPanel').then((m) => m.ChatbotPanel),
   { ssr: false },
 );
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
-import { useExpenses } from '@/hooks/useExpenses';
+import {
+  useTripFromContext,
+  useEventsFromContext,
+  useExpensesFromContext,
+} from '@/context/TripDataContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { TOOL_SCHEMAS, executeToolCall, type ToolDeps } from '@/lib/assistant/tools';
@@ -148,14 +150,46 @@ function buildTripContext(
     }
   })();
 
+  // ── Today section ── highlights what's happening RIGHT NOW so the
+  // model doesn't have to scan the whole events list to answer "qué tengo
+  // hoy". Only meaningful when the trip is currently active.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const tripIsActive = todayIso >= startDate && todayIso <= endDate;
+  const todayEvents = sorted.filter((e) => e.date === todayIso);
+  const dayNumber = tripIsActive
+    ? days.findIndex((d) => d === todayIso) + 1
+    : 0;
+  const todaySection = tripIsActive
+    ? `\nHOY (${todayIso}, dia ${dayNumber} de ${totalDays}):\n${
+        todayEvents.length > 0
+          ? todayEvents
+              .map((e) => {
+                const cost = e.cost > 0 ? ` $${e.cost.toLocaleString()} ${e.currency}` : '';
+                return `- ${e.startTime} ${e.title} (${e.type})${cost}`;
+              })
+              .join('\n')
+          : '- Sin eventos planificados para hoy. El usuario tiene el dia libre.'
+      }\n`
+    : '';
+
+  // ── Lifecycle stage ── lets the model answer differently if the trip
+  // is in planning (countdown) vs active (live coach) vs memories (recap).
+  const stage = todayIso < startDate ? 'planificacion' : todayIso > endDate ? 'pasado' : 'activo';
+  const stageLine = stage === 'planificacion'
+    ? `ETAPA: planificacion (el viaje arranca el ${startDate}).`
+    : stage === 'pasado'
+      ? `ETAPA: pasado (el viaje termino el ${endDate}).`
+      : `ETAPA: activo (estan dentro del viaje).`;
+
   return `[CONTEXTO DEL VIAJE]
 Titulo: ${trip.title}
 Destino: ${trip.destination}
 Fechas: ${startDate} al ${endDate} (${totalDays} dias)
+${stageLine}
 Viajeros: ${travelerNames || 'No especificados'}
 ${trip.budget ? `Presupuesto: $${trip.budget.toLocaleString()} ${trip.budgetCurrency || 'MXN'}` : ''}
 ${geoLine}
-
+${todaySection}
 EVENTOS (por fecha):
 ${eventsText || '- Sin eventos registrados'}
 ${analysisText}`;
@@ -168,9 +202,13 @@ export function Chatbot() {
   const tripIdMatch = pathname.match(/^\/trips\/([^/]+)/);
   const tripId = tripIdMatch ? tripIdMatch[1] : '';
 
-  const { trip, updateTrip } = useTrip(tripId);
-  const { events, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
-  const { expenses, addTripExpense } = useExpenses(tripId);
+  // Chatbot now lives INSIDE /trips/[tripId]/layout so it can read from
+  // TripDataProvider's context — this avoids opening duplicate
+  // onSnapshot listeners (the old behavior was 3 extra listeners per
+  // trip view, which was a measurable battery + CPU hit on mobile).
+  const { trip, updateTrip } = useTripFromContext();
+  const { events, createEvent, updateEvent, deleteEvent } = useEventsFromContext();
+  const { expenses, addTripExpense } = useExpensesFromContext();
   const { travelers } = useGlobalTravelers();
   const { user } = useAuth();
 

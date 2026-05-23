@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { CheckSquare, Sparkles } from 'lucide-react';
-import { useChecklist } from '@/hooks/useChecklist';
+import { useChecklistFromContext as useChecklist } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import ChecklistSection from '@/components/trips/ChecklistSection';
 import TemplateSelector from '@/components/trips/TemplateSelector';
@@ -16,7 +16,7 @@ export default function ChecklistPage() {
   const params = useParams();
   const tripId = params.tripId as string;
 
-  const { items, loading, addItem, toggleItem, deleteItem } = useChecklist(tripId);
+  const { items, loading, addItem, toggleItem, deleteItem } = useChecklist();
   const { toast } = useToast();
   const [templateOpen, setTemplateOpen] = useState(false);
 

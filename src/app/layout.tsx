@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans, Playfair_Display, Caveat, Bebas_Neue } from "next/font/google";
+import { DM_Sans, Playfair_Display, Caveat, Bebas_Neue, Fraunces, Inter } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import "./globals.css";
@@ -28,6 +28,27 @@ const bebas = Bebas_Neue({
   variable: "--font-bebas",
   subsets: ["latin"],
   weight: ["400"],
+});
+
+// Editorial display serif — high-contrast, magazine-grade. Used for hero
+// titles, trip names, countdown numbers. Loaded with optical-size axis so
+// the renderer picks the right cut at each size.
+// Fraunces is variable in weight; passing explicit weights would conflict
+// with axes. We rely on font-weight CSS to pick the cut; opsz axis stays
+// opt-in via the `font-variation-settings: "opsz" 144` set on hero styles.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  axes: ["opsz"],
+  style: ["normal", "italic"],
+});
+
+// Neutral UI sans — body, buttons, captions. Inter is the modern default
+// for utility text and pairs well with Fraunces.
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const viewport: Viewport = {
@@ -99,7 +120,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${dmSans.variable} ${playfair.variable} ${caveat.variable} ${bebas.variable} antialiased`}>
+      <body className={`${dmSans.variable} ${playfair.variable} ${caveat.variable} ${bebas.variable} ${fraunces.variable} ${inter.variable} antialiased`}>
         <ServiceWorkerRegistration />
         <AuthProvider>{children}</AuthProvider>
       </body>

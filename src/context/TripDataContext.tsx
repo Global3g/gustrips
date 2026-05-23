@@ -37,7 +37,20 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useTrip } from '@/hooks/useTrip';
 import { useEvents } from '@/hooks/useEvents';
 import { useAlbum } from '@/hooks/useAlbum';
+import { useExpenses } from '@/hooks/useExpenses';
+import { useMembers } from '@/hooks/useMembers';
+import { useDocuments } from '@/hooks/useDocuments';
+import { useChecklist } from '@/hooks/useChecklist';
 import type { Trip, TripEvent, AlbumPhoto } from '@/types';
+
+// We expose the FULL hook return for the secondary collections so the
+// `useXxxFromContext` shims have the same shape as the original hooks.
+// This way callsites that currently do `const { items } = useChecklist(...)`
+// can switch to `useChecklistFromContext()` with zero other changes.
+type ExpensesHookReturn = ReturnType<typeof useExpenses>;
+type MembersHookReturn = ReturnType<typeof useMembers>;
+type DocumentsHookReturn = ReturnType<typeof useDocuments>;
+type ChecklistHookReturn = ReturnType<typeof useChecklist>;
 
 interface TripDataValue {
   // Trip
@@ -58,7 +71,13 @@ interface TripDataValue {
 
   // Album
   albumPhotos: AlbumPhoto[];
-  addPhoto: (file: File, date: string, caption?: string, eventId?: string) => Promise<AlbumPhoto>;
+  addPhoto: (
+    file: File,
+    date: string,
+    caption?: string,
+    eventId?: string,
+    options?: { skipTripBump?: boolean },
+  ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
@@ -73,6 +92,14 @@ interface TripDataValue {
   markFavorite: (photo: AlbumPhoto, favorite?: boolean) => Promise<void>;
   softDelete: (photo: AlbumPhoto) => Promise<void>;
   restorePhoto: (photo: AlbumPhoto) => Promise<void>;
+
+  // Secondary collections — added 2026-05-23 to stop the duplicate
+  // subscriptions (chatbot + banners + modals + pages all opened their
+  // own onSnapshot to the same /expenses, /members, /documents).
+  expensesHook: ExpensesHookReturn;
+  membersHook: MembersHookReturn;
+  documentsHook: DocumentsHookReturn;
+  checklistHook: ChecklistHookReturn;
 }
 
 const TripDataContext = createContext<TripDataValue | undefined>(undefined);
@@ -88,6 +115,15 @@ export function TripDataProvider({ tripId, children }: TripDataProviderProps) {
   const tripHook = useTrip(tripId);
   const eventsHook = useEvents(tripId);
   const albumHook = useAlbum(tripId, tripHook.trip);
+  // Secondary subscriptions — consolidated here so the chatbot, the
+  // various banners, the FAB and each page all reuse them instead of
+  // opening their own. Each onSnapshot has a real cost in mobile
+  // battery and CPU (WebSocket + JSON parsing per change event), so
+  // keeping the listener count low matters on 4G.
+  const expensesHook = useExpenses(tripId);
+  const membersHook = useMembers(tripId);
+  const documentsHook = useDocuments(tripId);
+  const checklistHook = useChecklist(tripId);
 
   // Memoize the context value so consumers re-render only when one of the
   // underlying subscriptions actually fires. Without this, every render of
@@ -119,6 +155,14 @@ export function TripDataProvider({ tripId, children }: TripDataProviderProps) {
       markFavorite: albumHook.markFavorite,
       softDelete: albumHook.softDelete,
       restorePhoto: albumHook.restorePhoto,
+
+      // The hook objects are stable references between renders thanks
+      // to React's hook identity guarantees, so passing them as-is into
+      // memo deps doesn't widen the dep list unnecessarily.
+      expensesHook,
+      membersHook,
+      documentsHook,
+      checklistHook,
     }),
     [
       tripHook.trip,
@@ -143,6 +187,10 @@ export function TripDataProvider({ tripId, children }: TripDataProviderProps) {
       albumHook.markFavorite,
       albumHook.softDelete,
       albumHook.restorePhoto,
+      expensesHook,
+      membersHook,
+      documentsHook,
+      checklistHook,
     ],
   );
 
@@ -199,6 +247,30 @@ export function useEventsFromContext(): {
     updateEvent: ctx.updateEvent,
     deleteEvent: ctx.deleteEvent,
   };
+}
+
+/**
+ * Drop-in replacement for `useExpenses(tripId)` that pulls from context.
+ * Same return shape as the original hook — call sites just swap the
+ * import. No new Firestore subscription is opened.
+ */
+export function useExpensesFromContext(): ExpensesHookReturn {
+  return useTripData().expensesHook;
+}
+
+/** Drop-in replacement for `useMembers(tripId)` that pulls from context. */
+export function useMembersFromContext(): MembersHookReturn {
+  return useTripData().membersHook;
+}
+
+/** Drop-in replacement for `useDocuments(tripId)` that pulls from context. */
+export function useDocumentsFromContext(): DocumentsHookReturn {
+  return useTripData().documentsHook;
+}
+
+/** Drop-in replacement for `useChecklist(tripId)` that pulls from context. */
+export function useChecklistFromContext(): ChecklistHookReturn {
+  return useTripData().checklistHook;
 }
 
 /** Drop-in replacement for `useAlbum(tripId, trip)` that pulls from context. */

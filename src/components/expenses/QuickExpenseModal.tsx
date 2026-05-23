@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useExpenses } from '@/hooks/useExpenses';
 // This modal is only opened from inside `/trips/[tripId]/*` (EventCard +
 // PendingExpensesBanner), so the TripDataProvider is guaranteed to be in the
 // tree. Using the context avoids a duplicate `useTrip(tripId)` listener.
-import { useTripFromContext as useTrip } from '@/context/TripDataContext';
+import {
+  useTripFromContext as useTrip,
+  useExpensesFromContext as useExpenses,
+} from '@/context/TripDataContext';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useToast } from '@/context/ToastContext';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
@@ -26,7 +28,7 @@ interface QuickExpenseModalProps {
 
 export default function QuickExpenseModal({ open, onClose, tripId, event, onCreated }: QuickExpenseModalProps) {
   const { user } = useAuth();
-  const { addTripExpense } = useExpenses(tripId);
+  const { addTripExpense } = useExpenses();
   const { trip } = useTrip();
   const { travelers: allTravelers } = useGlobalTravelers();
   const { toast } = useToast();

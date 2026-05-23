@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { listPending, removePending, bumpAttempts } from '@/lib/pendingPhotos';
-import { uploadOnePending } from '@/lib/photoUploader';
+import { uploadOnePending, bumpTripUpdatedAtOnce } from '@/lib/photoUploader';
 
 const SANITY_INTERVAL_MS = 30_000;
 
@@ -13,10 +13,18 @@ async function drainOnce(): Promise<{ uploaded: number; failed: number }> {
     return { uploaded, failed };
   }
   const items = await listPending();
+  // Track which trips actually had at least one successful drained upload
+  // so we can bump trip.updatedAt exactly once per affected trip at the
+  // end of this drain pass. Previously each item bumped the trip doc,
+  // which fired one onSnapshot round per subscriber per item — wasted
+  // work that contributed to mobile lag when the queue had many photos
+  // for the same trip.
+  const bumpedTripIds = new Set<string>();
   for (const item of items) {
     try {
-      await uploadOnePending(item);
+      await uploadOnePending(item, { skipTripBump: true });
       await removePending(item.id);
+      bumpedTripIds.add(item.tripId);
       uploaded++;
     } catch (err) {
       if (typeof console !== 'undefined') {
@@ -24,6 +32,17 @@ async function drainOnce(): Promise<{ uploaded: number; failed: number }> {
       }
       await bumpAttempts(item.id);
       failed++;
+    }
+  }
+  // One trip.updatedAt write per affected trip, regardless of how many
+  // items drained for that trip in this pass.
+  for (const tripId of bumpedTripIds) {
+    try {
+      await bumpTripUpdatedAtOnce(tripId);
+    } catch (err) {
+      if (typeof console !== 'undefined') {
+        console.warn('[PendingPhotoSync] trip bump failed', err);
+      }
     }
   }
   return { uploaded, failed };

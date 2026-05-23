@@ -19,10 +19,7 @@ import { classNames } from '@/lib/utils/helpers';
  * Sync/Pending indicators only matter once Firebase resolves auth, and
  * OnboardingModal only shows for first-time users. Pulling them out of the
  * initial bundle is the single biggest first-paint win for dashboard. */
-const Chatbot = dynamic(
-  () => import('@/components/chat/Chatbot').then((m) => ({ default: m.Chatbot })),
-  { ssr: false },
-);
+// Chatbot moved to /trips/[tripId]/layout — no longer dynamic-imported here.
 const CommandPaletteProvider = dynamic(
   () => import('@/components/CommandPaletteProvider'),
   { ssr: false },
@@ -55,11 +52,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const inTrip = isInsideTrip(pathname);
 
+  // Default to mode-planning palette for non-trip routes (dashboard,
+  // settings, profile). Trip routes opt-in to their own dynamic mode
+  // class inside /trips/[tripId]/layout based on the trip's lifecycle.
   return (
     <AuthGuard>
       <ToastProvider>
         <ErrorBoundary>
-          <div className="flex min-h-screen" style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #0c1929 0%, #132438 50%, #0f1f33 100%)' }}>
+          <div className={`flex min-h-screen ${inTrip ? '' : 'mode-planning'}`} style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #0c1929 0%, #132438 50%, #0f1f33 100%)' }}>
             {/* Sidebar - desktop only, hidden inside trip views */}
             {!inTrip && <AppSidebar />}
 
@@ -85,8 +85,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {/* Bottom nav - mobile only, hidden inside trip views */}
             {!inTrip && <AppBottomNav />}
 
-            {/* AI Chatbot - floating assistant (lazy) */}
-            <Chatbot />
+            {/* AI Chatbot — NOT mounted here. It now lives in
+                /trips/[tripId]/layout exclusively because it depends on
+                TripDataProvider (used to silently no-op outside a trip,
+                but after consolidating subscriptions it throws if the
+                provider isn't above it). Dashboard / settings / profile
+                don't have a chatbot today; the closest equivalent is the
+                trip's chatbot inside each trip. */}
 
             {/* Global command palette (Cmd/Ctrl + K) (lazy) */}
             <CommandPaletteProvider />

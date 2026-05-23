@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { parseISO, differenceInDays, isWithinInterval } from 'date-fns';
 import { useTrips } from '@/hooks/useTrips';
 import { useAuth } from '@/hooks/useAuth';
+import TripHeroCard from '@/components/trips/TripHeroCard';
 import { useToast } from '@/context/ToastContext';
 // OnboardingModal is shown only to first-time users; ship it lazily so the
 // dashboard JS stays lean for the 99% of visits where it never renders.
@@ -365,24 +366,33 @@ export default function DashboardPage() {
   const userName = getUserName(user);
   const greeting = getGreeting();
 
-  /* ─── Hero trip ─────────────────────────────────── */
-  const { heroTrip } = useMemo(() => {
+  /* ─── Hero trip + active trip detection ─────────── */
+  const { heroTrip, activeTrip } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const activeTrip = trips.find((trip) => {
+    const active = trips.find((trip) => {
       try {
         return isWithinInterval(today, { start: parseISO(trip.startDate), end: parseISO(trip.endDate) });
       } catch { return false; }
     });
-    if (activeTrip) return { heroTrip: activeTrip };
+    if (active) return { heroTrip: active, activeTrip: active };
 
     const future = trips
       .filter((t) => { try { return parseISO(t.startDate) >= today; } catch { return false; } })
       .sort((a, b) => parseISO(a.startDate).getTime() - parseISO(b.startDate).getTime());
 
-    return { heroTrip: future[0] ?? null };
+    return { heroTrip: future[0] ?? null, activeTrip: null };
   }, [trips]);
+
+  // Note: we used to auto-redirect to /today when a trip was active.
+  // Removed because combined with the hero card link it created a loop:
+  // tap card → /today → back → dashboard → re-tap card → /today again,
+  // with no way to reach the rest of the trip's sections from mobile.
+  // The hero card now always lands on the trip root (/trips/<id>),
+  // which has the full trip nav. Users who want Today can pick it from
+  // the trip sidebar / nav.
+  const _router = useRouter(); void _router;
 
   /* ─── Stats ─────────────────────────────────────── */
   const stats = useMemo(() => ({
@@ -505,14 +515,14 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ── Hero trip ── */}
+      {/* ── Hero trip — three-pillar mode-aware card ── */}
       {!loading && heroTrip && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.15 }}
         >
-          <GlassTripCard trip={heroTrip} featured />
+          <TripHeroCard trip={heroTrip} />
         </motion.div>
       )}
 

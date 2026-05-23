@@ -218,7 +218,7 @@ export interface ToolDeps {
     id: string,
     options?: { onUndo?: () => void; onConfirm?: () => void },
   ) => Promise<{ undo: () => Promise<void> }>;
-  addTripExpense: (data: Omit<TripExpense, 'id' | 'createdAt'>) => Promise<void>;
+  addTripExpense: (data: Omit<TripExpense, 'id' | 'createdAt'>) => Promise<string>;
   updateTrip: (data: Partial<Omit<Trip, 'id' | 'createdBy' | 'createdAt'>>) => Promise<void>;
 }
 

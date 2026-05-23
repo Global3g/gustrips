@@ -11,6 +11,7 @@ import { nowISO } from '@/lib/utils/helpers';
 import { markMutation } from '@/components/SyncIndicator';
 import { isHeicFile, normalizeImageFile } from '@/lib/heic';
 import { computeFileHash } from '@/lib/utils/photoHash';
+import { processPhotoInWorker } from '@/lib/workers/photoWorkerClient';
 import type { AlbumPhoto } from '@/types';
 import type { PendingPhoto } from '@/lib/pendingPhotos';
 
@@ -99,47 +100,97 @@ interface UploadInput {
   fileBlob: Blob;
   fileName: string;
   fileType: string;
+  /**
+   * Skip the per-photo `trip.updatedAt` bump at the end of this upload.
+   *
+   * Set to `true` when batching uploads (e.g. uploading 20 photos in a row)
+   * to defer the trip-doc write — otherwise each upload fires its own
+   * `onSnapshot` round-trip for every subscriber of the trip (sidebar,
+   * banners, layout, etc.), which can mean 20 wasted re-renders per
+   * subscriber for a 20-photo batch. The caller is then responsible for
+   * calling `bumpTripUpdatedAtOnce(tripId)` exactly once after the batch.
+   *
+   * Defaults to `false` so legacy single-photo paths (and the offline
+   * queue drain, if used directly) keep working unchanged.
+   */
+  skipTripBump?: boolean;
 }
 
 /**
  * Compress and upload a single photo to Firebase Storage and append it to the
  * trip's `albumPhotos` array. Returns the persisted `AlbumPhoto`.
+ *
+ * Pass `skipTripBump: true` in `input` to skip the per-photo trip.updatedAt
+ * bump — used by batch uploaders that bump once at the end of the batch.
  */
 export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
-  const { tripId, date, caption, eventId, fileBlob, fileName, fileType } = input;
+  const { tripId, date, caption, eventId, fileBlob, fileName, fileType, skipTripBump } = input;
   const storage = getClientStorage();
   const db = getClientDb();
   const timestamp = Date.now();
 
-  // Fingerprint the raw bytes BEFORE any conversion. This way re-uploading
-  // the same camera-roll item (same HEIC, same JPEG) always yields the
-  // same `contentHash` — even if we change the HEIC pipeline tomorrow.
-  // Hashing runs in parallel with HEIC conversion to keep upload fast.
-  const hashPromise = computeFileHash(fileBlob).catch((err) => {
-    console.warn('[uploadPhoto] hash failed, skipping dedup fingerprint:', err);
-    return null;
-  });
+  // Try the Web Worker first — it runs HEIC convert + both compress
+  // passes + SHA-256 hash on a background thread, which prevents the
+  // main thread from being pegged when the user uploads many photos at
+  // once (the real cause of "phone gets hot" during the London trip).
+  // Falls back to the synchronous main-thread pipeline if the worker
+  // isn't supported here (older Safari, embedded webview), or if the
+  // worker itself decided to bounce back (e.g. heic2any couldn't load
+  // inside the worker context).
+  let thumbBlob: Blob;
+  let fullBlob: Blob;
+  let contentHash: string | null;
+  let safeName: string;
 
-  // HEIC from Photos.app can't be decoded by canvas. Convert to JPEG up-front
-  // so the rest of the pipeline (compression, upload, thumbnails) works.
-  let workingFile: File =
-    fileBlob instanceof File
-      ? fileBlob
-      : new File([fileBlob], fileName || 'photo', { type: fileType || fileBlob.type || 'image/jpeg' });
-  if (isHeicFile(workingFile)) {
-    workingFile = await normalizeImageFile(workingFile);
+  let workerResult: Awaited<ReturnType<typeof processPhotoInWorker>>;
+  try {
+    workerResult = await processPhotoInWorker(fileBlob, fileName, fileType);
+  } catch (err) {
+    // Worker died mid-process — treat as fallback.
+    console.warn('[uploadPhoto] worker rejected, falling back to main thread:', err);
+    workerResult = { fallback: true, reason: 'worker-error' };
   }
 
-  const safeName = (workingFile.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+  if ('fallback' in workerResult) {
+    // ── Main-thread fallback (legacy pipeline) ────────────────────────
+    // Hashing in parallel with HEIC conversion to keep upload fast.
+    const hashPromise = computeFileHash(fileBlob).catch((err) => {
+      console.warn('[uploadPhoto] hash failed, skipping dedup fingerprint:', err);
+      return null;
+    });
+
+    // HEIC from Photos.app can't be decoded by canvas. Convert to JPEG
+    // up-front so the rest of the pipeline works.
+    let workingFile: File =
+      fileBlob instanceof File
+        ? fileBlob
+        : new File([fileBlob], fileName || 'photo', { type: fileType || fileBlob.type || 'image/jpeg' });
+    if (isHeicFile(workingFile)) {
+      workingFile = await normalizeImageFile(workingFile);
+    }
+    safeName = (workingFile.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const blobForCompression: Blob = workingFile;
+    [thumbBlob, fullBlob] = await Promise.all([
+      compressImage(blobForCompression, 600, 0.75),
+      compressImage(blobForCompression, 3000, 0.92),
+    ]);
+    contentHash = await hashPromise;
+  } else {
+    // ── Worker path ───────────────────────────────────────────────────
+    // The worker has already done HEIC conversion + both compress passes
+    // + hashing. We just need a sane filename for Storage.
+    thumbBlob = workerResult.thumb;
+    fullBlob = workerResult.full;
+    contentHash = workerResult.contentHash;
+    safeName = (fileName || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+    // Strip a .heic extension on the safeName since the bytes are now JPEG.
+    if (/\.heic$/i.test(safeName) || /\.heif$/i.test(safeName)) {
+      safeName = safeName.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+    }
+  }
+
   const storage_thumb = ref(storage, `trips/${tripId}/album/${timestamp}_${safeName}`);
   const storage_full = ref(storage, `trips/${tripId}/album/${timestamp}_full_${safeName}`);
-
-  const blobForCompression: Blob = workingFile;
-
-  const [thumbBlob, fullBlob] = await Promise.all([
-    compressImage(blobForCompression, 600, 0.75),
-    compressImage(blobForCompression, 3000, 0.92),
-  ]);
 
   // Track which blobs landed in Storage so we can clean up if a later
   // step fails — otherwise a failed upload leaves orphans that Storage
@@ -163,7 +214,8 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
       getDownloadURL(storage_full),
     ]);
 
-    const contentHash = await hashPromise;
+    // contentHash is already resolved (either from the worker or from
+    // the awaited hashPromise inside the fallback branch above).
 
     const photo: AlbumPhoto = {
       url,
@@ -189,7 +241,12 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
       }),
     );
     // From here on, ownership is in Firestore — return inside the try.
-    await bumpTripUpdatedAt(tripId);
+    // Skip the bump when batching: the caller will fire `bumpTripUpdatedAtOnce`
+    // once at the end of the batch to avoid firing N onSnapshot rounds for
+    // every subscriber of the trip doc.
+    if (!skipTripBump) {
+      await bumpTripUpdatedAt(tripId);
+    }
     try { markMutation(); } catch { /* localStorage may be unavailable */ }
     return photo;
   } catch (err) {
@@ -218,8 +275,28 @@ async function bumpTripUpdatedAt(tripId: string): Promise<void> {
   });
 }
 
-/** Upload a single queued pending photo. Caller handles success/failure. */
-export async function uploadOnePending(item: PendingPhoto): Promise<AlbumPhoto> {
+/**
+ * Public wrapper around the per-photo trip bump. Use this from batch
+ * uploaders that call `uploadPhoto({ ..., skipTripBump: true })` per photo:
+ * after the batch settles, call `bumpTripUpdatedAtOnce(tripId)` exactly
+ * once so subscribers of the trip doc see a single onSnapshot round
+ * instead of one per uploaded photo.
+ */
+export async function bumpTripUpdatedAtOnce(tripId: string): Promise<void> {
+  return bumpTripUpdatedAt(tripId);
+}
+
+/**
+ * Upload a single queued pending photo. Caller handles success/failure.
+ *
+ * Pass `{ skipTripBump: true }` when draining a batch of queued items so
+ * the trip.updatedAt bump fires once for the whole drain instead of once
+ * per item — keeps mobile subscribers from re-rendering N times.
+ */
+export async function uploadOnePending(
+  item: PendingPhoto,
+  options?: { skipTripBump?: boolean },
+): Promise<AlbumPhoto> {
   return uploadPhoto({
     tripId: item.tripId,
     date: item.date,
@@ -228,5 +305,6 @@ export async function uploadOnePending(item: PendingPhoto): Promise<AlbumPhoto> 
     fileBlob: item.fileBlob,
     fileName: item.fileName,
     fileType: item.fileType,
+    skipTripBump: options?.skipTripBump,
   });
 }

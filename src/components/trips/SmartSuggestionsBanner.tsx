@@ -10,8 +10,8 @@ import { Sparkles, X, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
-import { useExpenses } from '@/hooks/useExpenses';
 import { classNames } from '@/lib/utils/helpers';
 
 interface Props {
@@ -74,7 +74,7 @@ function dispatchAssistantOpen(prompt: string) {
 export default function SmartSuggestionsBanner({ tripId }: Props) {
   const { trip } = useTrip();
   const { events } = useEvents();
-  const { expenses } = useExpenses(tripId);
+  const { expenses } = useExpenses();
 
   const [expanded, setExpanded] = useState(false);
   const [dismissedToday, setDismissedToday] = useState(false);

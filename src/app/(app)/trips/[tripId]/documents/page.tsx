@@ -21,12 +21,15 @@ import {
   X,
   Search,
 } from 'lucide-react';
-import { useDocuments } from '@/hooks/useDocuments';
 // Events come from the layout-level TripDataProvider — calling
 // `useEvents(tripId)` here would open a second onSnapshot subscription.
-import { useEventsFromContext as useEvents } from '@/context/TripDataContext';
+import {
+  useEventsFromContext as useEvents,
+  useDocumentsFromContext as useDocuments,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import DocumentUpload from '@/components/trips/DocumentUpload';
+import BiometricGate from '@/components/BiometricGate';
 import Particles from '@/components/ui/Particles';
 import { DOCUMENT_CATEGORIES } from '@/config/constants';
 import { classNames } from '@/lib/utils/helpers';
@@ -63,7 +66,21 @@ const FILTER_TABS: { key: DocumentCategory | 'all'; label: string }[] = [
   { key: 'other', label: 'Otros' },
 ];
 
+/**
+ * Wrap the documents view in a biometric gate. The gate's check is fast
+ * (WebAuthn assertion via Face ID / Touch ID / Windows Hello) and stays
+ * unlocked for the rest of the session — but the user opts in. If they
+ * never enable it, the gate is transparent.
+ */
 export default function DocumentsPage() {
+  return (
+    <BiometricGate sectionLabel="Documentos del viaje">
+      <DocumentsPageContent />
+    </BiometricGate>
+  );
+}
+
+function DocumentsPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const tripId = params.tripId as string;
@@ -74,7 +91,7 @@ export default function DocumentsPage() {
     uploadDocument,
     deleteDocument,
     categoryCounts,
-  } = useDocuments(tripId);
+  } = useDocuments();
   const { events } = useEvents();
   const { toast } = useToast();
 

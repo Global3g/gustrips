@@ -16,9 +16,9 @@ import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
   useAlbumFromContext as useAlbum,
+  useDocumentsFromContext as useDocuments,
+  useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
-import { useDocuments } from '@/hooks/useDocuments';
-import { useExpenses } from '@/hooks/useExpenses';
 import { useToast } from '@/context/ToastContext';
 import EventCard from '@/components/trips/EventCard';
 // Modal forms — only load on tap. Each pulls form helpers + framer-motion.
@@ -154,7 +154,7 @@ export default function ItineraryPage() {
   const { events, loading, createEvent, updateEvent, deleteEvent } = useEvents();
   const { realignEventPhotoDates } = useAlbum();
 
-  const { expenses } = useExpenses(tripId);
+  const { expenses } = useExpenses();
   const expensesByEvent = useMemo(() => {
     const map: Record<string, typeof expenses> = {};
     for (const exp of expenses) {
@@ -169,7 +169,7 @@ export default function ItineraryPage() {
     uploadDocument,
     deleteDocument,
     getDocumentsByEvent,
-  } = useDocuments(tripId);
+  } = useDocuments();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);

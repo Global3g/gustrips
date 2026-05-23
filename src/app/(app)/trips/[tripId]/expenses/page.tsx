@@ -4,9 +4,10 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Plus, List, BarChart3, Scale, CalendarDays } from 'lucide-react';
+import { Plus, List, BarChart3, Scale, CalendarDays, Sparkles } from 'lucide-react';
 import { classNames } from '@/lib/utils/helpers';
 import { CaptureTab } from '@/components/expenses/CaptureTab';
+import { useExpensesFromContext } from '@/context/TripDataContext';
 // Only the default "Capturar" tab ships in the initial chunk. The other tabs
 // load on tap — each pulls its own chart/aggregate code.
 const HistoryTab = dynamic(
@@ -46,6 +47,11 @@ export default function ExpensesPage() {
   const params = useParams();
   const tripId = params.tripId as string;
   const [activeTab, setActiveTab] = useState<Tab>('capture');
+  // Pendientes-de-revisar count, surfaced as a banner. Drains from the
+  // shared context (zero extra Firestore listeners) so opening this page
+  // is essentially free in subscription terms.
+  const { expenses } = useExpensesFromContext();
+  const pendingReviewCount = expenses.filter((e) => e.needsReview).length;
 
   return (
     <div className="space-y-6">
@@ -54,6 +60,34 @@ export default function ExpensesPage() {
         <h1 className="text-xl font-bold text-gray-900">Gastos</h1>
         <p className="text-gray-500 text-sm">Captura, divide y controla gastos del viaje</p>
       </div>
+
+      {/* Pendientes-de-revisar banner — only when there's anything to nudge.
+          Clicking jumps to the History tab where each row carries a visible
+          marker so the user can edit them one-by-one. */}
+      {pendingReviewCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setActiveTab('history')}
+          className="w-full text-left rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors p-4 flex items-center gap-3"
+        >
+          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-amber-900">
+              {pendingReviewCount === 1
+                ? 'Tenés 1 gasto por revisar'
+                : `Tenés ${pendingReviewCount} gastos por revisar`}
+            </div>
+            <div className="text-xs text-amber-800/80 mt-0.5">
+              Los marcaste rápido en el viaje. Confirmá pagador, split o descripción.
+            </div>
+          </div>
+          <span className="text-amber-700 text-xs font-bold flex-shrink-0">
+            Revisar →
+          </span>
+        </button>
+      )}
 
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 overflow-x-auto no-scrollbar">

@@ -226,6 +226,16 @@ export interface TripExpense {
   equivalentValue?: number;
   realValueCurrency?: string;
   settled?: boolean;
+  /**
+   * True when the expense was created in a hurry via the Fast Expense
+   * FAB (camera OCR or manual quick-entry). Defaults to false for
+   * expenses created in the full editor. Used by /expenses to surface
+   * a "pendientes de revisar" banner so the user can confirm split,
+   * pagador and descripción at the end of the day.
+   * Becomes false the first time the user opens + saves the full edit
+   * modal for this expense.
+   */
+  needsReview?: boolean;
   createdAt: string;
   createdBy: string;
 }

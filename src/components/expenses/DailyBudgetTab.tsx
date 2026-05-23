@@ -30,8 +30,8 @@ import {
 import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
-import { useExpenses } from '@/hooks/useExpenses';
 import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
 import { EVENT_TYPES } from '@/config/constants';
@@ -61,7 +61,7 @@ interface DailyBudgetTabProps {
 export function DailyBudgetTab({ tripId }: DailyBudgetTabProps) {
   const { trip } = useTrip();
   const { events, updateEvent } = useEvents();
-  const { expenses } = useExpenses(tripId);
+  const { expenses } = useExpenses();
   const { toast } = useToast();
 
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());

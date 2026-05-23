@@ -23,12 +23,12 @@ import {
   Check,
   Sparkles,
 } from 'lucide-react';
-import { useExpenses } from '@/hooks/useExpenses';
 // Trip + events from layout-level TripDataProvider — this tab is only
 // rendered inside `/trips/[tripId]/expenses`.
 import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useToast } from '@/context/ToastContext';
@@ -61,7 +61,7 @@ interface CaptureTabProps {
 }
 
 export function CaptureTab({ tripId }: CaptureTabProps) {
-  const { addTripExpense } = useExpenses(tripId);
+  const { addTripExpense } = useExpenses();
   const { events, updateEvent } = useEvents();
   const { trip } = useTrip();
   const { travelers: allTravelers } = useGlobalTravelers();

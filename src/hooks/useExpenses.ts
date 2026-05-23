@@ -27,7 +27,7 @@ interface UseExpensesReturn {
   expenses: TripExpense[];
   loading: boolean;
   addExpense: (data: Omit<SharedExpense, 'id' | 'createdAt'>) => Promise<void>;
-  addTripExpense: (data: Omit<TripExpense, 'id' | 'createdAt'>) => Promise<void>;
+  addTripExpense: (data: Omit<TripExpense, 'id' | 'createdAt'>) => Promise<string>;
   updateExpense: (expenseId: string, data: Partial<TripExpense>) => Promise<void>;
   deleteExpense: (expenseId: string) => Promise<void>;
   getBalances: () => Debt[];
@@ -73,6 +73,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
             equivalentValue: raw.equivalentValue,
             realValueCurrency: raw.realValueCurrency,
             settled: raw.settled ?? false,
+            needsReview: raw.needsReview ?? false,
             createdAt: raw.createdAt ?? '',
             createdBy: raw.createdBy ?? raw.paidBy ?? '',
           } as TripExpense;
@@ -112,7 +113,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
   );
 
   const addTripExpense = useCallback(
-    async (data: Omit<TripExpense, 'id' | 'createdAt'>): Promise<void> => {
+    async (data: Omit<TripExpense, 'id' | 'createdAt'>): Promise<string> => {
       if (!user) throw new Error('Usuario no autenticado');
 
       const db = getClientDb();
@@ -123,8 +124,9 @@ export function useExpenses(tripId: string): UseExpensesReturn {
       for (const [key, value] of Object.entries(data)) {
         if (value !== undefined) cleanData[key] = value;
       }
-      await addDoc(expensesRef, cleanData);
+      const docRef = await addDoc(expensesRef, cleanData);
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
+      return docRef.id;
     },
     [user, tripId],
   );
