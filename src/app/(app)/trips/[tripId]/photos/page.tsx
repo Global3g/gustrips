@@ -120,6 +120,7 @@ export default function PhotosPage() {
   const { toast } = useToast();
 
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [canShare, setCanShare] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [editingCaption, setEditingCaption] = useState<string | null>(null);
@@ -516,16 +517,50 @@ export default function PhotosPage() {
       let successCount = 0;
       const newUrls: string[] = [];
       try {
-        // Upload each photo to the album, track URLs
-        for (const file of fileArray) {
-          try {
-            const photo = await addPhoto(file, today, undefined, eventId || undefined);
-            if (eventId) newUrls.push(photo.url);
-            successCount++;
-          } catch (err) {
-            console.error('Error uploading photo:', err);
-            toast('Error al subir foto', 'error');
+        // Parallel upload pool. Was previously a serial `for...of await`
+        // loop — 20 photos took ~3 minutes because every photo waited for
+        // the previous one to finish HEIC convert + 2x compress + hash +
+        // 4 network calls. Concurrency cap of 3 keeps mobile from
+        // melting (each in-flight upload also runs canvas work on the
+        // main thread) while still parallelising network + CPU enough to
+        // collapse the wall time roughly 3x.
+        const CONCURRENCY = 3;
+        let nextIdx = 0;
+        let completed = 0;
+        setUploadProgress({ done: 0, total: fileArray.length });
+        const worker = async () => {
+          while (true) {
+            const i = nextIdx++;
+            if (i >= fileArray.length) return;
+            const file = fileArray[i];
+            try {
+              const photo = await addPhoto(file, today, undefined, eventId || undefined);
+              if (eventId) newUrls.push(photo.url);
+              successCount++;
+            } catch (err) {
+              console.error('Error uploading photo:', err);
+              // Don't toast inside the worker — a 20-photo batch with a
+              // bad file would fire 20 toasts and trash the UI. We
+              // report aggregate failures after the loop.
+            } finally {
+              completed++;
+              setUploadProgress({ done: completed, total: fileArray.length });
+            }
           }
+        };
+        const workers = Array.from(
+          { length: Math.min(CONCURRENCY, fileArray.length) },
+          worker,
+        );
+        await Promise.all(workers);
+        const failed = fileArray.length - successCount;
+        if (failed > 0) {
+          toast(
+            failed === 1
+              ? '1 foto falló al subir'
+              : `${failed} fotos fallaron al subir`,
+            'error',
+          );
         }
 
         // Batch update the event ONCE with all new photo URLs + meta.
@@ -565,6 +600,7 @@ export default function PhotosPage() {
         }
       } finally {
         setUploading(false);
+        setUploadProgress(null);
       }
     },
     [addPhoto, toast, events, updateEvent, selectedDate],
@@ -1109,7 +1145,13 @@ export default function PhotosPage() {
               </div>
               <div className="text-left">
                 <p className={classNames('text-sm font-bold', dragOver ? 'text-amber-100' : 'text-white/85')}>
-                  {uploading ? 'Subiendo…' : dragOver ? '¡Suéltalas!' : 'Arrastra fotos o tap para seleccionar'}
+                  {uploading
+                    ? uploadProgress
+                      ? `Subiendo ${uploadProgress.done} de ${uploadProgress.total}…`
+                      : 'Subiendo…'
+                    : dragOver
+                      ? '¡Suéltalas!'
+                      : 'Arrastra fotos o tap para seleccionar'}
                 </p>
                 <p className="text-white/40 text-[11px] mt-0.5">
                   Se comprimen automáticamente (max 1200px, JPEG 80%)
