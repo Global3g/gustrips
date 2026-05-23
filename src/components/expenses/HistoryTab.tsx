@@ -201,6 +201,10 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
         splitBetween: editSplit,
         paymentMethod: editPayment,
         notes: editNotes.trim() || undefined,
+        // Saving from the full editor clears the "needs review" flag —
+        // the user has now confirmed every field, so the pendientes
+        // banner shouldn't keep nagging them about this one.
+        needsReview: false,
       });
       setEditingExpense(null);
       toast('Gasto actualizado', 'success');
@@ -764,7 +768,18 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                                   </div>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-white text-sm font-semibold truncate">{expense.description}</p>
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-white text-sm font-semibold truncate">{expense.description}</p>
+                                    {expense.needsReview && (
+                                      <span
+                                        className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0"
+                                        style={{ background: 'rgba(245,158,11,0.18)', color: '#fcd34d' }}
+                                        title="Marcalo como revisado abriendo y guardando el gasto"
+                                      >
+                                        Revisar
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-white/45">
                                     {eventName && <><span className="truncate max-w-[110px]">{eventName}</span><span className="text-white/20">·</span></>}
                                     <span className="truncate">{payerName.split(' ')[0]}</span>

@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v28-2026-05-23-photo-web-worker';
+const SW_VERSION = 'gustrips-v29-2026-05-23-ocr-richer-fields-needs-review';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const IMAGE_CACHE = `${SW_VERSION}-images`;

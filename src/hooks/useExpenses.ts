@@ -73,6 +73,7 @@ export function useExpenses(tripId: string): UseExpensesReturn {
             equivalentValue: raw.equivalentValue,
             realValueCurrency: raw.realValueCurrency,
             settled: raw.settled ?? false,
+            needsReview: raw.needsReview ?? false,
             createdAt: raw.createdAt ?? '',
             createdBy: raw.createdBy ?? raw.paidBy ?? '',
           } as TripExpense;

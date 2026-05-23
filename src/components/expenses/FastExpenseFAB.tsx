@@ -116,6 +116,10 @@ export default function FastExpenseFAB({ tripId }: Props) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [scanCurrency, setScanCurrency] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  // Extra fields the OCR can detect — kept in state so submit can use
+  // them without re-parsing the response. All optional.
+  const [scanDate, setScanDate] = useState<string | null>(null);
+  const [scanNotes, setScanNotes] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState<SavedExpenseSummary | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
@@ -152,6 +156,8 @@ export default function FastExpenseFAB({ tripId }: Props) {
     setPaymentMethod('cash');
     setScanCurrency(null);
     setScanError(null);
+    setScanDate(null);
+    setScanNotes(null);
     setSaved(null);
   }, [open]);
 
@@ -276,6 +282,35 @@ export default function FastExpenseFAB({ tripId }: Props) {
           setPaymentMethod(data.paymentMethod as PaymentMethod);
         }
       }
+      // Optional richer fields detected from the ticket. We don't surface
+      // them as inputs in the quick form (that would defeat the point of
+      // a 5-second flow) — they ride along into the expense's `date` +
+      // `notes` so the user finds them when reviewing the expense later.
+      if (typeof data.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+        setScanDate(data.date);
+      }
+      const noteParts: string[] = [];
+      if (typeof data.merchantAddress === 'string' && data.merchantAddress.trim()) {
+        noteParts.push(`📍 ${data.merchantAddress.trim()}`);
+      }
+      if (typeof data.subtotal === 'number' && data.subtotal > 0) {
+        noteParts.push(`Subtotal: ${data.subtotal}`);
+      }
+      if (typeof data.tax === 'number' && data.tax > 0) {
+        noteParts.push(`Impuestos: ${data.tax}`);
+      }
+      if (typeof data.tip === 'number' && data.tip > 0) {
+        noteParts.push(`Propina: ${data.tip}`);
+      }
+      if (typeof data.itemCount === 'number' && data.itemCount > 1) {
+        noteParts.push(`${data.itemCount} items`);
+      }
+      if (typeof data.notes === 'string' && data.notes.trim()) {
+        noteParts.push(data.notes.trim());
+      }
+      if (noteParts.length > 0) {
+        setScanNotes(noteParts.join(' · '));
+      }
       setStep('amount');
     } catch (err) {
       console.error('[FastExpenseFAB] scan failed', err);
@@ -320,6 +355,16 @@ export default function FastExpenseFAB({ tripId }: Props) {
       // budget currency — use it if present (helps trips with mixed
       // currencies, e.g. a side spend in EUR on a USD-budgeted trip).
       const finalCurrency = scanCurrency || currency;
+      // Use the date printed on the ticket when the OCR found one, but
+      // bound it to the trip's date range so a misread "01/01/2010" can't
+      // back-date the expense outside the trip.
+      let finalDate = todayIso;
+      if (scanDate) {
+        const inRange =
+          (!trip.startDate || scanDate >= trip.startDate) &&
+          (!trip.endDate || scanDate <= trip.endDate);
+        if (inRange) finalDate = scanDate;
+      }
 
       const expenseId = await addTripExpense({
         tripId,
@@ -329,8 +374,13 @@ export default function FastExpenseFAB({ tripId }: Props) {
         category,
         paidBy: user.uid,
         splitBetween,
-        date: todayIso,
+        date: finalDate,
         paymentMethod,
+        notes: scanNotes || undefined,
+        // Quick-entry expenses always start with needsReview=true so the
+        // user gets a nudge to confirm split, pagador and any other field
+        // we couldn't infer from the photo or chip selection.
+        needsReview: true,
         settled: false,
         createdBy: user.uid,
       });

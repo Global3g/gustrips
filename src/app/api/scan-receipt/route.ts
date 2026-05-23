@@ -23,14 +23,23 @@ import { NextRequest, NextResponse } from 'next/server';
  *      maps to a friendlier message.
  */
 
-const PROMPT = `Esto es la foto de un ticket / recibo / factura de un viaje.
+const PROMPT = `Esto es la foto de un ticket / recibo / factura de un viaje. Extraé toda la info que puedas leer. Si un campo no aparece en el ticket, devolvé string vacío "" para strings o 0 para números — NUNCA inventes datos.
 
-Extraé los siguientes campos del documento:
-- description: nombre del comercio o concepto principal (corto, 1 línea)
-- amount: monto TOTAL pagado, sólo el número (sin signo monetario, sin separadores de miles, con punto decimal si aplica)
-- currency: código ISO 4217 de 3 letras (MXN, USD, EUR, GBP, JPY, BRL, ARS, COP, CLP, PEN, CAD, AUD, CHF, etc). Si no podés determinarla, devolvé "USD".
-- category: una de [flight, hotel, car_rental, activity, restaurant, transport, cruise, souvenirs, snacks, clothing, fuel, misc]. Elegí la que mejor describa el gasto.
-- paymentMethod: una de [cash, debit, credit, transfer, points, other]. Detectá del texto del ticket: "efectivo"/"contado"/"cash"=cash, "débito"/"debit"=debit, "crédito"/"credit"/"VISA"/"MC"/"AMEX"=credit, "transferencia"/"SPEI"/"BIZUM"=transfer. Si no se ve, devolvé "other".
+Campos obligatorios:
+- description: nombre del comercio o concepto principal (corto, 1 línea, ej. "Café Tortoni", "Uber Pool")
+- amount: monto TOTAL pagado (sólo el número, sin signo, con punto decimal)
+- currency: código ISO 4217 de 3 letras (MXN, USD, EUR, GBP, JPY, BRL, ARS, COP, CLP, PEN, CAD, AUD, CHF, etc). Si no se ve, "USD".
+- category: una de [flight, hotel, car_rental, activity, restaurant, transport, cruise, souvenirs, snacks, clothing, fuel, misc].
+- paymentMethod: una de [cash, debit, credit, transfer, points, other]. Detectá del texto: "efectivo"/"contado"/"cash"=cash, "débito"/"debit"=debit, "crédito"/"credit"/"VISA"/"MC"/"AMEX"=credit, "transferencia"/"SPEI"/"BIZUM"=transfer. Si no se ve, "other".
+
+Campos opcionales (devolver vacío/0 si no se ven):
+- date: fecha del ticket en formato YYYY-MM-DD si aparece (mirá el header del ticket, suele decir DD/MM/YYYY o similar — convertí al formato ISO). Si no hay fecha visible, devolvé "".
+- merchantAddress: dirección o ubicación del comercio si está impresa (calle + ciudad o solo ciudad). Vacío si no aparece.
+- subtotal: monto SIN impuestos (antes de IVA/tax). 0 si no se distingue.
+- tax: monto de impuestos/IVA. 0 si no se distingue.
+- tip: monto de propina explícita (si dice "tip" o "propina" o "servicio"). 0 si no se ve.
+- itemCount: cantidad aproximada de items o líneas en el ticket. 0 si no se distingue (ej. boleto de transporte).
+- notes: cualquier dato útil que viste y no entra en los otros campos — número de factura, nombre del mozo, mesa, etc. Vacío si nada relevante.
 
 Si la foto no parece un ticket o no podés leer el monto, devolvé igual el objeto pero con amount=0 y description="ticket ilegible".`;
 
@@ -67,8 +76,21 @@ async function callGemini(apiKey: string, base64: string, mimeType: string): Pro
               currency: { type: 'STRING' },
               category: { type: 'STRING' },
               paymentMethod: { type: 'STRING' },
+              // Optional richer fields — the model returns "" or 0 when
+              // not visible on the ticket. We still require them in the
+              // schema so the shape is stable on the client.
+              date: { type: 'STRING' },
+              merchantAddress: { type: 'STRING' },
+              subtotal: { type: 'NUMBER' },
+              tax: { type: 'NUMBER' },
+              tip: { type: 'NUMBER' },
+              itemCount: { type: 'NUMBER' },
+              notes: { type: 'STRING' },
             },
-            required: ['description', 'amount', 'currency', 'category', 'paymentMethod'],
+            required: [
+              'description', 'amount', 'currency', 'category', 'paymentMethod',
+              'date', 'merchantAddress', 'subtotal', 'tax', 'tip', 'itemCount', 'notes',
+            ],
           },
           thinkingConfig: { thinkingBudget: 1024 },
         },
