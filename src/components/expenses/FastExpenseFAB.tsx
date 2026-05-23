@@ -170,21 +170,65 @@ export default function FastExpenseFAB({ tripId }: Props) {
   };
 
   /**
-   * Convert a File to a base64 string (no data: prefix). We need the raw
-   * bytes for Gemini Vision; the route handler accepts mimeType separately.
+   * Compress a receipt photo before uploading. iPhone cameras output
+   * 4 MB+ HEIC/JPEG files; Gemini reads tickets fine at ~1600px wide so
+   * we resize + re-encode at quality 0.85. Drops payload to ~300–600 KB
+   * typically, which:
+   *   - Makes the upload work over flaky hotel wifi
+   *   - Stays under any reasonable proxy body limit
+   *   - Gives the model a cleaner image (smaller noise blobs)
+   *
+   * If anything fails (rare browsers without canvas.toBlob, HEIC the
+   * canvas can't decode) we fall through to the original file.
    */
-  const fileToBase64 = (file: File): Promise<{ base64: string; mimeType: string }> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const comma = result.indexOf(',');
-        const base64 = comma >= 0 ? result.slice(comma + 1) : result;
-        resolve({ base64, mimeType: file.type || 'image/jpeg' });
-      };
-      reader.onerror = () => reject(new Error('No pude leer la imagen'));
-      reader.readAsDataURL(file);
-    });
+  const compressReceipt = async (file: File): Promise<{ base64: string; mimeType: string }> => {
+    const MAX_DIM = 1600;
+    const QUALITY = 0.85;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const ratio = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+      const targetW = Math.round(bitmap.width * ratio);
+      const targetH = Math.round(bitmap.height * ratio);
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('no-context');
+      ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', QUALITY),
+      );
+      if (!blob) throw new Error('encode-failed');
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const comma = result.indexOf(',');
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      return { base64, mimeType: 'image/jpeg' };
+    } catch (err) {
+      console.warn('[scan-receipt] compression fallback to raw file', err);
+      // Fallback: send the original bytes verbatim. The endpoint can
+      // still handle larger payloads; this branch only fires if the
+      // browser can't decode the image (e.g. HEIC on old Chrome).
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const comma = result.indexOf(',');
+          resolve({
+            base64: comma >= 0 ? result.slice(comma + 1) : result,
+            mimeType: file.type || 'image/jpeg',
+          });
+        };
+        reader.onerror = () => reject(new Error('No pude leer la imagen'));
+        reader.readAsDataURL(file);
+      });
+    }
   };
 
   const handleReceiptFile = async (file: File | null | undefined) => {
@@ -192,7 +236,7 @@ export default function FastExpenseFAB({ tripId }: Props) {
     setStep('scanning');
     setScanError(null);
     try {
-      const { base64, mimeType } = await fileToBase64(file);
+      const { base64, mimeType } = await compressReceipt(file);
       const res = await fetch('/api/scan-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,7 +244,13 @@ export default function FastExpenseFAB({ tripId }: Props) {
       });
       const json = await res.json();
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || `Error ${res.status}`);
+        // The endpoint surfaces a `reason` discriminator + a friendly
+        // `error` string. Use the friendly string when present, fall
+        // back to a generic line so we never show a raw stack trace.
+        const message =
+          (typeof json?.error === 'string' && json.error) ||
+          (res.status === 504 ? 'Tardó demasiado. Probá de nuevo.' : `Error ${res.status}`);
+        throw new Error(message);
       }
       const data = json.data || {};
       // Apply detected fields with safe fallbacks. Anything missing is left

@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v24-2026-05-23-FIX-firestore-subscription-dedup';
+const SW_VERSION = 'gustrips-v25-2026-05-23-receipt-ocr-hardened';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const IMAGE_CACHE = `${SW_VERSION}-images`;
