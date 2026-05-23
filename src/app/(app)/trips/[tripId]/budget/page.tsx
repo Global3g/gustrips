@@ -36,9 +36,9 @@ import {
 import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
+  useMembersFromContext as useMembers,
+  useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
-import { useMembers } from '@/hooks/useMembers';
-import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardBody } from '@/components/ui/Card';
 import Modal from '@/components/ui/Modal';
@@ -613,7 +613,7 @@ export default function BudgetPage() {
 
   const { trip, loading: tripLoading, updateTrip } = useTrip();
   const { events, loading: eventsLoading } = useEvents();
-  const { members, loading: membersLoading } = useMembers(tripId);
+  const { members, loading: membersLoading } = useMembers();
   const { travelers: allTravelers } = useGlobalTravelers();
   const {
     expenses,
@@ -621,7 +621,7 @@ export default function BudgetPage() {
     addExpense,
     deleteExpense,
     getBalances,
-  } = useExpenses(tripId);
+  } = useExpenses();
   const { toast } = useToast();
   const { user } = useAuth();
 

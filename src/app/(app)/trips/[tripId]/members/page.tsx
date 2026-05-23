@@ -22,8 +22,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
 // Trip comes from the layout-level TripDataProvider.
-import { useTripFromContext as useTrip } from '@/context/TripDataContext';
-import { useMembers } from '@/hooks/useMembers';
+import {
+  useTripFromContext as useTrip,
+  useMembersFromContext as useMembers,
+} from '@/context/TripDataContext';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/context/ToastContext';
@@ -343,7 +345,7 @@ export default function MembersPage() {
   const params = useParams();
   const tripId = params.tripId as string;
   const { trip } = useTrip();
-  const { members: _members, invites, loading: membersLoading, inviteMember } = useMembers(tripId);
+  const { members: _members, invites, loading: membersLoading, inviteMember } = useMembers();
   const { travelers: allGlobalTravelers, loading: travelersLoading } = useGlobalTravelers();
   const { user: _user } = useAuth();
   const { toast } = useToast();

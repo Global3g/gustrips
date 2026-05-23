@@ -49,10 +49,10 @@ import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
   useAlbumFromContext as useAlbum,
+  useMembersFromContext as useMembers,
+  useChecklistFromContext as useChecklist,
 } from '@/context/TripDataContext';
 import { useTrips } from '@/hooks/useTrips';
-import { useMembers } from '@/hooks/useMembers';
-import { useChecklist } from '@/hooks/useChecklist';
 import { useMilestones } from '@/hooks/useMilestones';
 import { useToast } from '@/context/ToastContext';
 import { Button } from '@/components/ui/Button';
@@ -538,8 +538,8 @@ export default function TripDetailPage() {
   }, [trip, updateTrip]);
   const { createTrip } = useTrips();
   const { events } = useEvents();
-  const { members } = useMembers(tripId);
-  const { items: checklistItems } = useChecklist(tripId);
+  const { members } = useMembers();
+  const { items: checklistItems } = useChecklist();
   const { travelers: globalTravelers } = useGlobalTravelers();
   const { toast } = useToast();
 

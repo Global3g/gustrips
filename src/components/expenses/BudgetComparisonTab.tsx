@@ -29,12 +29,12 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import { useExpenses } from '@/hooks/useExpenses';
 // Trip + events come from the layout-level TripDataProvider — this tab is
 // only ever rendered inside `/trips/[tripId]/expenses`.
 import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import Particles from '@/components/ui/Particles';
@@ -203,7 +203,7 @@ function statusLabel(pct: number): string {
 
 export function BudgetComparisonTab({ tripId }: BudgetComparisonTabProps) {
   const { trip, loading: tripLoading } = useTrip();
-  const { expenses, loading: expensesLoading, updateExpense, deleteExpense } = useExpenses(tripId);
+  const { expenses, loading: expensesLoading, updateExpense, deleteExpense } = useExpenses();
   const { events, loading: eventsLoading, updateEvent } = useEvents();
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('category');

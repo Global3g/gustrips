@@ -3,11 +3,20 @@
 import { useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import TripSidebar from '@/components/trips/TripSidebar';
 import TripBottomNav from '@/components/trips/TripBottomNav';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import NotificationBanner from '@/components/NotificationBanner';
 import FastExpenseFAB from '@/components/expenses/FastExpenseFAB';
+
+// Chatbot is mounted here (rather than in the outer (app)/layout) so it
+// can pull its data from the TripDataProvider context instead of opening
+// its own onSnapshot subscriptions on every trip page.
+const Chatbot = dynamic(
+  () => import('@/components/chat/Chatbot').then((m) => ({ default: m.Chatbot })),
+  { ssr: false },
+);
 import { useUploadDocument } from '@/hooks/useDocuments';
 import { TripDataProvider, useTripData } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
@@ -188,6 +197,12 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
       {/* Floating "Gasto" FAB — present on every trip page so the user
           can capture an expense without navigating to /expenses. */}
       <FastExpenseFAB tripId={tripId} />
+
+      {/* Trip-scoped Chatbot — uses TripDataProvider context so it
+          reuses the trip's existing onSnapshot listeners. Mounted here
+          rather than in the outer (app)/layout to avoid the duplicate
+          subscriptions that caused mobile CPU + battery spikes. */}
+      <Chatbot />
     </div>
   );
 }

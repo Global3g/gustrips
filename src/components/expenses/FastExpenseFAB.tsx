@@ -37,8 +37,11 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useExpenses } from '@/hooks/useExpenses';
-import { useTripFromContext as useTrip, useEventsFromContext as useEvents } from '@/context/TripDataContext';
+import {
+  useTripFromContext as useTrip,
+  useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import { EXPENSE_CATEGORIES, CURRENCIES } from '@/config/constants';
 import type { ExpenseCategory, EventType, PaymentMethod } from '@/types';
@@ -122,7 +125,8 @@ export default function FastExpenseFAB({ tripId }: Props) {
 
   const { user } = useAuth();
   const { trip } = useTrip();
-  const { addTripExpense, updateExpense } = useExpenses(tripId);
+  // tripId param is ignored — context already knows the trip.
+  const { addTripExpense, updateExpense } = useExpenses();
   const { createEvent, events } = useEvents();
   const { toast } = useToast();
   const [linkingEventId, setLinkingEventId] = useState<string | null>(null);

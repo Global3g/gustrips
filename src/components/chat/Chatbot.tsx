@@ -12,9 +12,11 @@ const ChatbotPanel = dynamic(
   () => import('./ChatbotPanel').then((m) => m.ChatbotPanel),
   { ssr: false },
 );
-import { useTrip } from '@/hooks/useTrip';
-import { useEvents } from '@/hooks/useEvents';
-import { useExpenses } from '@/hooks/useExpenses';
+import {
+  useTripFromContext,
+  useEventsFromContext,
+  useExpensesFromContext,
+} from '@/context/TripDataContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { TOOL_SCHEMAS, executeToolCall, type ToolDeps } from '@/lib/assistant/tools';
@@ -200,9 +202,13 @@ export function Chatbot() {
   const tripIdMatch = pathname.match(/^\/trips\/([^/]+)/);
   const tripId = tripIdMatch ? tripIdMatch[1] : '';
 
-  const { trip, updateTrip } = useTrip(tripId);
-  const { events, createEvent, updateEvent, deleteEvent } = useEvents(tripId);
-  const { expenses, addTripExpense } = useExpenses(tripId);
+  // Chatbot now lives INSIDE /trips/[tripId]/layout so it can read from
+  // TripDataProvider's context — this avoids opening duplicate
+  // onSnapshot listeners (the old behavior was 3 extra listeners per
+  // trip view, which was a measurable battery + CPU hit on mobile).
+  const { trip, updateTrip } = useTripFromContext();
+  const { events, createEvent, updateEvent, deleteEvent } = useEventsFromContext();
+  const { expenses, addTripExpense } = useExpensesFromContext();
   const { travelers } = useGlobalTravelers();
   const { user } = useAuth();
 

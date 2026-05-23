@@ -3,11 +3,13 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, ArrowRight, Wallet, Users, Sparkles } from 'lucide-react';
-import { useExpenses } from '@/hooks/useExpenses';
-import { useMembers } from '@/hooks/useMembers';
 // Trip from layout-level TripDataProvider — this tab only renders in
 // `/trips/[tripId]/expenses`.
-import { useTripFromContext as useTrip } from '@/context/TripDataContext';
+import {
+  useTripFromContext as useTrip,
+  useExpensesFromContext as useExpenses,
+  useMembersFromContext as useMembers,
+} from '@/context/TripDataContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import Particles from '@/components/ui/Particles';
@@ -19,8 +21,8 @@ interface BalanceTabProps {
 }
 
 export function BalanceTab({ tripId }: BalanceTabProps) {
-  const { expenses, loading, getBalances } = useExpenses(tripId);
-  const { members } = useMembers(tripId);
+  const { expenses, loading, getBalances } = useExpenses();
+  const { members } = useMembers();
   const { trip } = useTrip();
   const { user } = useAuth();
   const { travelers } = useGlobalTravelers();

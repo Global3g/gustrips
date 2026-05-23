@@ -26,12 +26,12 @@ import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
   useAlbumFromContext as useAlbum,
+  useExpensesFromContext as useExpenses,
+  useMembersFromContext as useMembers,
+  useChecklistFromContext as useChecklist,
 } from '@/context/TripDataContext';
-import { useExpenses } from '@/hooks/useExpenses';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
-import { useMembers } from '@/hooks/useMembers';
-import { useChecklist } from '@/hooks/useChecklist';
 import { useToast } from '@/context/ToastContext';
 import { EVENT_TYPES, ROUTES, DEFAULT_CURRENCY } from '@/config/constants';
 import {
@@ -41,6 +41,8 @@ import {
   getInitials,
 } from '@/lib/utils/helpers';
 import dynamic from 'next/dynamic';
+import TripDiaryHistory from '@/components/diary/TripDiaryHistory';
+import { BookOpen } from 'lucide-react';
 // jspdf is huge — only load on click. Particles is decorative.
 const Particles = dynamic(() => import('@/components/ui/Particles'), { ssr: false, loading: () => null });
 import type { TripEvent, ExpenseCategory, AlbumPhoto } from '@/types';
@@ -79,16 +81,16 @@ export default function TripRecapPage() {
 
   const { trip } = useTrip();
   const { events } = useEvents();
-  const { expenses } = useExpenses(tripId);
+  const { expenses } = useExpenses();
   const { albumPhotos: rawAlbumPhotos } = useAlbum();
   const albumPhotos = useMemo(
     () => rawAlbumPhotos.filter((p) => !p.deletedAt),
     [rawAlbumPhotos],
   );
   const { travelers: globalTravelers } = useGlobalTravelers();
-  const { members } = useMembers(tripId);
+  const { members } = useMembers();
   // Checklist hook is invoked for parity with previous export plumbing; not used by the recap PDF.
-  useChecklist(tripId);
+  useChecklist();
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
 
@@ -709,6 +711,41 @@ export default function TripRecapPage() {
               </div>
             </motion.section>
           )}
+
+          {/* ─── Diary journal ─────────────────────────────
+              All the diary entries the user wrote (or generated with AI)
+              during the trip, in reverse chronological order. The dark
+              recap palette and the cream diary card play well together
+              because we wrap the inner component in a contained section
+              with its own breathing room. */}
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25, duration: 0.5 }}
+            className="space-y-4"
+          >
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(245,158,11,0.18)', color: '#fcd34d' }}
+              >
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">
+                  Bitácora
+                </p>
+                <h2 className="text-lg sm:text-xl font-bold text-white leading-tight">
+                  Diario del viaje
+                </h2>
+              </div>
+            </div>
+            <TripDiaryHistory
+              tripId={tripId}
+              tripStartDate={trip?.startDate}
+              tripEndDate={trip?.endDate}
+            />
+          </motion.section>
 
           {/* ─── Sticky-ish footer actions ─────────────── */}
           <motion.section

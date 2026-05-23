@@ -31,14 +31,14 @@ import {
   Check,
   CheckSquare,
 } from 'lucide-react';
-import { useExpenses } from '@/hooks/useExpenses';
 // Trip + events come from the layout-level TripDataProvider — this tab is
 // only ever rendered inside `/trips/[tripId]/expenses`.
 import {
   useTripFromContext as useTrip,
   useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
+  useMembersFromContext as useMembers,
 } from '@/context/TripDataContext';
-import { useMembers } from '@/hooks/useMembers';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useToast } from '@/context/ToastContext';
@@ -124,9 +124,9 @@ function dayLabel(dateStr: string): string {
 }
 
 export function HistoryTab({ tripId }: HistoryTabProps) {
-  const { expenses, loading, deleteExpense, updateExpense } = useExpenses(tripId);
+  const { expenses, loading, deleteExpense, updateExpense } = useExpenses();
   const { events } = useEvents();
-  const { members } = useMembers(tripId);
+  const { members } = useMembers();
   const { user } = useAuth();
   const { travelers } = useGlobalTravelers();
   const { trip } = useTrip();

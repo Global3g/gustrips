@@ -88,8 +88,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {/* Bottom nav - mobile only, hidden inside trip views */}
             {!inTrip && <AppBottomNav />}
 
-            {/* AI Chatbot - floating assistant (lazy) */}
-            <Chatbot />
+            {/* AI Chatbot - floating assistant (lazy).
+                Only mounted on non-trip routes here; inside a trip the
+                Chatbot is mounted by /trips/[tripId]/layout so it can
+                read the TripDataProvider context instead of opening its
+                own duplicate Firestore subscriptions. */}
+            {!inTrip && <Chatbot />}
 
             {/* Global command palette (Cmd/Ctrl + K) (lazy) */}
             <CommandPaletteProvider />

@@ -7,8 +7,10 @@ import { es } from 'date-fns/locale';
 import { Receipt, X, ChevronDown, AlertCircle } from 'lucide-react';
 // Events from layout-level TripDataProvider — this banner is only mounted
 // inside `/trips/[tripId]/page.tsx`.
-import { useEventsFromContext as useEvents } from '@/context/TripDataContext';
-import { useExpenses } from '@/hooks/useExpenses';
+import {
+  useEventsFromContext as useEvents,
+  useExpensesFromContext as useExpenses,
+} from '@/context/TripDataContext';
 import { EVENT_TYPES } from '@/config/constants';
 import { classNames, formatCurrency } from '@/lib/utils/helpers';
 import QuickExpenseModal from './QuickExpenseModal';
@@ -54,7 +56,7 @@ const DISMISS_KEY_PREFIX = 'gustrips:pending-expenses-dismiss:';
 
 export default function PendingExpensesBanner({ tripId }: PendingExpensesBannerProps) {
   const { events } = useEvents();
-  const { expenses } = useExpenses(tripId);
+  const { expenses } = useExpenses();
 
   const [expanded, setExpanded] = useState(true);
   const [dismissedToday, setDismissedToday] = useState(false);

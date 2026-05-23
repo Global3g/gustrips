@@ -21,10 +21,12 @@ import {
   X,
   Search,
 } from 'lucide-react';
-import { useDocuments } from '@/hooks/useDocuments';
 // Events come from the layout-level TripDataProvider — calling
 // `useEvents(tripId)` here would open a second onSnapshot subscription.
-import { useEventsFromContext as useEvents } from '@/context/TripDataContext';
+import {
+  useEventsFromContext as useEvents,
+  useDocumentsFromContext as useDocuments,
+} from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
 import DocumentUpload from '@/components/trips/DocumentUpload';
 import BiometricGate from '@/components/BiometricGate';
@@ -89,7 +91,7 @@ function DocumentsPageContent() {
     uploadDocument,
     deleteDocument,
     categoryCounts,
-  } = useDocuments(tripId);
+  } = useDocuments();
   const { events } = useEvents();
   const { toast } = useToast();
 
