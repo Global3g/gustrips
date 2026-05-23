@@ -80,7 +80,7 @@ export default function TripHeroCard({ trip, pillars }: Props) {
 
   return (
     <Link
-      href={info.mode === 'active' ? `/today` : `/trips/${trip.id}`}
+      href={`/trips/${trip.id}`}
       className={`group block relative ${info.modeClass}`}
       style={{ textDecoration: 'none' }}
     >

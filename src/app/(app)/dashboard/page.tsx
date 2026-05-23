@@ -385,23 +385,14 @@ export default function DashboardPage() {
     return { heroTrip: future[0] ?? null, activeTrip: null };
   }, [trips]);
 
-  /* ─── Today-as-home redirect ─────────────────────
-     When the user has a trip whose dates contain today, the dashboard is
-     not the right landing — we drop them into the trip's /today view so
-     the first thing they see during the trip is "what to do now," not a
-     list. The session-storage gate stops the redirect from firing every
-     visit so they can navigate back to the dashboard intentionally and
-     keep it there for the rest of the session.
-  */
-  const router = useRouter();
-  useEffect(() => {
-    if (!activeTrip || loading) return;
-    if (typeof window === 'undefined') return;
-    const SKIP_KEY = 'gustrips:skip-today-redirect';
-    if (window.sessionStorage.getItem(SKIP_KEY) === '1') return;
-    window.sessionStorage.setItem(SKIP_KEY, '1');
-    router.replace(`/trips/${activeTrip.id}/today`);
-  }, [activeTrip, loading, router]);
+  // Note: we used to auto-redirect to /today when a trip was active.
+  // Removed because combined with the hero card link it created a loop:
+  // tap card → /today → back → dashboard → re-tap card → /today again,
+  // with no way to reach the rest of the trip's sections from mobile.
+  // The hero card now always lands on the trip root (/trips/<id>),
+  // which has the full trip nav. Users who want Today can pick it from
+  // the trip sidebar / nav.
+  const _router = useRouter(); void _router;
 
   /* ─── Stats ─────────────────────────────────────── */
   const stats = useMemo(() => ({

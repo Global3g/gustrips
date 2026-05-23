@@ -55,11 +55,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const inTrip = isInsideTrip(pathname);
 
+  // Default to mode-planning palette for non-trip routes (dashboard,
+  // settings, profile). Trip routes opt-in to their own dynamic mode
+  // class inside /trips/[tripId]/layout based on the trip's lifecycle.
   return (
     <AuthGuard>
       <ToastProvider>
         <ErrorBoundary>
-          <div className="flex min-h-screen" style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #0c1929 0%, #132438 50%, #0f1f33 100%)' }}>
+          <div className={`flex min-h-screen ${inTrip ? '' : 'mode-planning'}`} style={{ background: inTrip ? undefined : 'linear-gradient(135deg, #0c1929 0%, #132438 50%, #0f1f33 100%)' }}>
             {/* Sidebar - desktop only, hidden inside trip views */}
             {!inTrip && <AppSidebar />}
 

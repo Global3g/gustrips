@@ -4,11 +4,14 @@ import { useState } from 'react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import TripSidebar from '@/components/trips/TripSidebar';
+import TripBottomNav from '@/components/trips/TripBottomNav';
 import ScanDocumentModal from '@/components/trips/ScanDocumentModal';
 import NotificationBanner from '@/components/NotificationBanner';
+import FastExpenseFAB from '@/components/expenses/FastExpenseFAB';
 import { useUploadDocument } from '@/hooks/useDocuments';
 import { TripDataProvider, useTripData } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
+import { useTripMode } from '@/hooks/useTripMode';
 import { EVENT_TYPE_TO_DOC_CATEGORY } from '@/config/constants';
 import type { ScannedEvent } from '@/lib/utils/aiScanner';
 import type { DocumentCategory } from '@/types';
@@ -33,6 +36,11 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const tripId = params.tripId as string;
   const { trip, updateTrip, events, createEvent } = useTripData();
+  // Derive the three-pillar palette from the trip's dates. The CSS vars
+  // it sets (--pillar-bg, --pillar-ink, --pillar-accent…) cascade to any
+  // child component that uses them, so newer pages (TripHeroCard, Today,
+  // Documents shell) automatically pick the right tone.
+  const tripMode = useTripMode(trip);
 
   // The layout only needs the upload action — not the live documents list —
   // so we use the write-only variant. Otherwise we'd pay for a permanent
@@ -103,7 +111,7 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] lg:h-screen">
+    <div className={`flex h-[calc(100vh-5rem)] lg:h-screen ${tripMode.modeClass}`}>
       {/* Trip Sidebar - desktop */}
       <div className="hidden lg:block w-[280px] border-r border-white/[0.04] bg-[#1e3a5f] overflow-y-auto flex-shrink-0">
         <TripSidebar
@@ -161,10 +169,14 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
             {trip?.title || 'Volver'}
           </span>
         </div>
-        <div className="relative p-5 sm:p-8 lg:p-12">
+        <div className="relative p-5 sm:p-8 lg:p-12 pb-24 lg:pb-12">
           {children}
         </div>
       </div>
+
+      {/* Mobile-only bottom navigation. Desktop already has the sidebar.
+          The pb-24 above keeps content from being hidden under it. */}
+      <TripBottomNav tripId={tripId} />
 
       {/* Scan modal from sidebar */}
       <ScanDocumentModal
@@ -172,6 +184,10 @@ function TripLayoutInner({ children }: { children: React.ReactNode }) {
         onClose={() => setShowSidebarScan(false)}
         onConfirm={handleSidebarScanConfirm}
       />
+
+      {/* Floating "Gasto" FAB — present on every trip page so the user
+          can capture an expense without navigating to /expenses. */}
+      <FastExpenseFAB tripId={tripId} />
     </div>
   );
 }
