@@ -71,7 +71,13 @@ interface TripDataValue {
 
   // Album
   albumPhotos: AlbumPhoto[];
-  addPhoto: (file: File, date: string, caption?: string, eventId?: string) => Promise<AlbumPhoto>;
+  addPhoto: (
+    file: File,
+    date: string,
+    caption?: string,
+    eventId?: string,
+    options?: { skipTripBump?: boolean },
+  ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;

@@ -70,6 +70,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { formatDateES, classNames } from '@/lib/utils/helpers';
 import { sharePhoto } from '@/lib/sharePhoto';
 import { EVENT_TYPES } from '@/config/constants';
+import { bumpTripUpdatedAtOnce } from '@/lib/photoUploader';
 import type { AlbumPhoto } from '@/types';
 
 /* ─── Helpers for event name fields ─────────────── */
@@ -534,7 +535,14 @@ export default function PhotosPage() {
             if (i >= fileArray.length) return;
             const file = fileArray[i];
             try {
-              const photo = await addPhoto(file, today, undefined, eventId || undefined);
+              // skipTripBump: defer the per-photo trip.updatedAt write
+              // until the batch finishes. Otherwise a 20-photo upload
+              // fires 20 trip-doc writes → 20 onSnapshot rounds for
+              // every subscriber of this trip (sidebar, banners, layout
+              // chrome). We bump exactly once after Promise.all below.
+              const photo = await addPhoto(file, today, undefined, eventId || undefined, {
+                skipTripBump: true,
+              });
               if (eventId) newUrls.push(photo.url);
               successCount++;
             } catch (err) {
@@ -553,6 +561,17 @@ export default function PhotosPage() {
           worker,
         );
         await Promise.all(workers);
+
+        // Single trip.updatedAt write for the whole batch. Skip if nothing
+        // succeeded — no real change to notify subscribers about.
+        if (successCount > 0) {
+          try {
+            await bumpTripUpdatedAtOnce(tripId);
+          } catch (err) {
+            console.warn('[photos] batch trip bump failed:', err);
+          }
+        }
+
         const failed = fileArray.length - successCount;
         if (failed > 0) {
           toast(
@@ -603,7 +622,7 @@ export default function PhotosPage() {
         setUploadProgress(null);
       }
     },
-    [addPhoto, toast, events, updateEvent, selectedDate],
+    [addPhoto, toast, events, updateEvent, selectedDate, tripId],
   );
 
   const handleFileInput = useCallback(

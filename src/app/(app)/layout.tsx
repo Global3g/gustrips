@@ -19,10 +19,7 @@ import { classNames } from '@/lib/utils/helpers';
  * Sync/Pending indicators only matter once Firebase resolves auth, and
  * OnboardingModal only shows for first-time users. Pulling them out of the
  * initial bundle is the single biggest first-paint win for dashboard. */
-const Chatbot = dynamic(
-  () => import('@/components/chat/Chatbot').then((m) => ({ default: m.Chatbot })),
-  { ssr: false },
-);
+// Chatbot moved to /trips/[tripId]/layout — no longer dynamic-imported here.
 const CommandPaletteProvider = dynamic(
   () => import('@/components/CommandPaletteProvider'),
   { ssr: false },
@@ -88,12 +85,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {/* Bottom nav - mobile only, hidden inside trip views */}
             {!inTrip && <AppBottomNav />}
 
-            {/* AI Chatbot - floating assistant (lazy).
-                Only mounted on non-trip routes here; inside a trip the
-                Chatbot is mounted by /trips/[tripId]/layout so it can
-                read the TripDataProvider context instead of opening its
-                own duplicate Firestore subscriptions. */}
-            {!inTrip && <Chatbot />}
+            {/* AI Chatbot — NOT mounted here. It now lives in
+                /trips/[tripId]/layout exclusively because it depends on
+                TripDataProvider (used to silently no-op outside a trip,
+                but after consolidating subscriptions it throws if the
+                provider isn't above it). Dashboard / settings / profile
+                don't have a chatbot today; the closest equivalent is the
+                trip's chatbot inside each trip. */}
 
             {/* Global command palette (Cmd/Ctrl + K) (lazy) */}
             <CommandPaletteProvider />
