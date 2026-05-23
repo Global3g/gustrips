@@ -28,6 +28,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import { useTrips } from '@/hooks/useTrips';
+import { useTripRole } from '@/hooks/useTripRole';
 import { collection, getCountFromServer } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase/client';
 import { useToast } from '@/context/ToastContext';
@@ -260,6 +261,10 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
   const searchParams = useSearchParams();
   const router = useRouter();
   const { deleteTrip } = useTrips();
+  // Role gate for the footer's secondary menu: only the owner sees
+  // "Editar viaje" / "Borrar viaje" / status changes. Backup export is
+  // also owner-only since it dumps every member's data.
+  const { can: roleCan } = useTripRole();
   const { toast } = useToast();
   const [backingUp, setBackingUp] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -587,7 +592,7 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
               {tripDays} días
             </span>
           )}
-          {updateTrip && (
+          {updateTrip && roleCan.editTrip && (
             <StatusChangeMenu currentStatus={tripStatus} onChange={handleStatusChange} />
           )}
         </div>
@@ -728,7 +733,12 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             <span>Mis Viajes</span>
           </Link>
 
-          {/* Secondary actions live behind a "..." menu */}
+          {/* Secondary actions live behind a "..." menu. The menu only
+              renders if the user can do at least one of the actions
+              inside; otherwise the "..." button is hidden to avoid an
+              empty popover. Backup export needs owner access too since
+              it dumps every member's data. */}
+          {(roleCan.editTrip || roleCan.deleteTrip) && (
           <div className="relative" ref={moreRef}>
             <button
               type="button"
@@ -745,49 +755,58 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
                 role="menu"
                 className="absolute z-30 right-0 bottom-full mb-2 w-56 rounded-xl border border-white/15 bg-[#0d1b2e] shadow-2xl shadow-black/60 overflow-hidden"
               >
-                <Link
-                  href={`${basePath}/edit`}
-                  onClick={() => setMoreOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-white/90 hover:text-white hover:bg-white/[0.06] transition-colors"
-                  role="menuitem"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-white/55" />
-                  Editar viaje
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMoreOpen(false);
-                    handleSidebarBackup();
-                  }}
-                  disabled={backingUp || !trip}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-white/90 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-40"
-                  role="menuitem"
-                >
-                  {backingUp ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white/55" />
-                  ) : (
-                    <HardDriveDownload className="w-3.5 h-3.5 text-white/55" />
-                  )}
-                  {backingUp ? 'Exportando...' : 'Descargar backup'}
-                </button>
-                <div className="h-px bg-white/[0.08]" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMoreOpen(false);
-                    setConfirmDelete(true);
-                  }}
-                  disabled={!trip || deleting}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 transition-colors disabled:opacity-40"
-                  role="menuitem"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Borrar viaje
-                </button>
+                {roleCan.editTrip && (
+                  <Link
+                    href={`${basePath}/edit`}
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-white/90 hover:text-white hover:bg-white/[0.06] transition-colors"
+                    role="menuitem"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-white/55" />
+                    Editar viaje
+                  </Link>
+                )}
+                {roleCan.editTrip && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      handleSidebarBackup();
+                    }}
+                    disabled={backingUp || !trip}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-white/90 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-40"
+                    role="menuitem"
+                  >
+                    {backingUp ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white/55" />
+                    ) : (
+                      <HardDriveDownload className="w-3.5 h-3.5 text-white/55" />
+                    )}
+                    {backingUp ? 'Exportando...' : 'Descargar backup'}
+                  </button>
+                )}
+                {roleCan.deleteTrip && (
+                  <>
+                    <div className="h-px bg-white/[0.08]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setConfirmDelete(true);
+                      }}
+                      disabled={!trip || deleting}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-rose-300 hover:text-rose-200 hover:bg-rose-500/10 transition-colors disabled:opacity-40"
+                      role="menuitem"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Borrar viaje
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Delete confirmation appears below the row when primed */}

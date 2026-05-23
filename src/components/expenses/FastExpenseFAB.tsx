@@ -42,6 +42,7 @@ import {
   useEventsFromContext as useEvents,
   useExpensesFromContext as useExpenses,
 } from '@/context/TripDataContext';
+import { useTripRole } from '@/hooks/useTripRole';
 import { useToast } from '@/context/ToastContext';
 import { EXPENSE_CATEGORIES, CURRENCIES } from '@/config/constants';
 import type { ExpenseCategory, EventType, PaymentMethod } from '@/types';
@@ -108,6 +109,13 @@ interface SavedExpenseSummary {
 }
 
 export default function FastExpenseFAB({ tripId }: Props) {
+  // Role gate: viewers and kids can't write expenses, so the FAB is
+  // hidden entirely (no FAB → no read-only error toast on tap). The hook
+  // reads from the same context that powers the rest of the layout, so
+  // this costs zero extra subscriptions. Hook is called before any
+  // early return to keep React's hooks-order rule happy.
+  const { can } = useTripRole();
+
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('choose');
   const [amount, setAmount] = useState('');
@@ -493,6 +501,14 @@ export default function FastExpenseFAB({ tripId }: Props) {
       setCreatingEvent(false);
     }
   };
+
+  // Bail out for read-only roles AFTER all hooks have run. We can't
+  // early-return above the hooks (React's rules-of-hooks) so the
+  // subscriptions still mount, but they're already mounted at the
+  // layout level so this is the same cost as a no-op.
+  if (!can.editExpenses) {
+    return null;
+  }
 
   return (
     <>

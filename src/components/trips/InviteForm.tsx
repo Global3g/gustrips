@@ -9,9 +9,15 @@ import { Modal } from '@/components/ui/Modal';
 import { MEMBER_ROLES } from '@/config/constants';
 import type { MemberRole } from '@/types';
 
+// Roles available in the invite picker. We intentionally exclude
+// `owner` — there can only be one owner per trip and ownership is
+// transferred through a dedicated flow, not by invitation.
+const INVITABLE_ROLES = ['editor', 'viewer', 'kid'] as const;
+type InvitableRole = typeof INVITABLE_ROLES[number];
+
 const inviteSchema = z.object({
   email: z.email('Ingresa un correo valido'),
-  role: z.enum(['editor', 'viewer'] as const),
+  role: z.enum(INVITABLE_ROLES),
 });
 
 interface InviteFormProps {
@@ -23,7 +29,7 @@ interface InviteFormProps {
 
 export default function InviteForm({ open, onClose, onSubmit, loading = false }: InviteFormProps) {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'editor' | 'viewer'>('editor');
+  const [role, setRole] = useState<InvitableRole>('editor');
   const [errors, setErrors] = useState<{ email?: string; role?: string }>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,15 +86,14 @@ export default function InviteForm({ open, onClose, onSubmit, loading = false }:
           </label>
           <select
             value={role}
-            onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}
+            onChange={(e) => setRole(e.target.value as InvitableRole)}
             className="w-full bg-gray-50 border border-gray-300 rounded-xl px-4 py-3 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all appearance-none cursor-pointer"
           >
-            <option value="editor" className="bg-white text-gray-900">
-              {MEMBER_ROLES.editor.label} — {MEMBER_ROLES.editor.description}
-            </option>
-            <option value="viewer" className="bg-white text-gray-900">
-              {MEMBER_ROLES.viewer.label} — {MEMBER_ROLES.viewer.description}
-            </option>
+            {INVITABLE_ROLES.map((r) => (
+              <option key={r} value={r} className="bg-white text-gray-900">
+                {MEMBER_ROLES[r].label} — {MEMBER_ROLES[r].description}
+              </option>
+            ))}
           </select>
           {errors.role && (
             <p className="text-red-600 text-xs mt-1">{errors.role}</p>

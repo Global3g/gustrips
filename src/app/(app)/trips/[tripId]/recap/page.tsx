@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,7 @@ import {
   Coins,
   Loader2,
   BookHeart,
+  Film,
   X,
 } from 'lucide-react';
 import { differenceInDays, parseISO, isAfter } from 'date-fns';
@@ -77,6 +78,7 @@ function cityFromEvent(ev: TripEvent): string {
 
 export default function TripRecapPage() {
   const params = useParams();
+  const router = useRouter();
   const tripId = params.tripId as string;
 
   const { trip } = useTrip();
@@ -93,6 +95,37 @@ export default function TripRecapPage() {
   useChecklist();
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
+
+  /* ─── Closing-ceremony auto-redirect ──────────────
+     Fires once per trip: if the trip ended very recently (today or
+     yesterday) AND the user has never seen the ceremony, send them
+     there. The ceremony page itself persists `ceremonyShownAt` so
+     we won't loop. Guarded by a session-scoped ref so a single
+     mount that re-runs effects (StrictMode, fast refresh) won't
+     trigger two redirects. */
+  const [ceremonyRedirectChecked, setCeremonyRedirectChecked] = useState(false);
+  useEffect(() => {
+    if (ceremonyRedirectChecked) return;
+    if (!trip) return; // wait for trip data
+    setCeremonyRedirectChecked(true);
+    if (trip.ceremonyShownAt) return; // already seen
+    if (!trip.endDate) return;
+    try {
+      const end = parseISO(trip.endDate);
+      const today = new Date();
+      const daysSinceEnd = differenceInDays(
+        new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        new Date(end.getFullYear(), end.getMonth(), end.getDate()),
+      );
+      // 0 = ended today, 1 = ended yesterday. Anything else: skip.
+      if (daysSinceEnd === 0 || daysSinceEnd === 1) {
+        router.replace(`/trips/${tripId}/ceremony`);
+      }
+    } catch {
+      // Bad date — silently skip the auto-redirect; user can still
+      // launch the ceremony manually from the button below.
+    }
+  }, [ceremonyRedirectChecked, trip, tripId, router]);
 
   /* ─── Tripshistory banner (dismissible per-trip) ─── */
   const bannerStorageKey = `tripshistory-recap-banner-dismissed-${tripId}`;
@@ -756,6 +789,16 @@ export default function TripRecapPage() {
           >
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-3 flex flex-wrap items-center gap-2 justify-center sm:justify-between">
               <div className="flex flex-wrap gap-2">
+                {/* Re-launch the closing ceremony. Always available so a
+                    returning user can re-watch the montage on demand —
+                    independent of the once-per-trip auto-redirect above. */}
+                <Link
+                  href={`/trips/${tripId}/ceremony`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm font-semibold text-white transition-colors"
+                >
+                  <Film className="w-4 h-4 text-amber-300" />
+                  Ver ceremonia
+                </Link>
                 <button
                   onClick={handleShare}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-sm font-semibold text-white transition-colors"

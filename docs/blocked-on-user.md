@@ -1,93 +1,96 @@
-# Blocked on user input
+# Bloqueado en input del usuario — V2 (post auditoría #2)
 
-Things the agent cannot complete autonomously. Each requires a decision or an external account/credential the agent cannot create.
+Lista viva. Lo que aparece acá no se puede automatizar — necesita una decisión, una cuenta externa, o una credencial.
 
-## Tesis (CONFIRMED)
-- **Decided:** "App que combina lo logístico (vuelos, docs) + emocional (fotos, diario) + financiero (presupuesto, gastos) sin que uno tape al otro."
-- **Implication:** Three-pillar design system. Today screen must surface all three. Trip hero cards must show: next logistics event, latest emotional moment, budget status.
+## Decisiones de marca y producto (NO RESUELTAS)
+- **Commercial name (rebrand)** — `GusTrips` como interno OK; falta el nombre comercial para landing + App Store
+- **App icon premium** — 1024×1024 + variantes iOS. Recomendado: Dribbble freelance 200–500 USD
+- **Splash screen** — coherente con app icon
+- **Logo wordmark** — para footer + emails + share preview
+- **Brand voice guide** — para que el chatbot, los toasts y el copy se mantengan consistentes
 
-## Rebrand
-- **Decided:** soft rebrand (keep `gustrips` as internal name; ship commercially with a different name later).
-- **Pending from user:**
-  - Final commercial name
-  - Domain
-  - Logo + app icon (designer needed)
-  - Brand voice guide
+## Decisiones comerciales
+- **Pricing tier** confirmado (research sugiere $59/año couple plan + $6.99/mo anchor)
+- **Stripe account + Customer Portal** setup
+- **Landing page** copy + estructura
 
-## Monetization
-- **Decided:** defer. Will revisit after Wave 1 research lands.
-- **Pending from user:**
-  - Approval of pricing tier proposal once research is in
-  - Stripe / Lemon Squeezy account setup
-  - Billing flow design
+## External services (cada uno necesita una cuenta + API key)
 
-## Target
-- **Decided:** parejas viajeras 25-45.
+### AI proactivo + features Claude-específicos
+- **`ANTHROPIC_API_KEY`** en Vercel env vars
+  - Necesario para: features que pidan razonamiento profundo (closing letter narrativa, análisis multi-step)
+  - El producto actual usa Gemini para todo; Anthropic sumaría sin reemplazar
 
-## Platform
-- **Not decided yet.**
-- **Pending from user:**
-  - PWA-only vs Capacitor iOS vs React Native — choose after tech-decisions.md (Wave 1) lands.
-  - If iOS: Apple Developer account + provisioning.
+### Importador de emails de reserva
+- **Gmail OAuth en Google Cloud Console**
+  - OAuth client + Consent Screen (privacy URL: https://gustrips.vercel.app/privacy)
+  - Scopes: `gmail.readonly`
+  - Vercel env vars: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`
+  - Verificación de Google App requerida para salir de "Testing" mode
 
-## External services that need user setup
+### Tracking de vuelos en vivo
+- **AeroDataBox** ($32/mes plan MEGA por research)
+  - Cuenta en RapidAPI
+  - `AERODATABOX_API_KEY` env var
 
-### AI concierge
-- **Choice pending** (Anthropic Claude vs OpenAI GPT-4 vs Gemini) — Wave 1 research will recommend.
-- User needs to:
-  - Create account with chosen provider
-  - Generate API key
-  - Set monthly budget cap
-  - Add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` to Vercel env vars
+### Mapas custom
+- **Mapbox token**
+  - Free tier hasta 50k loads/mes
+  - `NEXT_PUBLIC_MAPBOX_TOKEN` env var
 
-### Gmail email importer
-- User needs to:
-  - Create Google Cloud project (or reuse existing Firebase one — `gustrips-a317e`)
-  - Enable Gmail API
-  - Configure OAuth consent screen (with privacy + terms URLs)
-  - Generate OAuth client credentials
-  - Add to Vercel env vars: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`
-  - Verify scopes: `gmail.readonly`
+### Push avanzado + Live Activities (iOS native)
+- **Apple Developer Program** ($99/año)
+- Bundle identifier + provisioning
+- Capacitor + Live Activities ActivityKit
 
-### Flight tracking
-- **Provider TBD** — Wave 1 research will recommend.
-- Most providers (AeroDataBox, FlightAware) require paid subscription.
-- User needs API key + billing setup.
+### Affiliate revenue (cuando el producto tenga tracción)
+- **Airalo** (eSIM) — cuenta de afiliado
+- **SafetyWing** (seguros) — programa de afiliados
+- **Booking** referrals
 
-### Mapbox (if we replace Leaflet)
-- User needs:
-  - Mapbox account
-  - Access token
-  - Style URL for custom map design
-  - Pricing tier choice (free up to ~50k loads/mo)
+## Pendientes de aprobación de producto (decisión tuya)
+- ¿Activamos el AI proactivo? Implica usage de tokens más alto
+- ¿Hacemos el rebrand antes de mes 3 o esperamos al PMF?
+- ¿iOS native (Capacitor) ya o esperamos a tener 1k users?
 
-### Native iOS (if Capacitor route is chosen)
-- User needs:
-  - Apple Developer Program membership ($99/year)
-  - App ID + bundle identifier
-  - Provisioning profiles + certificates
-  - TestFlight access for beta
+---
 
-### Affiliate revenue
-- eSIM (Airalo): account + referral link
-- Travel insurance (World Nomads / SafetyWing): affiliate program signup
-- Booking referrals: partner application
+## YA RESUELTO en sesiones anteriores
+- Tesis del producto: tres pilares balanceados (logística + emocional + financiero)
+- Rebrand approach: soft (mantener interno `gustrips`, lanzar comercial con nombre nuevo)
+- Target: parejas viajeras 25-45 como prioridad
+- Monetización approach: defer pricing hasta tener más data
 
-## Design artifacts pending
-- App icon (1024×1024 + iOS variations)
-- Splash screen
-- Empty-state illustrations
-- 3-screen onboarding artwork
+---
 
-## Things the agent will do now without waiting
-- Design tokens + typography
-- 3-palette system per mode
-- Today screen redesign
-- Hero card + countdown
-- Biometric lock (WebAuthn — no external service needed)
-- Onboarding skeleton (artwork-free, copy-driven)
+## YA AUTOMATIZADO (no necesita user input)
+
+Completado en sesiones previas + en curso:
+- Three-pillar palettes (mode-planning / active / memories / money) en CSS, default values en :root
+- Fraunces + Inter cargados via next/font
+- View Transitions API setup en globals.css
+- TripDataContext consolidado (4 listeners en lugar de 10+)
+- Daily diary AI + auto-backfill + Bitácora tab + sección en /recap
+- Fast Expense FAB con OCR rich (date / merchant / subtotal / tax / tip) + needsReview + banner pendientes
+- Photo Web Worker (HEIC + compress + hash off main thread)
+- Photo upload pool (concurrencia 3)
+- Batch trip.updatedAt bump
+- Biometric lock /documents (WebAuthn)
+- Calendar .ics export endpoint
+- Bottom nav mobile con auto-collapse
+- Today hero + tabs Hoy/Historia + diary card
 - Privacy + Security pages
-- .ics calendar export (no external API)
-- Public share view
-- E2E test suite expansion
-- Skeleton states + view-transitions polish
+- 13 temas photobook + crop manual + PDF parallel
+- TripHeroCard mode-aware en dashboard
+- Public share view (`/shared/[token]`)
+
+## En CURSO (agentes background, esta sesión)
+- Maleta inteligente + templates por destino
+- Templates por tipo de viaje (luna miel / road trip / family / business / crucero)
+- Modos contextuales (Aeropuerto / Hotel / Restaurante)
+- Mapa de huellas mundial (Leaflet + Nominatim free, sin Mapbox)
+- Highlights diarios auto-curados (Gemini)
+- Auto-photobook al cierre + Closing ceremony
+- Multi-tenant con roles (owner / editor / viewer / kid) + Firestore rules
+- Pasada de paletas mode a las pages restantes (vía global :root defaults)
+- View Transitions API auto-nav
