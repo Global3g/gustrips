@@ -62,3 +62,6 @@ firebase-service-account.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated at build by scripts/gen-precache-manifest.js
+public/sw-precache-manifest.json

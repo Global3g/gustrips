@@ -6,10 +6,20 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v34-2026-05-24-offline-auth-fix';
-const STATIC_CACHE = `${SW_VERSION}-static`;
-const SHELL_CACHE = `${SW_VERSION}-shell`;
-const IMAGE_CACHE = `${SW_VERSION}-images`;
+const SW_VERSION = 'gustrips-v35-2026-05-24-persistent-offline';
+
+// Cache names are deliberately STABLE (not version-suffixed). Previously every
+// version bump produced new cache names and `activate` deleted the old ones —
+// which wiped the user's warmed offline cache on every single update, so right
+// after updating, only /dashboard worked offline. Everything under
+// /_next/static is content-hashed and immutable, so keeping it across deploys
+// is safe: new builds just add new hashed files. Legacy version-suffixed
+// caches from older service workers are purged once in `activate`.
+const STATIC_CACHE = 'gustrips-static';
+const SHELL_CACHE = 'gustrips-shell';
+const IMAGE_CACHE = 'gustrips-images';
+const RSC_CACHE = 'gustrips-rsc'; // App Router navigation (RSC) payloads
+const KEEP_CACHES = [STATIC_CACHE, SHELL_CACHE, IMAGE_CACHE, RSC_CACHE];
 
 const IMAGE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SHELL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days fallback freshness
@@ -85,6 +95,31 @@ self.addEventListener('install', (event) => {
         // eslint-disable-next-line no-console
         console.warn('[SW] precache of dashboard chunks failed', err);
       }
+
+      // 3. Precache the FULL build via the manifest written at build time
+      //    (scripts/gen-precache-manifest.js). This is what makes every route
+      //    work offline after a single online launch — not just the pages the
+      //    user happened to open. Best-effort and batched so a few failures
+      //    don't abort the whole install.
+      try {
+        const manRes = await fetch('/sw-precache-manifest.json', { cache: 'no-cache' });
+        if (manRes.ok) {
+          const manifest = await manRes.json();
+          const assets = Array.isArray(manifest?.assets) ? manifest.assets : [];
+          // eslint-disable-next-line no-console
+          console.log('[SW] precaching', assets.length, 'build assets');
+          const BATCH = 30;
+          for (let i = 0; i < assets.length; i += BATCH) {
+            const slice = assets.slice(i, i + BATCH);
+            await Promise.all(
+              slice.map((u) => staticCache.add(u).catch(() => {/* best-effort */}))
+            );
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[SW] full precache manifest failed', err);
+      }
     } catch {
       // best-effort
     }
@@ -95,9 +130,13 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+    // Keep the stable caches; delete anything else (notably the legacy
+    // version-suffixed caches like `gustrips-v34-...-static` left by older
+    // service workers). After this one-time migration, updates never wipe
+    // the warmed cache again.
     await Promise.all(
       keys
-        .filter((k) => !k.startsWith(SW_VERSION))
+        .filter((k) => !KEEP_CACHES.includes(k))
         .map((k) => caches.delete(k))
     );
     await self.clients.claim();
@@ -451,6 +490,17 @@ self.addEventListener('fetch', (event) => {
   // PWA icons / favicons: cache-first with shell TTL.
   if (isAppIcon(url)) {
     event.respondWith(cacheFirst(req, SHELL_CACHE, SHELL_MAX_AGE_MS));
+    return;
+  }
+
+  // App Router RSC navigation payloads. These share the page URL but carry
+  // the `RSC` header (or an `_rsc` query param), so they go in a dedicated
+  // cache to avoid colliding with the HTML for the same URL. Stale-while-
+  // revalidate keeps them fresh online and serves them offline for any route
+  // that was visited or prefetched (Next prefetches visible <Link>s), which
+  // is what makes in-trip navigation work without a connection.
+  if (req.headers.get('RSC') === '1' || url.searchParams.has('_rsc')) {
+    event.respondWith(staleWhileRevalidate(req, RSC_CACHE));
     return;
   }
 

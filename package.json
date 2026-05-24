@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "TURBOPACK=0 next dev",
-    "build": "next build",
+    "build": "next build && node scripts/gen-precache-manifest.js",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
