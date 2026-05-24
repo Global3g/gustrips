@@ -17,6 +17,9 @@ import {
   Backpack,
   ExternalLink,
   Camera,
+  Sun,
+  BookHeart,
+  Trophy,
   Map,
   HardDriveDownload,
   Loader2,
@@ -606,6 +609,16 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
       <nav className="flex-1 overflow-y-auto py-3 space-y-0.5 relative z-10 sidebar-nav-scroll">
         {/* Principal */}
         <CollapsibleSection title="Principal">
+          {tripStatus === 'active' && (
+            <NavItem
+              href={basePath + '/today'}
+              label="Hoy"
+              icon={<Sun className="w-4 h-4" />}
+              isActive={isActive('/today')}
+              color="today"
+              sublabel="Lo que pasa ahora"
+            />
+          )}
           <NavItem
             href={basePath}
             label="General"
@@ -695,6 +708,22 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
               </span>
             ) : undefined}
           />
+          <NavItem
+            href={basePath + '/tripshistory'}
+            label="Tu historia"
+            icon={<BookHeart className="w-4 h-4" />}
+            isActive={isActive('/tripshistory')}
+            color="tripshistory"
+          />
+          {tripStatus === 'completed' && (
+            <NavItem
+              href={basePath + '/recap'}
+              label="Resumen del viaje"
+              icon={<Trophy className="w-4 h-4" />}
+              isActive={isActive('/recap')}
+              color="recap"
+            />
+          )}
         </CollapsibleSection>
 
         {/* Lugar */}
