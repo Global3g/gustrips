@@ -190,13 +190,14 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
 
   // The small thumb lives directly under album/ (NOT watched by the resize
   // extension). The original goes under album/originals/ — the extension
-  // watches that path and writes WebP derivatives into originals/thumbnails/
-  // with deterministic names (verified against the extension source):
+  // watches that path and writes the WebP derivatives ALONGSIDE the original
+  // (the "resized images path" was left empty), with deterministic names
+  // (verified against real output + the extension source):
   //   <fileNameWithoutExt>_<W>x<H>.webp
   const thumbPath = `trips/${tripId}/album/${timestamp}_thumb_${safeName}`;
   const originalPath = `trips/${tripId}/album/originals/${timestamp}_${safeName}`;
   const baseNoExt = safeName.replace(/\.[^.]+$/, '');
-  const derivBase = `trips/${tripId}/album/originals/thumbnails/${timestamp}_${baseNoExt}`;
+  const derivBase = `trips/${tripId}/album/originals/${timestamp}_${baseNoExt}`;
   const viewPath = `${derivBase}_1280x1280.webp`;
   const thumbWebpPath = `${derivBase}_400x400.webp`;
 
