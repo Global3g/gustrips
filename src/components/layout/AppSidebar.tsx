@@ -13,6 +13,7 @@ import {
   Loader2,
   Compass,
   BookHeart,
+  Globe,
 } from 'lucide-react';
 import { APP_NAV_ITEMS } from '@/config/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -46,6 +47,12 @@ const NAV_COLORS: Record<string, { active: string; icon: string; bg: string; glo
     bg: 'bg-fuchsia-500/10',
     glow: 'shadow-fuchsia-500/20',
   },
+  '/footprint': {
+    active: 'text-sky-400',
+    icon: 'text-sky-400',
+    bg: 'bg-sky-500/10',
+    glow: 'shadow-sky-500/20',
+  },
 };
 
 const ICON_MAP: Record<string, typeof LayoutDashboard> = {
@@ -53,7 +60,16 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   Users,
   PlaneTakeoff,
   BookHeart,
+  Globe,
 };
+
+// The /footprint entry isn't in the shared APP_NAV_ITEMS constant because
+// it's a desktop-only "exploration" link (not in the mobile bottom nav,
+// which is intentionally minimal). We append it inline in the sidebar's
+// nav loop below.
+const EXTRA_NAV_ITEMS: { href: string; label: string; icon: string }[] = [
+  { href: '/footprint', label: 'Mapa del mundo', icon: 'Globe' },
+];
 
 export default function AppSidebar() {
   const pathname = usePathname();
@@ -103,7 +119,7 @@ export default function AppSidebar() {
 
         {/* ── Navigation ── */}
         <nav className="relative flex-1 px-3 py-5 space-y-1.5">
-          {APP_NAV_ITEMS.map((item) => {
+          {[...APP_NAV_ITEMS, ...EXTRA_NAV_ITEMS].map((item) => {
             const Icon = ICON_MAP[item.icon];
             const colors = NAV_COLORS[item.href] || NAV_COLORS['/dashboard'];
             const isActive =

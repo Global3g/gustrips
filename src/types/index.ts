@@ -32,6 +32,10 @@ export interface Trip {
   mealPreferences?: MealPreferences;
   quickNotes?: QuickNote[];
   customLinks?: CustomLink[];
+  // ISO timestamp the user first saw the Closing Ceremony for this trip.
+  // Once set, the recap page no longer auto-redirects them to /ceremony —
+  // they can re-watch it via the explicit "Ver ceremonia" button.
+  ceremonyShownAt?: string;
 }
 
 // ─── Custom Link ───────────────────────────────────
@@ -112,7 +116,25 @@ export interface GlobalTraveler {
 }
 
 // ─── Member ─────────────────────────────────────────
-export type MemberRole = 'owner' | 'editor' | 'viewer';
+/**
+ * Formal roles for trip multi-tenancy. The 4 levels map to a coarse
+ * permission ladder:
+ *
+ *   owner  → full control (delete trip, manage members, change settings)
+ *   editor → can edit events/expenses/photos/documents
+ *   viewer → read-only
+ *   kid    → read-only with simplified UI hints (bigger fonts, fewer options)
+ *
+ * `kid` is functionally identical to `viewer` for write permissions —
+ * the difference is purely cosmetic UI (forgiving experience for younger
+ * travelers).
+ *
+ * `MemberRole` is kept as an alias of `TripRole` for backwards
+ * compatibility with existing call sites; new code should prefer
+ * `TripRole`.
+ */
+export type TripRole = 'owner' | 'editor' | 'viewer' | 'kid';
+export type MemberRole = TripRole;
 
 export interface TravelerInfo {
   // Personal
@@ -143,7 +165,7 @@ export interface TripMember {
   uid: string;
   email: string;
   displayName: string;
-  role: MemberRole;
+  role: TripRole;
   joinedAt: string;
   invitedBy: string;
   travelerInfo?: TravelerInfo;

@@ -61,6 +61,23 @@ export const MEMBER_ROLES: Record<MemberRole, { label: string; description: stri
   owner: { label: 'Dueño', description: 'Control total del viaje' },
   editor: { label: 'Editor', description: 'Puede editar itinerario y documentos' },
   viewer: { label: 'Visor', description: 'Solo puede ver información' },
+  // The `kid` role is read-only at the data layer (same as `viewer`) but
+  // surfaces UI hints to render a simpler experience for younger travelers
+  // (bigger fonts, fewer options). See `useTripRole` for the permission
+  // matrix and `MEMBER_ROLE_COLORS` for the badge color.
+  kid: { label: 'Niño', description: 'Solo ver (interfaz simplificada)' },
+};
+
+/**
+ * Per-role badge colors used by the members page chips and the role
+ * dropdown. Kept here so the same palette is used wherever a role
+ * appears in the UI.
+ */
+export const MEMBER_ROLE_COLORS: Record<MemberRole, { bg: string; text: string; border: string }> = {
+  owner: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  editor: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  viewer: { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' },
+  kid: { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
 };
 
 export const DOCUMENT_CATEGORIES: Record<DocumentCategory, { label: string; icon: string; color: string }> = {

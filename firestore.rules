@@ -6,51 +6,186 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // ─── Role helpers ────────────────────────────────────────────────
+    //
+    // Roles are stored on `trips/{tripId}/members/{uid}.role` and live
+    // alongside the trip-level `createdBy` field. The trip creator is
+    // always the owner — they don't need a member doc to be one. This
+    // mirrors the client-side `useTripRole` hook so the two enforcement
+    // layers don't diverge.
+    //
+    // We never call helper functions across rule paths (Firestore's rule
+    // analyzer doesn't always flatten nested helpers reliably), so each
+    // permission check is inlined per allow statement. The cost is some
+    // duplication; the benefit is rules that don't silently flip from
+    // "allow" to "deny" when the analyzer can't see through a helper.
+    //
+    // Role ladder (descending power):
+    //   owner  → full write (rules side: createdBy == uid, OR member doc with role 'owner')
+    //   editor → can write events/expenses/photos/documents subcollections
+    //   viewer → read only
+    //   kid    → read only (UI-only difference vs viewer)
+    //
+    // The members subcollection itself is owner-only for writes — only
+    // the owner can change another user's role or remove them. A member
+    // is allowed to delete THEIR OWN member doc ("leave trip").
+    function isTripOwner(tripId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+    }
+    function isTripMember(tripId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+    function memberRoleIs(tripId, role) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == role;
+    }
+    function isTravelerInTrip(tripId) {
+      return isSignedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
+    }
+    function isTripEditor(tripId) {
+      // Editors can write trip content (events, expenses, photos,
+      // documents, checklist). The fallback to `travelerIds` is the
+      // backwards-compat hatch: legacy trips never created member docs
+      // for their collaborators, only listed them in `travelerIds` on
+      // the trip itself. Until those are migrated to the members
+      // subcollection we treat them as editors so they don't lose
+      // access overnight.
+      return memberRoleIs(tripId, 'editor')
+        || (isTravelerInTrip(tripId) && !exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)));
+    }
+
     // Trips: split allow statements per access path so the rule analyzer
     // can match each clean condition against the query.
     match /trips/{tripId} {
+      // ── Reads ──
       // 1) Owner reads their own trip.
       allow read: if isSignedIn()
                    && resource.data.createdBy == request.auth.uid;
 
-      // 2) Invited traveler.
+      // 2) Any member (owner/editor/viewer/kid) — a member doc grants read.
+      allow read: if isSignedIn()
+                   && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+
+      // 3) Invited traveler (legacy / no member doc).
       allow read: if isSignedIn()
                    && request.auth.uid in resource.data.get('travelerIds', []);
 
-      // 3) Public share-link viewer.
+      // 4) Public share-link viewer.
       allow read: if resource.data.shareToken is string
                    && resource.data.shareToken.size() > 0;
 
+      // ── Create ── any signed-in user can create a trip; they're the owner.
       allow create: if isSignedIn()
                      && request.resource.data.createdBy == request.auth.uid;
 
+      // ── Update ──
+      // 5) Owner can update anything except moving createdBy.
       allow update: if isSignedIn()
                      && resource.data.createdBy == request.auth.uid
                      && request.resource.data.createdBy == resource.data.createdBy;
 
+      // 6) Editor (member doc with role='editor') can update non-dangerous
+      //    fields. We protect the ownership-shaped fields by requiring
+      //    they be unchanged on the request. `createdBy` and the
+      //    `travelerIds` array are the bait-and-switch attack surface
+      //    (changing them lets a non-owner kick the owner or steal
+      //    membership of unrelated users), so they're frozen for editors.
+      allow update: if isSignedIn()
+                     && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
+                     && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == 'editor'
+                     && request.resource.data.createdBy == resource.data.createdBy
+                     && request.resource.data.get('travelerIds', []) == resource.data.get('travelerIds', []);
+
+      // ── Delete ── owner only.
       allow delete: if isSignedIn()
                      && resource.data.createdBy == request.auth.uid;
 
-      // Subcollections (members, events, documents, checklist, photos).
-      // Inline get() — no helper function — because helper-style had been
-      // unreliable across rule paths. Each allow is a single condition.
+      // ── Members subcollection ────────────────────────────────────────
+      //
+      // Writes are gated separately from the other subcollections because
+      // membership is the trust root: anyone who can write here can grant
+      // themselves arbitrary access. So we keep this tighter than
+      // "everything else".
+      //
+      //   - Read: any current member or the owner. We don't gate by role
+      //     because every member needs to see who else is on the trip.
+      //   - Create / Update: owner only (invitations are written to the
+      //     `invites` subcollection, not here directly).
+      //   - Delete: owner OR the member deleting their own doc (= "leave
+      //     trip"). The owner can't delete their own member doc — they
+      //     must delete the trip or transfer ownership.
+      match /members/{memberUid} {
+        allow read: if isSignedIn()
+                     && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+        allow read: if isSignedIn()
+                     && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+
+        allow create, update: if isSignedIn()
+                               && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+
+        allow delete: if isSignedIn()
+                       && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+        // Leave-trip: a member can remove their own doc. The owner can
+        // never reach this branch because `memberUid == request.auth.uid`
+        // for the owner means deleting their own membership — but the
+        // owner is allowed by the line above already (createdBy check)
+        // and we explicitly want them to keep ownership, so we add a
+        // guard that the requester isn't the trip's createdBy.
+        allow delete: if isSignedIn()
+                       && request.auth.uid == memberUid
+                       && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy != request.auth.uid;
+      }
+
+      // ── Other subcollections (events, expenses, documents, checklist,
+      //    photos, invites) ────────────────────────────────────────────
+      //
+      // Reads: same as the trip itself (any member, owner, traveler, or
+      // public-share viewer).
+      // Writes: owner OR editor (member doc with role='editor') OR
+      // legacy traveler-without-member-doc. Viewers and kids are read-only.
+      //
+      // We DON'T match `members/{docId}` here — that path is handled
+      // above with stricter rules. The {subcollection} wildcard won't
+      // shadow the explicit `members/` match because Firestore picks the
+      // most specific path. Just in case, the inner allow_writes is
+      // duplicated below to be explicit about non-members subcollections.
       match /{subcollection}/{docId} {
         allow read: if isSignedIn()
                      && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+        allow read: if isSignedIn()
+                     && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
         allow read: if isSignedIn()
                      && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
         allow read: if get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken is string
                      && get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken.size() > 0;
 
+        // Owner writes.
         allow write: if isSignedIn()
                       && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+        // Editor (member doc with role='editor') writes.
         allow write: if isSignedIn()
-                      && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
+                      && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
+                      && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == 'editor';
+        // Legacy traveler-without-member-doc fallback. Remove once the
+        // migration script has backfilled member docs for every entry
+        // in `travelerIds`. Until then this keeps existing trips usable.
+        allow write: if isSignedIn()
+                      && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', [])
+                      && !exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
 
         // Deep subcollections (e.g. trips/{id}/photos/{id}/comments).
+        // Same matrix as the parent: any reader can read, only
+        // owner/editor/legacy-traveler can write. Viewer/kid roles
+        // get read-only access here too.
         match /{deep=**} {
           allow read: if isSignedIn()
                        && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
+          allow read: if isSignedIn()
+                       && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
           allow read: if isSignedIn()
                        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
           allow read: if get(/databases/$(database)/documents/trips/$(tripId)).data.shareToken is string
@@ -59,7 +194,11 @@ service cloud.firestore {
           allow write: if isSignedIn()
                         && get(/databases/$(database)/documents/trips/$(tripId)).data.createdBy == request.auth.uid;
           allow write: if isSignedIn()
-                        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', []);
+                        && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))
+                        && get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == 'editor';
+          allow write: if isSignedIn()
+                        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.get('travelerIds', [])
+                        && !exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
         }
       }
     }

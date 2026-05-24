@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Users,
@@ -17,6 +17,9 @@ import {
   Shield,
   Heart,
   Plane,
+  Trash2,
+  LogOut,
+  ShieldCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -28,14 +31,20 @@ import {
 } from '@/context/TripDataContext';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useAuth } from '@/hooks/useAuth';
+import { useTripRole } from '@/hooks/useTripRole';
 import { useToast } from '@/context/ToastContext';
 import InviteForm from '@/components/trips/InviteForm';
-import { MEMBER_ROLES } from '@/config/constants';
+import { MEMBER_ROLES, MEMBER_ROLE_COLORS, ROUTES } from '@/config/constants';
 import { Modal } from '@/components/ui/Modal';
 import { glassStyle, classNames, getInitials } from '@/lib/utils/helpers';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/Button';
-import type { MemberRole, GlobalTraveler } from '@/types';
+import type { MemberRole, GlobalTraveler, TripMember } from '@/types';
+
+// Roles assignable from the role dropdown. Owner is excluded because
+// ownership transfer is a dedicated (future) flow — one owner per trip
+// is enforced at the rules layer too.
+const ASSIGNABLE_ROLES: MemberRole[] = ['editor', 'viewer', 'kid'];
 
 /* ---- Doc status helpers ---- */
 
@@ -230,6 +239,148 @@ function AssignedTravelerCard({ traveler, index }: AssignedTravelerCardProps) {
   );
 }
 
+/* ---- Member Row ---- */
+
+interface MemberRowProps {
+  member: TripMember;
+  index: number;
+  isCurrentUser: boolean;
+  /** Owner viewing the row gets the dropdown + remove button. */
+  canManage: boolean;
+  /** Disable destructive actions while a mutation is in flight. */
+  busy: boolean;
+  onRoleChange: (uid: string, role: MemberRole) => Promise<void>;
+  onRemove: (uid: string) => Promise<void>;
+  onLeave: () => Promise<void>;
+}
+
+function MemberRow({
+  member,
+  index,
+  isCurrentUser,
+  canManage,
+  busy,
+  onRoleChange,
+  onRemove,
+  onLeave,
+}: MemberRowProps) {
+  // Resolve role with the same fallback as `useTripRole`: legacy member
+  // docs without a `role` field default to editor so we don't show them
+  // as "viewer" by mistake.
+  const role: MemberRole = member.role || 'editor';
+  const roleInfo = MEMBER_ROLES[role];
+  const roleColor = MEMBER_ROLE_COLORS[role];
+  const isOwner = role === 'owner';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.04 }}
+      className="rounded-xl p-4 flex items-center gap-3"
+      style={glassStyle}
+    >
+      {/* Avatar */}
+      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center flex-shrink-0">
+        <span className="text-white font-bold text-xs">
+          {getInitials(member.displayName || member.email)}
+        </span>
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-gray-900 font-medium text-sm truncate">
+            {member.displayName || 'Sin nombre'}
+          </p>
+          {isCurrentUser && (
+            <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full border border-blue-200">
+              Tú
+            </span>
+          )}
+        </div>
+        <p className="text-gray-500 text-xs truncate">{member.email}</p>
+      </div>
+
+      {/* Role: dropdown (owner viewing a non-owner) OR static chip */}
+      {canManage && !isOwner ? (
+        <select
+          value={role}
+          disabled={busy}
+          onChange={(e) => onRoleChange(member.uid, e.target.value as MemberRole)}
+          className={classNames(
+            'text-xs font-medium px-2.5 py-1.5 rounded-full border cursor-pointer transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-blue-200',
+            roleColor.bg,
+            roleColor.text,
+            roleColor.border,
+            busy ? 'opacity-50' : '',
+          )}
+          aria-label={`Cambiar rol de ${member.displayName || member.email}`}
+        >
+          {ASSIGNABLE_ROLES.map((r) => (
+            <option key={r} value={r} className="bg-white text-gray-900">
+              {MEMBER_ROLES[r].label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span
+          className={classNames(
+            'text-xs font-medium px-2.5 py-1 rounded-full border flex-shrink-0 inline-flex items-center gap-1',
+            roleColor.bg,
+            roleColor.text,
+            roleColor.border,
+          )}
+        >
+          {isOwner && <ShieldCheck className="w-3 h-3" />}
+          {roleInfo.label}
+        </span>
+      )}
+
+      {/* Owner action: remove member (excluding self / other owners). */}
+      {canManage && !isOwner && !isCurrentUser && (
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              window.confirm(
+                `Quitar a ${member.displayName || member.email} del viaje?`,
+              )
+            ) {
+              void onRemove(member.uid);
+            }
+          }}
+          disabled={busy}
+          aria-label={`Quitar a ${member.displayName || member.email} del viaje`}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+
+      {/* Non-owner viewing their own row gets "Salir del viaje". The
+          owner cannot leave through this control — they need to transfer
+          ownership first (or use the delete-trip flow). */}
+      {!canManage && isCurrentUser && !isOwner && (
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('¿Salir del viaje? Perderás el acceso.')) {
+              void onLeave();
+            }
+          }}
+          disabled={busy}
+          className="text-xs font-semibold text-rose-600 hover:text-rose-700 px-2 py-1 rounded-md hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 flex-shrink-0"
+        >
+          <LogOut className="w-3 h-3" />
+          Salir
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
 /* ---- Traveler Selector Modal ---- */
 
 interface TravelerSelectorProps {
@@ -343,15 +494,29 @@ function TravelerSelector({ open, onClose, allTravelers, selectedIds, onSave }: 
 
 export default function MembersPage() {
   const params = useParams();
+  const router = useRouter();
   const tripId = params.tripId as string;
   const { trip } = useTrip();
-  const { members: _members, invites, loading: membersLoading, inviteMember } = useMembers();
+  const {
+    members,
+    invites,
+    loading: membersLoading,
+    inviteMember,
+    updateMemberRole,
+    removeMember,
+    leaveTrip,
+  } = useMembers();
   const { travelers: allGlobalTravelers, loading: travelersLoading } = useGlobalTravelers();
-  const { user: _user } = useAuth();
+  const { user } = useAuth();
+  const { can } = useTripRole();
   const { toast } = useToast();
   const [showInvite, setShowInvite] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [showSelector, setShowSelector] = useState(false);
+  // Single "busy" flag for role changes / removals / leave — keeps the UI
+  // simple (one mutation at a time) and prevents an owner from
+  // accidentally double-clicking a destructive action.
+  const [mutating, setMutating] = useState(false);
 
   const loading = membersLoading || travelersLoading;
 
@@ -371,6 +536,48 @@ export default function MembersPage() {
       toast('Error al enviar la invitacion', 'error');
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleRoleChange = async (uid: string, role: MemberRole) => {
+    try {
+      setMutating(true);
+      await updateMemberRole(uid, role);
+      toast('Rol actualizado', 'success');
+    } catch (err) {
+      console.error('Error al actualizar rol:', err);
+      toast('No se pudo actualizar el rol', 'error');
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  const handleRemoveMember = async (uid: string) => {
+    try {
+      setMutating(true);
+      await removeMember(uid);
+      toast('Miembro removido del viaje', 'success');
+    } catch (err) {
+      console.error('Error al remover miembro:', err);
+      toast('No se pudo remover al miembro', 'error');
+    } finally {
+      setMutating(false);
+    }
+  };
+
+  const handleLeaveTrip = async () => {
+    try {
+      setMutating(true);
+      await leaveTrip();
+      toast('Saliste del viaje', 'success');
+      // Push the user back to the dashboard — they no longer have read
+      // access to this trip so staying on the page would just flash an
+      // empty/permission-denied state.
+      router.push(ROUTES.app.dashboard);
+    } catch (err) {
+      console.error('Error al salir del viaje:', err);
+      toast('No pudimos sacarte del viaje', 'error');
+      setMutating(false);
     }
   };
 
@@ -479,6 +686,49 @@ export default function MembersPage() {
           </div>
         )}
       </motion.div>
+
+      {/* Members section — formal roles, separate from the "travelers"
+          assignment above (which is just metadata about who's coming).
+          A member is a Firebase Auth user with access to the trip; a
+          traveler is a logical person with a passport. They overlap but
+          aren't the same thing. */}
+      {members.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.12 }}
+          className="space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-gray-900 font-bold text-lg flex items-center gap-2">
+              <Shield className="w-5 h-5 text-amber-600" />
+              Miembros del viaje ({members.length})
+            </h3>
+            {can.manageMembers && (
+              <Button variant="secondary" size="sm" onClick={() => setShowInvite(true)}>
+                <UserPlus className="w-4 h-4 mr-2" />
+                Invitar
+              </Button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {members.map((member, index) => (
+              <MemberRow
+                key={member.uid}
+                member={member}
+                index={index}
+                isCurrentUser={member.uid === user?.uid}
+                canManage={can.manageMembers}
+                busy={mutating}
+                onRoleChange={handleRoleChange}
+                onRemove={handleRemoveMember}
+                onLeave={handleLeaveTrip}
+              />
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Invitaciones pendientes */}
       {pendingInvites.length > 0 && (

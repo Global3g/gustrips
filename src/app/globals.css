@@ -104,10 +104,53 @@ html {
 
 body {
   background: #f9fafb;
+  /* Default body font: Inter (utility sans). Components that want the
+     editorial display serif use the .text-editorial / .text-hero classes
+     which opt into Fraunces explicitly. */
   color: #111827;
-  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  font-family: var(--font-inter), var(--font-dm-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
   font-feature-settings: "kern" 1, "liga" 1;
   overflow-x: hidden;
+}
+
+/* Default --pillar-* values so components that consume them work even
+   outside a wrapping .mode-* class. Mirrors mode-planning (the safest
+   default — cream + ocean blue). Trip routes still override these via
+   .mode-active / .mode-memories from the layout. */
+:root {
+  --pillar-bg: #fafaf7;
+  --pillar-surface: #ffffff;
+  --pillar-ink: #1a1a1a;
+  --pillar-ink-soft: #5c5247;
+  --pillar-accent: #1a3d62;
+  --pillar-accent-soft: #4e6b85;
+  --pillar-rule: #e6e1d7;
+  --pillar-warm: #e8c87a;
+  --pillar-money: #2f6b4f;
+  --pillar-money-soft: #4e8a78;
+  --pillar-money-bg: rgba(78, 138, 120, 0.08);
+}
+
+/* View Transitions API setup — Next 15 / React 19 emit
+   `:root(active-view-transition)` pseudo when a transition is in flight.
+   We give common nav patterns smooth defaults so any page swap looks
+   intentional without per-component work. Browsers without VTA ignore
+   these rules. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Helper class: tabular numbers — apply to any monetary or time element
+   so the digits don't dance during animations. */
+.tabular-nums-strict {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 /* ============================================

@@ -7,6 +7,7 @@ import {
   onSnapshot,
   addDoc,
   setDoc,
+  deleteDoc,
   orderBy,
   query,
 } from 'firebase/firestore';
@@ -22,6 +23,14 @@ interface UseMembersReturn {
   loading: boolean;
   inviteMember: (email: string, role: MemberRole) => Promise<void>;
   updateTravelerInfo: (uid: string, info: TravelerInfo) => Promise<void>;
+  /** Owner-only: change another member's role. The owner role itself
+   * cannot be reassigned through this — transferring ownership is a
+   * separate flow (not yet implemented). */
+  updateMemberRole: (uid: string, role: MemberRole) => Promise<void>;
+  /** Owner-only: revoke a member from the trip. */
+  removeMember: (uid: string) => Promise<void>;
+  /** Any non-owner member: leave the trip voluntarily. */
+  leaveTrip: () => Promise<void>;
 }
 
 export function useMembers(tripId: string): UseMembersReturn {
@@ -122,5 +131,53 @@ export function useMembers(tripId: string): UseMembersReturn {
     [user, tripId],
   );
 
-  return { members, invites, loading, inviteMember, updateTravelerInfo };
+  const updateMemberRole = useCallback(
+    async (uid: string, role: MemberRole): Promise<void> => {
+      if (!user) throw new Error('Usuario no autenticado');
+      if (!tripId) throw new Error('ID de viaje no proporcionado');
+      // The UI gates this behind `can.manageMembers` and the Firestore
+      // rules enforce owner-only as well — this is the third line of
+      // defense (helpful error messages for engineers debugging in dev).
+      const db = getClientDb();
+      const memberRef = doc(db, 'trips', tripId, 'members', uid);
+      await setDoc(memberRef, { role }, { merge: true });
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [user, tripId],
+  );
+
+  const removeMember = useCallback(
+    async (uid: string): Promise<void> => {
+      if (!user) throw new Error('Usuario no autenticado');
+      if (!tripId) throw new Error('ID de viaje no proporcionado');
+      const db = getClientDb();
+      const memberRef = doc(db, 'trips', tripId, 'members', uid);
+      await deleteDoc(memberRef);
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+    },
+    [user, tripId],
+  );
+
+  const leaveTrip = useCallback(async (): Promise<void> => {
+    if (!user) throw new Error('Usuario no autenticado');
+    if (!tripId) throw new Error('ID de viaje no proporcionado');
+    // Self-delete: the firestore rules allow a member to remove their
+    // own member doc. The owner uses removeMember/transfer-ownership
+    // instead and never reaches this path.
+    const db = getClientDb();
+    const memberRef = doc(db, 'trips', tripId, 'members', user.uid);
+    await deleteDoc(memberRef);
+    try { markMutation(); } catch { /* localStorage may be unavailable */ }
+  }, [user, tripId]);
+
+  return {
+    members,
+    invites,
+    loading,
+    inviteMember,
+    updateTravelerInfo,
+    updateMemberRole,
+    removeMember,
+    leaveTrip,
+  };
 }

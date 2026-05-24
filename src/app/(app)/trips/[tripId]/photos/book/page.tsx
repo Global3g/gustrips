@@ -52,6 +52,7 @@ import {
   useAlbumFromContext as useAlbum,
 } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
+import { useTripMode } from '@/hooks/useTripMode';
 
 import PagePreview from '@/components/trips/photos/book/PagePreview';
 import PageList from '@/components/trips/photos/book/PageList';
@@ -139,6 +140,11 @@ export default function PhotoBookPage() {
   const { events } = useEvents();
   const { albumPhotos } = useAlbum();
   const { toast } = useToast();
+  // Trip mode drives the auto-seed behavior below: once the trip has ended
+  // ('memories') and the user already shot enough photos, opening the book
+  // editor should not greet them with a picker — they almost certainly want
+  // to look at their book, not configure it.
+  const tripMode = useTripMode(trip);
 
   const [state, setState] = useState<BookState | null>(null);
   const [activePageId, setActivePageId] = useState<string | null>(null);
@@ -165,20 +171,40 @@ export default function PhotoBookPage() {
   const previewWrapRef = useRef<HTMLDivElement | null>(null);
 
   /* ─── Initialisation (load or prompt) ──────────────────── */
+  // Auto-seed threshold for the "memories" mode. Below this many album
+  // photos we still ask the user with the picker — generating a book from
+  // 2-3 photos rarely produces anything worth showing.
+  const MEMORIES_AUTOSEED_MIN_PHOTOS = 5;
   const seededRef = useRef(false);
   useEffect(() => {
     if (!trip || seededRef.current) return;
+    // Wait for tripMode to resolve. `useTripMode(null)` defaults to
+    // 'planning', so we gate on having an actual trip first (already
+    // covered by the early return above), then trust the hook output.
     seededRef.current = true;
     const restored = loadFromStorage(tripId);
     if (restored) {
       setState(restored);
       setActivePageId(restored.cover.id);
-    } else {
-      // First visit: don't auto-seed. Show the setup picker so the user
-      // chooses between "generate from events" and "start blank".
-      setNeedsSetup(true);
+      return;
     }
-  }, [trip, tripId]);
+    // First visit: in 'memories' mode with enough material, jump straight
+    // to a seeded book and inform the user with a toast. They can always
+    // tweak / reset via the existing Reiniciar button. In every other case
+    // (planning, active, or memories with too few photos) we fall back to
+    // the original picker so the user keeps full control.
+    if (
+      tripMode.mode === 'memories' &&
+      albumPhotos.length >= MEMORIES_AUTOSEED_MIN_PHOTOS
+    ) {
+      const fresh = seedBookFromTrip(trip, events, albumPhotos);
+      setState(fresh);
+      setActivePageId(fresh.cover.id);
+      toast('Tu photobook está listo. Editalo a tu gusto.', 'success');
+      return;
+    }
+    setNeedsSetup(true);
+  }, [trip, tripId, tripMode.mode, albumPhotos, events, toast]);
 
   const handleSeedFromEvents = useCallback(() => {
     if (!trip) return;

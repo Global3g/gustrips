@@ -22,6 +22,7 @@ import {
   MoreHorizontal,
   Copy,
   Trash2,
+  Shield,
   type LucideIcon,
 } from 'lucide-react';
 import { EVENT_TYPES, CURRENCIES, DEFAULT_CURRENCY, PAYMENT_METHODS } from '@/config/constants';
@@ -38,6 +39,7 @@ import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useTrip } from '@/hooks/useTrip';
+import { useTripRole } from '@/hooks/useTripRole';
 import { getClientStorage } from '@/lib/firebase/client';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { extractReceiptData } from '@/lib/utils/receiptOCR';
@@ -401,6 +403,12 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const { addTripExpense } = useExpenses(tripId || '');
   const { travelers: allTravelers } = useGlobalTravelers();
   const { trip } = useTrip(tripId || '');
+  // Role gating — viewer/kid get a read-only chrome with no save button.
+  // We still let them open the form so they can inspect the event details
+  // (the form fields themselves stay enabled because most are non-input
+  // visuals like timezone displays — the gate is at the submit boundary).
+  const { can: tripRoleCan } = useTripRole();
+  const isReadOnly = tripRoleCan.readOnly;
 
   // Get trip travelers (filtered by trip.travelerIds — only people actually on this trip)
   const tripTravelers = useMemo(() => {
@@ -1444,6 +1452,16 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       titleSlot={richHeader}
     >
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
+        {/* Read-only banner — viewer/kid roles see the event but can't
+            save changes. The form fields remain visible so they have
+            the full context; only the submit affordances are removed
+            below. */}
+        {isReadOnly && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex items-center gap-2 text-amber-800 text-xs font-medium">
+            <Shield className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Solo lectura — tu rol no permite editar este evento.</span>
+          </div>
+        )}
         {/* Edit mode: show all fields at once */}
         {step === -1 ? (
           <>
@@ -1454,7 +1472,9 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
             </div>
             <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-200">
               <div className="flex items-center gap-2">
-                {isEdit && onDelete && initialData && (
+                {/* Destructive + duplicate actions also hide for read-only roles.
+                    Cerrar/Cancelar always shows so the user can dismiss the modal. */}
+                {!isReadOnly && isEdit && onDelete && initialData && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -1474,7 +1494,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
                     Eliminar
                   </Button>
                 )}
-                {isEdit && onDuplicate && initialData && (
+                {!isReadOnly && isEdit && onDuplicate && initialData && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -1489,11 +1509,13 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
               </div>
               <div className="flex items-center gap-2">
                 <Button type="button" variant="ghost" onClick={handleClose} disabled={loading}>
-                  Cancelar
+                  {isReadOnly ? 'Cerrar' : 'Cancelar'}
                 </Button>
-                <Button type="submit" loading={loading} onClick={() => setIntentionalSubmit(true)}>
-                  Guardar Cambios
-                </Button>
+                {!isReadOnly && (
+                  <Button type="submit" loading={loading} onClick={() => setIntentionalSubmit(true)}>
+                    Guardar Cambios
+                  </Button>
+                )}
               </div>
             </div>
           </>
@@ -1533,26 +1555,31 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
               onClick={handleClose}
               disabled={loading}
             >
-              Cancelar
+              {isReadOnly ? 'Cerrar' : 'Cancelar'}
             </Button>
 
-            {step < 2 ? (
-              <Button
-                type="button"
-                onClick={goNext}
-                disabled={loading}
-                icon={ChevronRight}
-              >
-                Siguiente
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                loading={loading}
-                onClick={() => setIntentionalSubmit(true)}
-              >
-                {isEdit ? 'Guardar Cambios' : 'Crear Evento'}
-              </Button>
+            {/* Step navigation + submit. Viewers/kids never see the
+                submit button — they can browse the steps to inspect
+                what's there, but can't persist anything. */}
+            {!isReadOnly && (
+              step < 2 ? (
+                <Button
+                  type="button"
+                  onClick={goNext}
+                  disabled={loading}
+                  icon={ChevronRight}
+                >
+                  Siguiente
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  loading={loading}
+                  onClick={() => setIntentionalSubmit(true)}
+                >
+                  {isEdit ? 'Guardar Cambios' : 'Crear Evento'}
+                </Button>
+              )
             )}
           </div>
         </div>
