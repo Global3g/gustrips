@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v30-2026-05-24-audit-v2-multiagent-batch';
+const SW_VERSION = 'gustrips-v31-2026-05-24-maleta-sidebar-fix';
 const STATIC_CACHE = `${SW_VERSION}-static`;
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const IMAGE_CACHE = `${SW_VERSION}-images`;
