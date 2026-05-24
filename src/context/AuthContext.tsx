@@ -40,21 +40,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // refresh (Firebase auto-refreshes ~5 min before expiry). That keeps
     // the cookie in sync with a live ID token — which is what server-side
     // verification needs.
-    const unsubscribe = onIdTokenChanged(getClientAuth(), async (fbUser) => {
+    // NOTE: this callback must stay synchronous up to `setLoading(false)`.
+    // onIdTokenChanged restores the cached Firebase user from IndexedDB with
+    // NO network, but `getIdToken()` hits the network whenever the cached
+    // token is stale (tokens expire in 1h). Awaiting it here used to block
+    // `setLoading(false)` — so once the token went stale offline or on a
+    // flaky connection (hello, London roaming), the refresh hung/threw and
+    // the whole app stuck on the "Cargando..." spinner with `user` null.
+    // We now set the user + clear loading immediately, and refresh the cookie
+    // in the background as best-effort.
+    const unsubscribe = onIdTokenChanged(getClientAuth(), (fbUser) => {
       setFirebaseUser(fbUser);
 
       if (fbUser) {
-        const token = await fbUser.getIdToken();
-        // ID tokens expire in 1h. Cap cookie lifetime to match so a stale
-        // token is never sent back; the Firebase SDK refreshes itself and
-        // re-fires this handler with a fresh token before expiry.
-        const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-        Cookies.set('auth-token', token, {
-          expires: 1 / 24, // 1 hour
-          path: '/',
-          sameSite: 'Lax',
-          secure: isSecure,
-        });
         setUser({
           uid: fbUser.uid,
           email: fbUser.email || '',
@@ -65,6 +63,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // with the user id (and we can search "all errors for user X").
         // The email is intentionally NOT sent — id is enough to triage.
         Sentry.setUser({ id: fbUser.uid });
+
+        // Keep the auth-token cookie in sync for server-side verification.
+        // Fire-and-forget: never block render and never throw out of the
+        // observer (that would leave loading=true forever offline).
+        fbUser
+          .getIdToken()
+          .then((token) => {
+            const isSecure =
+              typeof window !== 'undefined' && window.location.protocol === 'https:';
+            Cookies.set('auth-token', token, {
+              expires: 1 / 24, // 1 hour — matches the ID token lifetime
+              path: '/',
+              sameSite: 'Lax',
+              secure: isSecure,
+            });
+          })
+          .catch(() => {
+            /* offline or refresh failed — keep using the app with cached data */
+          });
       } else {
         Cookies.remove('auth-token', { path: '/' });
         setUser(null);
