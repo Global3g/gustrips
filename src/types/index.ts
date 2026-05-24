@@ -67,9 +67,19 @@ export interface QuickNote {
 
 // ─── Album Photo ───────────────────────────────────
 export interface AlbumPhoto {
-  url: string;        // Thumbnail used in galleries (600px after optimization, legacy 1200px)
-  fullUrl?: string;   // Full-quality version (cap 3000px, 92% JPEG) — used in lightbox
+  url: string;        // Thumbnail used in galleries (400px JPEG; legacy 600/1200px)
+  fullUrl?: string;   // Full-quality version shown in lightbox/photobook. For new
+                      // uploads this is the archived original (see originalUrl).
   optimized?: boolean; // True once the thumbnail has been re-compressed to 600px
+  // ── original + derivatives (since the Resize Images extension, 2026-05) ──
+  // The pristine original is archived for download / print / photobook; the
+  // app shows small WebP derivatives the extension generates from it. The
+  // derivative *paths* are deterministic (see photoUploader) so we store them
+  // and resolve download URLs lazily, falling back to the original.
+  originalUrl?: string;     // Full-res original (download / print / photobook)
+  originalPath?: string;    // Storage path of the original
+  viewPath?: string;        // Storage path of the 1280px WebP (lightbox view)
+  thumbWebpPath?: string;   // Storage path of the 400px WebP (grid)
   date: string;
   caption?: string;
   eventId?: string;

@@ -20,7 +20,7 @@
 
 export interface PhotoWorkerResult {
   thumb: Blob;
-  full: Blob;
+  original: Blob;
   contentHash: string;
 }
 
@@ -71,7 +71,7 @@ interface WorkerMessage {
   id: string;
   ok: boolean;
   thumb?: Blob;
-  full?: Blob;
+  original?: Blob;
   contentHash?: string;
   error?: string;
   reason?: string;
@@ -93,10 +93,10 @@ function getWorker(): Worker {
     if (!entry) return;
     pending.delete(msg.id);
 
-    if (msg.ok && msg.thumb && msg.full && typeof msg.contentHash === 'string') {
+    if (msg.ok && msg.thumb && msg.original && typeof msg.contentHash === 'string') {
       entry.resolve({
         thumb: msg.thumb,
-        full: msg.full,
+        original: msg.original,
         contentHash: msg.contentHash,
       });
     } else if (!msg.ok && msg.reason === 'heic-needs-main-thread') {

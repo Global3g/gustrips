@@ -49,7 +49,14 @@ interface ProcessSuccess {
   id: string;
   ok: true;
   thumb: Blob;
-  full: Blob;
+  /**
+   * The full-resolution original to archive (download / print / photobook).
+   * For HEIC inputs this is the converted JPEG; otherwise the source bytes
+   * pass through untouched. The big display version is no longer produced
+   * here — the Resize Images extension generates the WebP derivatives
+   * server-side from this original.
+   */
+  original: Blob;
   contentHash: string;
 }
 
@@ -206,12 +213,12 @@ async function handleProcess(req: ProcessRequest): Promise<WorkerResponse> {
   }
 
   try {
-    const [thumb, full] = await Promise.all([
-      compressBitmap(bitmap, 600, 0.75),
-      compressBitmap(bitmap, 3000, 0.92),
-    ]);
+    // Only the small grid thumb is generated on-device now. The expensive
+    // 3000px encode is gone — the extension makes the display sizes (WebP)
+    // server-side from `original`.
+    const thumb = await compressBitmap(bitmap, 400, 0.78);
     const contentHash = await hashPromise;
-    return { id, ok: true, thumb, full, contentHash };
+    return { id, ok: true, thumb, original: workingBlob, contentHash };
   } catch (err) {
     return {
       id,

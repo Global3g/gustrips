@@ -370,9 +370,26 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           console.error('Error deleting photo from storage:', err);
         }
       };
+      // Delete by a known Storage path (the WebP derivatives the extension
+      // generated — they have no download URL stored, only their path).
+      const tryDeletePath = async (storagePath?: string) => {
+        if (!storagePath) return;
+        try {
+          await deleteObject(ref(getClientStorage(), storagePath));
+        } catch (err) {
+          // Derivative may not exist yet (extension still running) or already
+          // gone — non-fatal.
+          if ((err as { code?: string })?.code !== 'storage/object-not-found') {
+            console.error('Error deleting derivative from storage:', err);
+          }
+        }
+      };
       await Promise.all([
         tryDelete(photo.url),
         photo.fullUrl ? tryDelete(photo.fullUrl) : Promise.resolve(),
+        tryDeletePath(photo.originalPath),
+        tryDeletePath(photo.viewPath),
+        tryDeletePath(photo.thumbWebpPath),
       ]);
     },
     [tripId, trip],

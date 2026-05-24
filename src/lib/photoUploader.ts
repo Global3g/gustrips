@@ -138,7 +138,7 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
   // worker itself decided to bounce back (e.g. heic2any couldn't load
   // inside the worker context).
   let thumbBlob: Blob;
-  let fullBlob: Blob;
+  let originalBlob: Blob;
   let contentHash: string | null;
   let safeName: string;
 
@@ -169,18 +169,17 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
       workingFile = await normalizeImageFile(workingFile);
     }
     safeName = (workingFile.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const blobForCompression: Blob = workingFile;
-    [thumbBlob, fullBlob] = await Promise.all([
-      compressImage(blobForCompression, 600, 0.75),
-      compressImage(blobForCompression, 3000, 0.92),
-    ]);
+    // Archive the (HEIC-converted) full-res original untouched — no 3000px
+    // re-encode. The Resize Images extension makes the display sizes from it.
+    originalBlob = workingFile;
+    thumbBlob = await compressImage(workingFile, 400, 0.78);
     contentHash = await hashPromise;
   } else {
     // ── Worker path ───────────────────────────────────────────────────
-    // The worker has already done HEIC conversion + both compress passes
-    // + hashing. We just need a sane filename for Storage.
+    // The worker did HEIC conversion + the small thumb + hashing, and hands
+    // back the full-res original to archive. We just need a sane filename.
     thumbBlob = workerResult.thumb;
-    fullBlob = workerResult.full;
+    originalBlob = workerResult.original;
     contentHash = workerResult.contentHash;
     safeName = (fileName || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
     // Strip a .heic extension on the safeName since the bytes are now JPEG.
@@ -189,29 +188,43 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
     }
   }
 
-  const storage_thumb = ref(storage, `trips/${tripId}/album/${timestamp}_${safeName}`);
-  const storage_full = ref(storage, `trips/${tripId}/album/${timestamp}_full_${safeName}`);
+  // The small thumb lives directly under album/ (NOT watched by the resize
+  // extension). The original goes under album/originals/ — the extension
+  // watches that path and writes WebP derivatives into originals/thumbnails/
+  // with deterministic names (verified against the extension source):
+  //   <fileNameWithoutExt>_<W>x<H>.webp
+  const thumbPath = `trips/${tripId}/album/${timestamp}_thumb_${safeName}`;
+  const originalPath = `trips/${tripId}/album/originals/${timestamp}_${safeName}`;
+  const baseNoExt = safeName.replace(/\.[^.]+$/, '');
+  const derivBase = `trips/${tripId}/album/originals/thumbnails/${timestamp}_${baseNoExt}`;
+  const viewPath = `${derivBase}_1280x1280.webp`;
+  const thumbWebpPath = `${derivBase}_400x400.webp`;
+
+  const storage_thumb = ref(storage, thumbPath);
+  const storage_original = ref(storage, originalPath);
 
   // Track which blobs landed in Storage so we can clean up if a later
   // step fails — otherwise a failed upload leaves orphans that Storage
   // bills us for forever.
   let thumbUploaded = false;
-  let fullUploaded = false;
+  let originalUploaded = false;
   try {
     const results = await Promise.allSettled([
       uploadBytes(storage_thumb, thumbBlob, { contentType: 'image/jpeg' }),
-      uploadBytes(storage_full, fullBlob, { contentType: 'image/jpeg' }),
+      uploadBytes(storage_original, originalBlob, {
+        contentType: originalBlob.type || 'image/jpeg',
+      }),
     ]);
     thumbUploaded = results[0].status === 'fulfilled';
-    fullUploaded = results[1].status === 'fulfilled';
-    if (!thumbUploaded || !fullUploaded) {
+    originalUploaded = results[1].status === 'fulfilled';
+    if (!thumbUploaded || !originalUploaded) {
       const reason = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
       throw reason?.reason ?? new Error('uploadBytes failed');
     }
 
-    const [url, fullUrl] = await Promise.all([
+    const [url, originalUrl] = await Promise.all([
       getDownloadURL(storage_thumb),
-      getDownloadURL(storage_full),
+      getDownloadURL(storage_original),
     ]);
 
     // contentHash is already resolved (either from the worker or from
@@ -219,7 +232,13 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
 
     const photo: AlbumPhoto = {
       url,
-      fullUrl,
+      // Until we swap the lightbox to the WebP view, full-quality views
+      // (lightbox, photobook, collage) read the archived original.
+      fullUrl: originalUrl,
+      originalUrl,
+      originalPath,
+      viewPath,
+      thumbWebpPath,
       optimized: true,
       date,
       uploadedAt: nowISO(),
@@ -253,7 +272,7 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
     // Best-effort cleanup of orphaned Storage objects.
     await Promise.allSettled([
       thumbUploaded ? deleteObject(storage_thumb) : Promise.resolve(),
-      fullUploaded ? deleteObject(storage_full) : Promise.resolve(),
+      originalUploaded ? deleteObject(storage_original) : Promise.resolve(),
     ]);
     throw err;
   }
