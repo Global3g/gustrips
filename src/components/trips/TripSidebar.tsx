@@ -14,6 +14,7 @@ import {
   CalendarDays,
   Users,
   CheckSquare,
+  Backpack,
   ExternalLink,
   Camera,
   Map,
@@ -670,6 +671,13 @@ export default function TripSidebar({ tripId, trip, events, currentPath, onScanD
             icon={<CheckSquare className="w-4 h-4" />}
             isActive={isActive('/checklist')}
             color="checklist"
+          />
+          <NavItem
+            href={basePath + '/packing'}
+            label="Maleta"
+            icon={<Backpack className="w-4 h-4" />}
+            isActive={isActive('/packing')}
+            color="packing"
           />
         </CollapsibleSection>
 
