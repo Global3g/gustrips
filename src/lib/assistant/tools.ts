@@ -379,6 +379,8 @@ export async function executeToolCall(
         params.set('location', `${deps.userLocation.lat},${deps.userLocation.lng}`);
         params.set('radius', '2500');
       }
+      // tripId lets the server enforce the per-trip daily search limit.
+      if (deps.trip?.id) params.set('tripId', deps.trip.id);
       try {
         const res = await fetch(
           `/api/places?${params.toString()}`,
@@ -411,8 +413,9 @@ export async function executeToolCall(
       const placeId = String(args.placeId || '').trim();
       if (!placeId) return JSON.stringify({ ok: false, error: 'Falta placeId' });
       try {
+        const tripParam = deps.trip?.id ? `&tripId=${encodeURIComponent(deps.trip.id)}` : '';
         const res = await fetch(
-          `/api/places?action=details&id=${encodeURIComponent(placeId)}`,
+          `/api/places?action=details&id=${encodeURIComponent(placeId)}${tripParam}`,
           { signal: AbortSignal.timeout(30_000) },
         );
         const json = await res.json();
@@ -437,8 +440,9 @@ export async function executeToolCall(
 
       let place: any;
       try {
+        const tripParam = deps.trip?.id ? `&tripId=${encodeURIComponent(deps.trip.id)}` : '';
         const res = await fetch(
-          `/api/places?action=details&id=${encodeURIComponent(placeId)}`,
+          `/api/places?action=details&id=${encodeURIComponent(placeId)}${tripParam}`,
           { signal: AbortSignal.timeout(30_000) },
         );
         const json = await res.json();

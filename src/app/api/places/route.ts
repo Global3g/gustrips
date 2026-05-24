@@ -2,6 +2,14 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  searchCacheKey,
+  detailsCacheKey,
+  getCached,
+  setCached,
+  checkLimits,
+  recordCall,
+} from '@/lib/places/cache';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -129,9 +137,23 @@ async function handleSearch(req: NextRequest) {
   const query = (req.nextUrl.searchParams.get('q') || '').trim();
   const location = (req.nextUrl.searchParams.get('location') || '').trim();
   const radiusRaw = (req.nextUrl.searchParams.get('radius') || '').trim();
+  const tripId = (req.nextUrl.searchParams.get('tripId') || '').trim() || undefined;
 
   if (query.length < 2) {
     return NextResponse.json({ ok: false, error: 'Consulta demasiado corta' }, { status: 400 });
+  }
+
+  // 1. Cache: nearby same-query searches share an entry (7d TTL). Free hit.
+  const cacheKey = searchCacheKey(query, location, radiusRaw);
+  const cached = await getCached(cacheKey);
+  if (cached !== null) {
+    return NextResponse.json({ ok: true, data: cached, cached: true });
+  }
+
+  // 2. Cost gates: monthly cap + per-trip daily limit. Fail-open.
+  const gate = await checkLimits(tripId);
+  if (!gate.allowed) {
+    return NextResponse.json({ ok: false, error: gate.reason, capped: true });
   }
 
   const body: Record<string, unknown> = {
@@ -177,13 +199,28 @@ async function handleSearch(req: NextRequest) {
 
   const data = await response.json();
   const results = (Array.isArray(data?.places) ? data.places : []).map(mapSearchResult);
+  // Real call succeeded: cache the result + count it against the budget.
+  await Promise.all([setCached(cacheKey, results, 'search'), recordCall(tripId)]);
   return NextResponse.json({ ok: true, data: results });
 }
 
 async function handleDetails(req: NextRequest) {
   const id = (req.nextUrl.searchParams.get('id') || '').trim();
+  const tripId = (req.nextUrl.searchParams.get('tripId') || '').trim() || undefined;
   if (!id) {
     return NextResponse.json({ ok: false, error: 'Falta placeId' }, { status: 400 });
+  }
+
+  // Place details rarely change — cache aggressively (30d).
+  const cacheKey = detailsCacheKey(id);
+  const cached = await getCached(cacheKey);
+  if (cached !== null) {
+    return NextResponse.json({ ok: true, data: cached, cached: true });
+  }
+
+  const gate = await checkLimits(tripId);
+  if (!gate.allowed) {
+    return NextResponse.json({ ok: false, error: gate.reason, capped: true });
   }
 
   const placePath = id.startsWith('places/') ? id : `places/${id}`;
@@ -208,7 +245,9 @@ async function handleDetails(req: NextRequest) {
   }
 
   const data = await response.json();
-  return NextResponse.json({ ok: true, data: mapDetailsResult(data) });
+  const mapped = mapDetailsResult(data);
+  await Promise.all([setCached(cacheKey, mapped, 'details'), recordCall(tripId)]);
+  return NextResponse.json({ ok: true, data: mapped });
 }
 
 export async function GET(req: NextRequest) {
