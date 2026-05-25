@@ -11,6 +11,7 @@
  */
 
 export type PackingCategory =
+  | 'esenciales'
   | 'ropa'
   | 'calzado'
   | 'aseo'
@@ -181,6 +182,7 @@ export const PACKING_TEMPLATE_LIST: PackingTemplate[] = [BEACH, SKI, CITY, ROADT
 
 /** Stable list of every category that can appear in a packing list. */
 export const PACKING_CATEGORIES: PackingCategory[] = [
+  'esenciales',
   'ropa',
   'calzado',
   'aseo',
@@ -193,12 +195,13 @@ export const PACKING_CATEGORIES: PackingCategory[] = [
 ];
 
 export const PACKING_CATEGORY_LABEL: Record<PackingCategory, string> = {
+  esenciales: 'Esenciales (no olvidar)',
   ropa: 'Ropa',
   calzado: 'Calzado',
   aseo: 'Aseo personal',
   documentos: 'Documentos',
   electronica: 'Electrónica',
-  medicacion: 'Medicación',
+  medicacion: 'Medicinas y recetas',
   accesorios: 'Accesorios',
   comida: 'Comida y bebida',
   otros: 'Otros',
