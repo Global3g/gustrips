@@ -114,7 +114,7 @@ export default function PhotosPage() {
   const tripId = params.tripId as string;
   const { trip } = useTrip();
   const { events, updateEvent, loading: eventsLoading } = useEvents();
-  const { albumPhotos: rawAlbumPhotos, addPhoto, deletePhoto, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum();
+  const { albumPhotos: rawAlbumPhotos, addPhoto, deletePhoto, deleteManyPhotos, updateCaption, updatePhoto, migrateThumbnails, markAllOptimized } = useAlbum();
   const albumPhotos = useMemo(
     () => rawAlbumPhotos.filter((p) => !p.deletedAt),
     [rawAlbumPhotos],
@@ -753,34 +753,42 @@ export default function PhotosPage() {
     if (selectedUrls.size === 0) return;
     if (!confirm(`¿Borrar ${selectedUrls.size} foto${selectedUrls.size !== 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return;
     setBulkBusy(true);
-    const urls = [...selectedUrls];
-    let okCount = 0;
-    let failCount = 0;
     try {
-      for (const url of urls) {
-        const photo = allPhotos.find((p) => p.url === url);
-        if (!photo) {
-          failCount++;
-          continue;
-        }
+      const urls = selectedUrls;
+      const selected = allPhotos.filter((p) => urls.has(p.url));
+
+      // Unlink the photos from any events that reference them — one write per
+      // affected event (not per photo), so we don't clobber the array.
+      const affectedEvents = events.filter((e) => e.photos?.some((u) => urls.has(u)));
+      for (const event of affectedEvents) {
         try {
-          await handleDelete(photo);
-          okCount++;
+          await updateEvent(event.id, {
+            photos: (event.photos ?? []).filter((u) => !urls.has(u)),
+          });
         } catch {
-          failCount++;
+          // Non-critical
         }
       }
-      if (failCount === 0) {
-        toast(`${okCount} foto${okCount !== 1 ? 's eliminadas' : ' eliminada'}`, 'success');
-      } else {
-        toast(`${okCount} eliminadas, ${failCount} fallaron`, 'error');
-      }
+
+      // Delete the album-stored photos in one shot (single array write +
+      // batched subcollection deletes), avoiding the stale-array race that
+      // made repeated per-photo deletes resurrect each other.
+      const albumToDelete = selected.filter((p) => p.source === 'album');
+      await deleteManyPhotos(albumToDelete);
+
+      toast(
+        `${selected.length} foto${selected.length !== 1 ? 's eliminadas' : ' eliminada'}`,
+        'success',
+      );
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      toast('Error al eliminar fotos', 'error');
     } finally {
       setBulkBusy(false);
       setSelectionMode(false);
       setSelectedUrls(new Set());
     }
-  }, [selectedUrls, allPhotos, handleDelete, toast]);
+  }, [selectedUrls, allPhotos, events, updateEvent, deleteManyPhotos, toast]);
 
   /* ── Caption ── */
   const saveCaption = useCallback(

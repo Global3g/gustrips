@@ -146,6 +146,7 @@ interface UseAlbumReturn {
     options?: { skipTripBump?: boolean },
   ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
+  deleteManyPhotos: (photos: AlbumPhoto[]) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
   realignEventPhotoDates: (eventId: string, newDate: string) => Promise<number>;
@@ -391,6 +392,75 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         tryDeletePath(photo.viewPath),
         tryDeletePath(photo.thumbWebpPath),
       ]);
+    },
+    [tripId, trip],
+  );
+
+  /**
+   * Bulk delete. Doing this as N single `deletePhoto` calls was broken: each
+   * one rewrote the legacy `albumPhotos` array from a STALE `trip` snapshot,
+   * so every write resurrected the photos the previous one had removed (only
+   * the last deletion stuck). Here we strip ALL selected urls from the array
+   * in a single write, batch the subcollection deletes, then clean Storage
+   * best-effort with bounded concurrency.
+   */
+  const deleteManyPhotos = useCallback(
+    async (photos: AlbumPhoto[]): Promise<void> => {
+      if (photos.length === 0) return;
+      const db = getClientDb();
+      const tripRef = doc(db, 'trips', tripId);
+      const urls = new Set(photos.map((p) => p.url));
+
+      // 1. One array write removes every selected legacy photo (no race).
+      const currentPhotos = trip?.albumPhotos ?? [];
+      if (currentPhotos.some((p) => urls.has(p.url))) {
+        await updateDoc(tripRef, {
+          albumPhotos: currentPhotos.filter((p) => !urls.has(p.url)),
+          updatedAt: nowISO(),
+        });
+      }
+
+      // 2. Subcollection docs in batches (Firestore caps a batch at 500).
+      const CHUNK = 450;
+      for (let i = 0; i < photos.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        for (const photo of photos.slice(i, i + CHUNK)) {
+          batch.delete(doc(db, 'trips', tripId, 'photos', photoIdFromUrl(photo.url)));
+        }
+        await batch.commit();
+      }
+      try { markMutation(); } catch { /* localStorage may be unavailable */ }
+
+      // 3. Storage cleanup — best-effort, bounded concurrency so a few hundred
+      //    deletes don't open a few hundred sockets at once.
+      const storage = getClientStorage();
+      const delByPath = async (storagePath?: string) => {
+        if (!storagePath) return;
+        try { await deleteObject(ref(storage, storagePath)); } catch { /* ignore */ }
+      };
+      const delByUrl = async (firebaseUrl?: string) => {
+        if (!firebaseUrl) return;
+        try {
+          const m = new URL(firebaseUrl).pathname.match(/\/o\/(.+?)(\?|$)/);
+          if (m) await deleteObject(ref(storage, decodeURIComponent(m[1])));
+        } catch { /* ignore */ }
+      };
+      const tasks: Array<() => Promise<void>> = [];
+      for (const p of photos) {
+        tasks.push(() => delByUrl(p.url));
+        if (p.fullUrl && p.fullUrl !== p.url) tasks.push(() => delByUrl(p.fullUrl));
+        tasks.push(() => delByPath(p.originalPath));
+        tasks.push(() => delByPath(p.viewPath));
+        tasks.push(() => delByPath(p.thumbWebpPath));
+      }
+      let cursor = 0;
+      const runners = Array.from({ length: Math.min(6, tasks.length) }, async () => {
+        while (cursor < tasks.length) {
+          const task = tasks[cursor++];
+          await task();
+        }
+      });
+      await Promise.all(runners);
     },
     [tripId, trip],
   );
@@ -825,6 +895,7 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     albumPhotos,
     addPhoto,
     deletePhoto,
+    deleteManyPhotos,
     updateCaption,
     updatePhoto,
     realignEventPhotoDates,

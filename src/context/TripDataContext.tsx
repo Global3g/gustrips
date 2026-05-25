@@ -79,6 +79,7 @@ interface TripDataValue {
     options?: { skipTripBump?: boolean },
   ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
+  deleteManyPhotos: (photos: AlbumPhoto[]) => Promise<void>;
   updateCaption: (photo: AlbumPhoto, caption: string) => Promise<void>;
   updatePhoto: (oldPhoto: AlbumPhoto, updates: Partial<AlbumPhoto>) => Promise<void>;
   realignEventPhotoDates: (eventId: string, newDate: string) => Promise<number>;
@@ -145,6 +146,7 @@ export function TripDataProvider({ tripId, children }: TripDataProviderProps) {
       albumPhotos: albumHook.albumPhotos,
       addPhoto: albumHook.addPhoto,
       deletePhoto: albumHook.deletePhoto,
+      deleteManyPhotos: albumHook.deleteManyPhotos,
       updateCaption: albumHook.updateCaption,
       updatePhoto: albumHook.updatePhoto,
       realignEventPhotoDates: albumHook.realignEventPhotoDates,
@@ -177,6 +179,7 @@ export function TripDataProvider({ tripId, children }: TripDataProviderProps) {
       albumHook.albumPhotos,
       albumHook.addPhoto,
       albumHook.deletePhoto,
+      albumHook.deleteManyPhotos,
       albumHook.updateCaption,
       albumHook.updatePhoto,
       albumHook.realignEventPhotoDates,
@@ -278,6 +281,7 @@ export function useAlbumFromContext(): {
   albumPhotos: AlbumPhoto[];
   addPhoto: TripDataValue['addPhoto'];
   deletePhoto: TripDataValue['deletePhoto'];
+  deleteManyPhotos: TripDataValue['deleteManyPhotos'];
   updateCaption: TripDataValue['updateCaption'];
   updatePhoto: TripDataValue['updatePhoto'];
   realignEventPhotoDates: TripDataValue['realignEventPhotoDates'];
@@ -294,6 +298,7 @@ export function useAlbumFromContext(): {
     albumPhotos: ctx.albumPhotos,
     addPhoto: ctx.addPhoto,
     deletePhoto: ctx.deletePhoto,
+    deleteManyPhotos: ctx.deleteManyPhotos,
     updateCaption: ctx.updateCaption,
     updatePhoto: ctx.updatePhoto,
     realignEventPhotoDates: ctx.realignEventPhotoDates,
