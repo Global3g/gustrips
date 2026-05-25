@@ -61,7 +61,7 @@ const ACTIONS: ActionConfig[] = [
 
 export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) {
   const router = useRouter();
-  const { createEvent } = useEvents();
+  const { createEvent, events } = useEvents();
   const { toast } = useToast();
 
   const [showEventForm, setShowEventForm] = useState(false);
@@ -146,6 +146,8 @@ export default function QuickActionsRow({ tripId, trip }: QuickActionsRowProps) 
       {showEventForm && (
         <EventForm
           tripId={tripId}
+          tripEvents={events}
+          dayLocations={trip?.dayLocations}
           tripStartDate={trip?.startDate}
           tripEndDate={trip?.endDate}
           defaultDate={(() => {

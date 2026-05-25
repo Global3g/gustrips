@@ -971,6 +971,8 @@ export default function ItineraryPage() {
         {showForm && (
           <EventForm
             tripId={tripId}
+            tripEvents={events}
+            dayLocations={trip?.dayLocations}
             defaultDate={defaultFormDate || selectedDayStr}
             defaultTime={defaultFormTime}
             tripStartDate={trip?.startDate}
@@ -1560,6 +1562,8 @@ export default function ItineraryPage() {
       {showForm && (
         <EventForm
           tripId={tripId}
+          tripEvents={events}
+          dayLocations={trip?.dayLocations}
           defaultDate={defaultFormDate || selectedDayStr}
           defaultTime={defaultFormTime}
           tripStartDate={trip?.startDate}

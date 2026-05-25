@@ -34,6 +34,7 @@ import PlacesAutocomplete from '@/components/ui/PlacesAutocomplete';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import { classNames, getInitials } from '@/lib/utils/helpers';
+import { inferDateLocation } from '@/lib/utils/photoLocation';
 import type { TripEvent, EventType, ExpenseCategory, PaymentMethod } from '@/types';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
@@ -282,6 +283,10 @@ interface EventFormProps {
   tripEndDate?: string;
   /** Trip ID for creating linked expenses */
   tripId?: string;
+  /** Other events in the trip — used to auto-suggest the location by date. */
+  tripEvents?: TripEvent[];
+  /** Manual per-day locations ("YYYY-MM-DD" -> "City, Country") for fallback. */
+  dayLocations?: Record<string, string>;
   onSubmit: (data: Omit<TripEvent, 'id' | 'createdBy' | 'createdAt'>) => Promise<string | void>;
   onCancel: () => void;
   loading?: boolean;
@@ -354,7 +359,7 @@ function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onSt
 
 /* ─── Componente ────────────────────────────────── */
 
-export default function EventForm({ initialData, defaultDate, defaultTime, tripStartDate, tripEndDate, tripId, onSubmit, onCancel, loading = false, onDelete, onDuplicate }: EventFormProps) {
+export default function EventForm({ initialData, defaultDate, defaultTime, tripStartDate, tripEndDate, tripId, tripEvents, dayLocations, onSubmit, onCancel, loading = false, onDelete, onDuplicate }: EventFormProps) {
   const isEdit = !!initialData;
   const [step, setStep] = useState(isEdit ? -1 : 0); // -1 = show all steps at once (edit mode)
   const [type, setType] = useState<EventType | ''>(initialData?.type || '');
@@ -373,6 +378,19 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
   const [longitude, setLongitude] = useState(initialData?.longitude?.toString() || '');
   const [city, setCity] = useState(initialData?.city || '');
   const [country, setCountry] = useState(initialData?.country || '');
+
+  // Auto-suggest city/country from the itinerary for the chosen date (new
+  // events only — editing keeps the saved location). Re-runs when the date
+  // changes; only writes when the guess has a value so it never wipes a
+  // location the user typed with a blank. Doesn't depend on city/country, so
+  // typing in those fields won't re-trigger it.
+  useEffect(() => {
+    if (isEdit || !date) return;
+    const guess = inferDateLocation(date, tripEvents, { dayLocations });
+    if (guess.city) setCity(guess.city);
+    if (guess.country) setCountry(guess.country);
+  }, [date, tripEvents, dayLocations, isEdit]);
+
   const [createExpense, setCreateExpense] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [scanningReceipt, setScanningReceipt] = useState(false);
