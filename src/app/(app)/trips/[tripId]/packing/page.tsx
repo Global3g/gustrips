@@ -10,6 +10,8 @@ import {
   Loader2,
   X,
   Wand2,
+  Plug,
+  Pill,
 } from 'lucide-react';
 import { useTripFromContext } from '@/context/TripDataContext';
 import { useToast } from '@/context/ToastContext';
@@ -23,6 +25,8 @@ import {
   PACKING_CATEGORY_LABEL,
   PACKING_TEMPLATE_LIST,
   PACKING_TEMPLATES,
+  ESSENTIALS_BASE_ITEMS,
+  MEDICINE_BASE_ITEMS,
   type PackingCategory,
   type PackingTemplateId,
 } from '@/lib/packingTemplates';
@@ -90,6 +94,35 @@ export default function PackingPage() {
       toast('Error al agregar el item', 'error');
     } finally {
       setAdding(false);
+    }
+  };
+
+  const [addingBase, setAddingBase] = useState<'esenciales' | 'medicacion' | null>(null);
+
+  /** Add a curated base list (essentials / first-aid), skipping items the
+   *  user already has so re-tapping never creates duplicates. */
+  const handleAddBaseList = async (which: 'esenciales' | 'medicacion') => {
+    const list = which === 'esenciales' ? ESSENTIALS_BASE_ITEMS : MEDICINE_BASE_ITEMS;
+    const label = which === 'esenciales' ? 'Esenciales' : 'Medicinas';
+    const existing = new Set(
+      items.map((i) => `${i.category}|${i.name.trim().toLowerCase()}`),
+    );
+    const drafts = list.filter(
+      (it) => !existing.has(`${it.category}|${it.name.trim().toLowerCase()}`),
+    );
+    if (drafts.length === 0) {
+      toast(`Ya tienes los items base de ${label}`, 'info');
+      return;
+    }
+    setAddingBase(which);
+    try {
+      const added = await addItems(drafts);
+      toast(`${added} items agregados a ${label}`, 'success');
+    } catch (err) {
+      console.error('Error al agregar lista base:', err);
+      toast('Error al agregar la lista', 'error');
+    } finally {
+      setAddingBase(null);
     }
   };
 
@@ -240,6 +273,22 @@ export default function PackingPage() {
           onClick={() => setTemplatePickerOpen(true)}
         >
           Aplicar template
+        </Button>
+        <Button
+          variant="secondary"
+          icon={Plug}
+          loading={addingBase === 'esenciales'}
+          onClick={() => handleAddBaseList('esenciales')}
+        >
+          Esenciales base
+        </Button>
+        <Button
+          variant="secondary"
+          icon={Pill}
+          loading={addingBase === 'medicacion'}
+          onClick={() => handleAddBaseList('medicacion')}
+        >
+          Botiquín base
         </Button>
         <Button
           variant="primary"

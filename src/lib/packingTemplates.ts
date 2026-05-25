@@ -206,3 +206,36 @@ export const PACKING_CATEGORY_LABEL: Record<PackingCategory, string> = {
   comida: 'Comida y bebida',
   otros: 'Otros',
 };
+
+// ============================================================
+// Listas base de un toque — para "no empezar de cero".
+// Se agregan a la maleta con dedup (no duplican lo ya cargado).
+// ============================================================
+
+type BaseListItem = { name: string; category: PackingCategory; quantity: number; optional: boolean };
+
+/** Los infaltables que casi siempre se olvidan. */
+export const ESSENTIALS_BASE_ITEMS: BaseListItem[] = [
+  { name: 'Adaptador universal de corriente', category: 'esenciales', quantity: 1, optional: false },
+  { name: 'Cargador del celular', category: 'esenciales', quantity: 1, optional: false },
+  { name: 'Cable de carga', category: 'esenciales', quantity: 2, optional: false },
+  { name: 'Power bank / batería portátil', category: 'esenciales', quantity: 1, optional: false },
+  { name: 'Audífonos', category: 'esenciales', quantity: 1, optional: true },
+  { name: 'Cartera (efectivo + tarjetas)', category: 'esenciales', quantity: 1, optional: false },
+  { name: 'Lentes de sol', category: 'esenciales', quantity: 1, optional: true },
+  { name: 'Botella de agua reutilizable', category: 'esenciales', quantity: 1, optional: true },
+  { name: 'Candado TSA para maleta', category: 'esenciales', quantity: 1, optional: true },
+];
+
+/** Botiquín base — medicinas y recetas que conviene llevar siempre. */
+export const MEDICINE_BASE_ITEMS: BaseListItem[] = [
+  { name: 'Medicinas personales / recetadas', category: 'medicacion', quantity: 1, optional: false },
+  { name: 'Recetas médicas (copia)', category: 'medicacion', quantity: 1, optional: true },
+  { name: 'Crema para rozaduras', category: 'medicacion', quantity: 1, optional: false },
+  { name: 'Analgésico (ibuprofeno / paracetamol)', category: 'medicacion', quantity: 1, optional: false },
+  { name: 'Antidiarreico', category: 'medicacion', quantity: 1, optional: true },
+  { name: 'Sales de rehidratación', category: 'medicacion', quantity: 1, optional: true },
+  { name: 'Antialérgico', category: 'medicacion', quantity: 1, optional: true },
+  { name: 'Curitas / banditas', category: 'medicacion', quantity: 1, optional: true },
+  { name: 'Pastillas para el mareo', category: 'medicacion', quantity: 1, optional: true },
+];

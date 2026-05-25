@@ -49,7 +49,7 @@ import { SwipeActions, type SwipeAction } from '@/components/SwipeActions';
 import { EmptyState } from '@/components/EmptyState';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
 import { usePaymentCards } from '@/hooks/usePaymentCards';
-import { cardLabel } from '@/components/expenses/CardPicker';
+import CardPicker, { cardLabel } from '@/components/expenses/CardPicker';
 import { classNames, formatCurrency, getInitials, formatDateES } from '@/lib/utils/helpers';
 import { groupAndOrderEvents, todayISO } from '@/lib/utils/eventOrdering';
 import type { ExpenseCategory, TripExpense, PaymentMethod } from '@/types';
@@ -148,6 +148,7 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
 
   const [filterCategory, setFilterCategory] = useState<ExpenseCategory | 'all'>('all');
   const [filterPerson, setFilterPerson] = useState<string>('all');
+  const [filterCard, setFilterCard] = useState<string>('all');
   const [filterPeriod, setFilterPeriod] = useState<PeriodFilter>('all');
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -165,6 +166,7 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
   const [editSplit, setEditSplit] = useState<string[]>([]);
   const [editNotes, setEditNotes] = useState('');
   const [editPayment, setEditPayment] = useState<PaymentMethod>('cash');
+  const [editCardId, setEditCardId] = useState('');
   const [editLoading, setEditLoading] = useState(false);
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -190,6 +192,7 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
     setEditSplit(expense.splitBetween || []);
     setEditNotes(expense.notes || '');
     setEditPayment(expense.paymentMethod || 'cash');
+    setEditCardId(expense.cardId || '');
   };
 
   const toggleEditSplit = (id: string) => {
@@ -209,6 +212,10 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
         paidBy: editPaidBy,
         splitBetween: editSplit,
         paymentMethod: editPayment,
+        cardId:
+          editPayment === 'credit' || editPayment === 'debit'
+            ? editCardId || undefined
+            : undefined,
         notes: editNotes.trim() || undefined,
         // Saving from the full editor clears the "needs review" flag —
         // the user has now confirmed every field, so the pendientes
@@ -243,6 +250,10 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
       filtered = filtered.filter((e) => e.paidBy === filterPerson);
     }
 
+    if (filterCard !== 'all') {
+      filtered = filtered.filter((e) => e.cardId === filterCard);
+    }
+
     if (filterPeriod === 'today') {
       filtered = filtered.filter((e) => e.date === todayStr);
     } else if (filterPeriod === 'week') {
@@ -264,7 +275,7 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
       if (d !== 0) return d;
       return (b.createdAt || '').localeCompare(a.createdAt || '');
     });
-  }, [expenses, events, filterCategory, filterPerson, filterPeriod, search, todayStr, weekAgoStr]);
+  }, [expenses, events, filterCategory, filterPerson, filterCard, filterPeriod, search, todayStr, weekAgoStr]);
 
   /* ─── Group by day ─────────────────────────────── */
   const grouped = useMemo(() => {
@@ -643,6 +654,47 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                         {getInitials(t.fullName)}
                       </span>
                       {t.fullName.split(' ')[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Card chips — filter by which card paid */}
+            {byCard.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+                <button
+                  type="button"
+                  onClick={() => setFilterCard('all')}
+                  className={classNames(
+                    'flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border whitespace-nowrap',
+                    filterCard === 'all'
+                      ? 'bg-white/10 border-white/30 text-white'
+                      : 'bg-white/[0.03] border-white/[0.08] text-white/45 hover:text-white/80',
+                  )}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Todas
+                </button>
+                {byCard.map(({ card }) => {
+                  const active = filterCard === card.id;
+                  return (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => setFilterCard(active ? 'all' : card.id)}
+                      className={classNames(
+                        'flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border whitespace-nowrap',
+                        active
+                          ? 'bg-emerald-400/15 border-emerald-300/50 text-emerald-100'
+                          : 'bg-white/[0.03] border-white/[0.08] text-white/55 hover:text-white/85 hover:border-white/20',
+                      )}
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: card.color || '#64748b' }}
+                      />
+                      {cardLabel(card)}
                     </button>
                   );
                 })}
@@ -1161,6 +1213,10 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
               ))}
             </select>
           </div>
+
+          {(editPayment === 'credit' || editPayment === 'debit') && (
+            <CardPicker type={editPayment} value={editCardId} onChange={setEditCardId} />
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
