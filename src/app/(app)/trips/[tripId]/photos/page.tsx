@@ -54,6 +54,7 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useToast } from '@/context/ToastContext';
 const TripInsights = dynamic(() => import('@/components/trips/TripInsights'), { ssr: false, loading: () => null });
 const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
+import { gridSrc } from '@/lib/photoDisplay';
 const ScrollScrubber = dynamic(() => import('@/components/trips/photos/ScrollScrubber'), { ssr: false, loading: () => null });
 const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePhoto'), { ssr: false });
 const MobileScrollHelper = dynamic(
@@ -1479,7 +1480,7 @@ export default function PhotosPage() {
                                   size produced by useAlbum.migrateThumbnails. */}
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={photo.url}
+                                src={gridSrc(photo)}
                                 alt={photo.caption || 'Foto del viaje'}
                                 width={600}
                                 height={600}

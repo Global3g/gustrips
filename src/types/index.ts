@@ -80,6 +80,11 @@ export interface AlbumPhoto {
   originalPath?: string;    // Storage path of the original
   viewPath?: string;        // Storage path of the 1280px WebP (lightbox view)
   thumbWebpPath?: string;   // Storage path of the 400px WebP (grid)
+  // Download URLs for the derivatives above, resolved + persisted lazily by
+  // useAlbum once the extension has produced them (they don't exist at upload
+  // time). Display falls back to fullUrl/url until these are filled.
+  viewUrl?: string;         // 1280px WebP download URL (lightbox)
+  thumbWebpUrl?: string;    // 400px WebP download URL (grid)
   date: string;
   caption?: string;
   eventId?: string;

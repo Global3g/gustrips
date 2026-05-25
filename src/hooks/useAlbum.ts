@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getClientStorage, getClientDb } from '@/lib/firebase/client';
 import {
@@ -412,6 +412,65 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
     },
     [tripId],
   );
+
+  // ── WebP derivative reconciler ──────────────────────────────────────
+  // The Resize Images extension produces the display WebPs a few seconds
+  // after the original lands in Storage, so their download URLs can't be
+  // known at upload time. Here we resolve them lazily and persist them onto
+  // the photo doc (one-time per photo) so the lightbox/grid can use the tiny
+  // WebP instead of the multi-MB original. Bounded + fail-soft: photos whose
+  // derivatives aren't ready yet are retried shortly; old photos without a
+  // viewPath are ignored entirely.
+  const resolvingRef = useRef<Set<string>>(new Set());
+  const [resolveTick, setResolveTick] = useState(0);
+  useEffect(() => {
+    const pending = albumPhotos
+      .filter((p) => p.viewPath && !p.viewUrl && !resolvingRef.current.has(p.url))
+      .slice(0, 10);
+    if (pending.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const storage = getClientStorage();
+      let anyNotReady = false;
+      for (const p of pending) {
+        resolvingRef.current.add(p.url);
+        const [viewUrl, thumbWebpUrl] = await Promise.all([
+          p.viewPath
+            ? getDownloadURL(ref(storage, p.viewPath)).catch(() => undefined)
+            : Promise.resolve(undefined),
+          p.thumbWebpPath
+            ? getDownloadURL(ref(storage, p.thumbWebpPath)).catch(() => undefined)
+            : Promise.resolve(undefined),
+        ]);
+        if (cancelled) return;
+        if (viewUrl || thumbWebpUrl) {
+          try {
+            await upsertSubPhoto({
+              ...p,
+              ...(viewUrl ? { viewUrl } : {}),
+              ...(thumbWebpUrl ? { thumbWebpUrl } : {}),
+            });
+          } catch {
+            resolvingRef.current.delete(p.url); // allow a later retry
+          }
+        } else {
+          // Derivatives not generated yet — let it retry on the next tick.
+          resolvingRef.current.delete(p.url);
+          anyNotReady = true;
+        }
+      }
+      if (!cancelled && anyNotReady) {
+        setTimeout(() => {
+          if (!cancelled) setResolveTick((t) => t + 1);
+        }, 6000);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [albumPhotos, upsertSubPhoto, resolveTick]);
 
   const updateCaption = useCallback(
     async (photo: AlbumPhoto, caption: string): Promise<void> => {

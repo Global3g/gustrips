@@ -95,7 +95,9 @@ export default function PhotoLightbox({
   // If the full URL was already fetched (cache hit) skip the swap state.
   useEffect(() => {
     if (!photo) return;
-    const fullUrl = photo.fullUrl;
+    // Prefer the light 1280px WebP for the full view; fall back to the
+    // legacy full-quality URL for photos that predate the extension.
+    const fullUrl = photo.viewUrl || photo.fullUrl;
     if (!fullUrl || fullUrl === photo.url) {
       // No separate full-quality version — the thumbnail IS the source.
       setFullLoaded(true);
@@ -127,8 +129,8 @@ export default function PhotoLightbox({
   // Prefetch the neighbors' full-quality versions so arrow-key nav is instant.
   useEffect(() => {
     if (!open) return;
-    prefetchFullUrl(photos[index + 1]?.fullUrl);
-    prefetchFullUrl(photos[index - 1]?.fullUrl);
+    prefetchFullUrl(photos[index + 1]?.viewUrl || photos[index + 1]?.fullUrl);
+    prefetchFullUrl(photos[index - 1]?.viewUrl || photos[index - 1]?.fullUrl);
   }, [open, index, photos]);
 
   // Keyboard navigation
@@ -148,8 +150,9 @@ export default function PhotoLightbox({
 
   // Render whichever source is currently best: full quality once ready,
   // otherwise the thumbnail so the user sees something immediately.
-  const displaySrc = fullLoaded && photo.fullUrl ? photo.fullUrl : photo.url;
-  const upgrading = !!photo.fullUrl && photo.fullUrl !== photo.url && !fullLoaded;
+  const fullSrc = photo.viewUrl || photo.fullUrl;
+  const displaySrc = fullLoaded && fullSrc ? fullSrc : photo.url;
+  const upgrading = !!fullSrc && fullSrc !== photo.url && !fullLoaded;
 
   const rotateRight = () => setRotation((r) => (r + 90) % 360);
   const rotateLeft = () => setRotation((r) => (r + 270) % 360);
@@ -162,7 +165,8 @@ export default function PhotoLightbox({
     setSharing(true);
     try {
       const result = await sharePhoto({
-        url: photo.fullUrl || photo.url,
+        // Share/save the full-resolution original, not the light view WebP.
+        url: photo.originalUrl || photo.fullUrl || photo.url,
         caption: photo.caption,
         tripTitle: photo.eventTitle,
       });

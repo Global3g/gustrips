@@ -37,6 +37,7 @@ import {
 } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { viewSrc } from '@/lib/photoDisplay';
 import { motion, AnimatePresence, type PanInfo } from 'framer-motion';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import {
@@ -522,7 +523,7 @@ export default function PhotoReviewPage() {
     const next = nextUrl ? photoByUrl.get(nextUrl) : undefined;
     if (!next) return;
     if (typeof window === 'undefined') return;
-    const src = next.fullUrl || next.url;
+    const src = viewSrc(next);
     if (!src) return;
     const img = new window.Image();
     img.src = src;
@@ -740,7 +741,7 @@ export default function PhotoReviewPage() {
                     >
                       <div className="relative w-full h-full">
                         <Image
-                          src={currentPhoto.fullUrl || currentPhoto.url}
+                          src={viewSrc(currentPhoto)}
                           alt={currentPhoto.caption || 'Foto del viaje'}
                           fill
                           sizes="(max-width: 768px) 100vw, 800px"
