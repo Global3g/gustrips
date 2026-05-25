@@ -705,6 +705,11 @@ export default function PhotosPage() {
     setSelectedUrls(new Set());
   }, []);
 
+  // Select every photo currently in the album (for "start fresh" bulk delete).
+  const selectAllPhotos = useCallback(() => {
+    setSelectedUrls(new Set(allPhotos.map((p) => p.url)));
+  }, [allPhotos]);
+
   const clearSelection = useCallback(() => {
     setSelectedUrls(new Set());
   }, []);
@@ -1027,6 +1032,17 @@ export default function PhotosPage() {
                       <span className="hidden sm:inline">Seleccionar</span>
                     </>
                   )}
+                </button>
+              )}
+              {selectionMode && stats.total > 0 && (
+                <button
+                  type="button"
+                  onClick={selectAllPhotos}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold border border-white/[0.12] bg-white/[0.05] text-white/80 hover:text-white hover:border-white/25 hover:bg-white/[0.1] transition-all flex-shrink-0"
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Seleccionar todas</span>
+                  <span className="sm:hidden">Todas</span>
                 </button>
               )}
               <button
