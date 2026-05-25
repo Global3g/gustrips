@@ -35,6 +35,7 @@ import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import { classNames, getInitials } from '@/lib/utils/helpers';
 import { inferDateLocation } from '@/lib/utils/photoLocation';
+import CardPicker from '@/components/expenses/CardPicker';
 import type { TripEvent, EventType, ExpenseCategory, PaymentMethod } from '@/types';
 import { useExpenses } from '@/hooks/useExpenses';
 import { useAuth } from '@/hooks/useAuth';
@@ -399,6 +400,7 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
 
   // Expense fields (only used when isAlreadyPaid = true)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [cardId, setCardId] = useState('');
   const [paidBy, setPaidBy] = useState('');
   const [splitBetween, setSplitBetween] = useState<string[]>([]);
   const [pointsUsed, setPointsUsed] = useState('');
@@ -741,6 +743,10 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
           date,
           notes: notes || undefined,
           paymentMethod,
+          cardId:
+            paymentMethod === 'credit' || paymentMethod === 'debit'
+              ? cardId || undefined
+              : undefined,
           pointsUsed: isPoints ? (parseFloat(pointsUsed) || 0) : undefined,
           equivalentValue: isPoints ? realValue : undefined,
           realValueCurrency: isPoints ? realValueCurrency : undefined,
@@ -1244,6 +1250,13 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
                 </button>
               ))}
             </div>
+
+            {/* Card picker — when paid by credit/debit, tag which card */}
+            {(paymentMethod === 'credit' || paymentMethod === 'debit') && (
+              <div className="pt-2">
+                <CardPicker type={paymentMethod} value={cardId} onChange={setCardId} />
+              </div>
+            )}
 
             {/* Points fields */}
             {paymentMethod === 'points' && (
