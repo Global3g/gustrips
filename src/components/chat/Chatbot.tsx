@@ -34,6 +34,17 @@ function getDaysBetween(start: string, end: string): string[] {
   return days;
 }
 
+/** Nights covered by a hotel stay: check-in up to (but not including) the
+ *  check-out day. Falls back to a single night when there's no checkout. */
+function hotelNightDates(e: TripEvent): string[] {
+  const checkIn = e.details?.checkInDate || e.date;
+  const checkOut = e.details?.checkOutDate || '';
+  if (checkOut && checkOut > checkIn) {
+    return getDaysBetween(checkIn, checkOut).filter((d) => d !== checkOut);
+  }
+  return checkIn ? [checkIn] : [];
+}
+
 function buildTripContext(
   trip: Trip,
   events: TripEvent[],
@@ -59,7 +70,17 @@ function buildTripContext(
 
   const eventsText = sorted
     .map((e) => {
-      const costStr = e.cost > 0 ? `$${e.cost.toLocaleString()} ${e.currency}` : 'sin costo';
+      let costStr = e.cost > 0 ? `$${e.cost.toLocaleString()} ${e.currency}` : 'sin costo';
+      // For a multi-night hotel, the total is for the whole stay — show the
+      // implied per-night rate so the assistant reasons about it correctly
+      // (and never claims the in-between nights have "no expense").
+      if (e.type === 'hotel' && e.cost > 0) {
+        const nights = hotelNightDates(e).length;
+        if (nights > 1) {
+          const perNight = Math.round(e.cost / nights);
+          costStr = `$${e.cost.toLocaleString()} ${e.currency} total por ${nights} noches (~$${perNight.toLocaleString()}/noche, ya cubierto)`;
+        }
+      }
       return `- ${e.date} ${e.startTime} ${e.title} (${e.type}) ${costStr}`;
     })
     .join('\n');
@@ -80,8 +101,10 @@ function buildTripContext(
   const hotelDates = new Set<string>();
   sorted.forEach((e) => {
     if (e.type === 'hotel') {
-      // A hotel covers the night of its date
-      hotelDates.add(e.date);
+      // A hotel covers EVERY night of the stay (check-in → check-out-1), not
+      // just its check-in date — otherwise the in-between nights were wrongly
+      // flagged as "Sin hotel".
+      for (const night of hotelNightDates(e)) hotelDates.add(night);
     }
   });
   const nightsWithoutHotel = nightsNeedingHotel.filter((d) => !hotelDates.has(d));
