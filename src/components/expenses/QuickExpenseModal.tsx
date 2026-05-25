@@ -12,6 +12,7 @@ import {
 import { useGlobalTravelers } from '@/hooks/useGlobalTravelers';
 import { useToast } from '@/context/ToastContext';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
+import CardPicker from '@/components/expenses/CardPicker';
 import Modal from '@/components/ui/Modal';
 import Button from '@/components/ui/Button';
 import { classNames, getInitials } from '@/lib/utils/helpers';
@@ -49,6 +50,7 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
   const [description, setDescription] = useState(initialDescription);
   const [date, setDate] = useState(event.date || new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [cardId, setCardId] = useState<string>('');
   const [paidBy, setPaidBy] = useState('');
   const [splitBetween, setSplitBetween] = useState<string[]>([]);
   const [pointsUsed, setPointsUsed] = useState('');
@@ -65,6 +67,7 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
       setDescription(initialDescription);
       setDate(event.date || new Date().toISOString().split('T')[0]);
       setPaymentMethod('cash');
+      setCardId('');
       setNotes('');
       setPointsUsed('');
       setEquivalentValue('');
@@ -124,6 +127,10 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
         date,
         notes: noteValue || undefined,
         paymentMethod,
+        cardId:
+          paymentMethod === 'credit' || paymentMethod === 'debit'
+            ? cardId || undefined
+            : undefined,
         pointsUsed: paymentMethod === 'points' ? Number(pointsUsed) || undefined : undefined,
         equivalentValue: paymentMethod === 'points' ? Number(equivalentValue) || undefined : undefined,
         realValueCurrency: paymentMethod === 'points' ? realValueCurrency : undefined,
@@ -250,6 +257,11 @@ export default function QuickExpenseModal({ open, onClose, tripId, event, onCrea
             ))}
           </select>
         </div>
+
+        {/* Card picker — only for credit/debit, from the user's global wallet */}
+        {(paymentMethod === 'credit' || paymentMethod === 'debit') && (
+          <CardPicker type={paymentMethod} value={cardId} onChange={setCardId} />
+        )}
 
         {/* Points fields (only when method is 'points') */}
         {paymentMethod === 'points' && (

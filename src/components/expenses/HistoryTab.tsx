@@ -48,6 +48,8 @@ import Particles from '@/components/ui/Particles';
 import { SwipeActions, type SwipeAction } from '@/components/SwipeActions';
 import { EmptyState } from '@/components/EmptyState';
 import { CURRENCIES, EXPENSE_CATEGORIES, PAYMENT_METHODS } from '@/config/constants';
+import { usePaymentCards } from '@/hooks/usePaymentCards';
+import { cardLabel } from '@/components/expenses/CardPicker';
 import { classNames, formatCurrency, getInitials, formatDateES } from '@/lib/utils/helpers';
 import { groupAndOrderEvents, todayISO } from '@/lib/utils/eventOrdering';
 import type { ExpenseCategory, TripExpense, PaymentMethod } from '@/types';
@@ -129,8 +131,15 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
   const { members } = useMembers();
   const { user } = useAuth();
   const { travelers } = useGlobalTravelers();
+  const { cards } = usePaymentCards();
   const { trip } = useTrip();
   const { toast } = useToast();
+
+  const cardsById = useMemo(() => {
+    const m = new Map<string, (typeof cards)[number]>();
+    for (const c of cards) m.set(c.id, c);
+    return m;
+  }, [cards]);
 
   const tripTravelers = useMemo(() => {
     const ids = trip?.travelerIds || [];
@@ -276,6 +285,21 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
     }
     return { byCurrency, count: expenses.length };
   }, [expenses]);
+
+  /* ─── Per-card totals (reconciliation) — sum each card's spend by currency ── */
+  const byCard = useMemo(() => {
+    const map = new Map<string, { card: (typeof cards)[number]; byCurrency: Record<string, number>; count: number }>();
+    for (const e of expenses) {
+      if (!e.cardId) continue;
+      const card = cardsById.get(e.cardId);
+      if (!card) continue;
+      const entry = map.get(e.cardId) ?? { card, byCurrency: {}, count: 0 };
+      entry.byCurrency[e.currency] = (entry.byCurrency[e.currency] || 0) + (e.amount || 0);
+      entry.count += 1;
+      map.set(e.cardId, entry);
+    }
+    return Array.from(map.values());
+  }, [expenses, cardsById, cards]);
 
   const sparklineData = useMemo(() => {
     if (expenses.length === 0) return [] as number[];
@@ -455,6 +479,34 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
               </div>
             )}
           </div>
+
+          {/* ─── Per-card totals (reconciliation) ─────────── */}
+          {byCard.length > 0 && (
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-sm p-4">
+              <div className="text-white/45 text-[10px] uppercase tracking-[0.2em] font-bold mb-2.5">
+                Por tarjeta
+              </div>
+              <div className="space-y-2">
+                {byCard.map(({ card, byCurrency, count }) => (
+                  <div key={card.id} className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: card.color || '#64748b' }}
+                      />
+                      <span className="text-white/80 text-sm truncate">{cardLabel(card)}</span>
+                      <span className="text-white/35 text-[10px] tabular-nums">{count}</span>
+                    </span>
+                    <span className="text-white/90 text-sm font-semibold tabular-nums flex flex-wrap justify-end gap-x-2">
+                      {Object.entries(byCurrency).map(([c, amt]) => (
+                        <span key={c}>{formatCurrency(amt, c)}</span>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ─── Search ───────────────────────────────── */}
           <div className="relative">
@@ -853,6 +905,16 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                                             <div className="flex items-center gap-1.5">
                                               <CreditCard className="w-3 h-3 text-white/40" />
                                               <span className="text-white/70">{PAYMENT_METHODS[expense.paymentMethod]}</span>
+                                              {expense.cardId && cardsById.get(expense.cardId) && (
+                                                <span className="inline-flex items-center gap-1 text-white/55">
+                                                  ·
+                                                  <span
+                                                    className="w-2 h-2 rounded-full"
+                                                    style={{ backgroundColor: cardsById.get(expense.cardId)!.color || '#64748b' }}
+                                                  />
+                                                  {cardLabel(cardsById.get(expense.cardId)!)}
+                                                </span>
+                                              )}
                                             </div>
                                           )}
                                           {expense.notes && (

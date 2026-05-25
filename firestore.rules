@@ -219,6 +219,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
+    // Global payment cards per user (the user's wallet, reused across trips)
+    match /users/{userId}/cards/{cardId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
     // Tripshistory: trip stories per user (with subcollections: photos, questions, days, events)
     match /users/{userId}/tripstories/{storyId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;

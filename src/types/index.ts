@@ -208,6 +208,20 @@ export type EventType = 'flight' | 'hotel' | 'activity' | 'restaurant' | 'transp
 export type ExpenseCategory = EventType;
 export type PaymentMethod = 'cash' | 'debit' | 'credit' | 'transfer' | 'points' | 'other';
 
+// ─── Payment cards (global wallet, reused across trips) ─────────────
+export type PaymentCardType = 'credit' | 'debit';
+export interface PaymentCard {
+  id: string;
+  alias: string;        // e.g. "BBVA Oro"
+  type: PaymentCardType;
+  bank?: string;        // e.g. "BBVA"
+  last4?: string;       // last 4 digits, e.g. "6789"
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
 export interface TripEvent {
   id: string;
   title: string;
@@ -264,6 +278,8 @@ export interface TripExpense {
   date: string;
   notes?: string;
   paymentMethod?: PaymentMethod;
+  /** Which registered card paid this (when paymentMethod is credit/debit). */
+  cardId?: string;
   pointsUsed?: number;
   equivalentValue?: number;
   realValueCurrency?: string;
