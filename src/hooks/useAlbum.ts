@@ -143,7 +143,7 @@ interface UseAlbumReturn {
     date: string,
     caption?: string,
     eventId?: string,
-    options?: { skipTripBump?: boolean },
+    options?: { skipTripBump?: boolean; city?: string; country?: string },
   ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   deleteManyPhotos: (photos: AlbumPhoto[]) => Promise<void>;
@@ -248,8 +248,10 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
       date: string,
       caption?: string,
       eventId?: string,
-      options?: { skipTripBump?: boolean },
+      options?: { skipTripBump?: boolean; city?: string; country?: string },
     ): Promise<AlbumPhoto> => {
+      const city = options?.city?.trim() || undefined;
+      const country = options?.country?.trim() || undefined;
       // Normalize HEIC → JPEG before anything else so neither path (online
       // upload nor offline queue) holds an unrenderable blob.
       const normalized = isHeicFile(file) ? await normalizeImageFile(file) : file;
@@ -263,6 +265,8 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
           date,
           caption,
           eventId,
+          city,
+          country,
           fileBlob: normalized,
           fileType: normalized.type,
           fileName: normalized.name,
@@ -276,6 +280,8 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         };
         if (caption) pendingPhoto.caption = caption;
         if (eventId) pendingPhoto.eventId = eventId;
+        if (city) pendingPhoto.city = city;
+        if (country) pendingPhoto.country = country;
         return pendingPhoto;
       }
 
@@ -284,6 +290,8 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
         date,
         caption,
         eventId,
+        city,
+        country,
         fileBlob: normalized,
         fileName: normalized.name,
         fileType: normalized.type,

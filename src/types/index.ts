@@ -88,6 +88,11 @@ export interface AlbumPhoto {
   date: string;
   caption?: string;
   eventId?: string;
+  // Location where the photo was taken. Auto-suggested from the itinerary
+  // (events / dayLocations) at upload time, editable by the user. Stored on
+  // the photo so it's remembered even when it isn't linked to an event.
+  city?: string;
+  country?: string;
   uploadedAt: string;
   // SHA-256 of the original file bytes (hex). Set by photoUploader on new
   // uploads; used to detect duplicate uploads at pick-time.

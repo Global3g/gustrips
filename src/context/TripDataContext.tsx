@@ -76,7 +76,7 @@ interface TripDataValue {
     date: string,
     caption?: string,
     eventId?: string,
-    options?: { skipTripBump?: boolean },
+    options?: { skipTripBump?: boolean; city?: string; country?: string },
   ) => Promise<AlbumPhoto>;
   deletePhoto: (photo: AlbumPhoto) => Promise<void>;
   deleteManyPhotos: (photos: AlbumPhoto[]) => Promise<void>;

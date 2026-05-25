@@ -97,6 +97,8 @@ interface UploadInput {
   date: string;
   caption?: string;
   eventId?: string;
+  city?: string;
+  country?: string;
   fileBlob: Blob;
   fileName: string;
   fileType: string;
@@ -124,7 +126,7 @@ interface UploadInput {
  * bump — used by batch uploaders that bump once at the end of the batch.
  */
 export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
-  const { tripId, date, caption, eventId, fileBlob, fileName, fileType, skipTripBump } = input;
+  const { tripId, date, caption, eventId, city, country, fileBlob, fileName, fileType, skipTripBump } = input;
   const storage = getClientStorage();
   const db = getClientDb();
   const timestamp = Date.now();
@@ -246,6 +248,8 @@ export async function uploadPhoto(input: UploadInput): Promise<AlbumPhoto> {
     };
     if (caption) photo.caption = caption;
     if (eventId) photo.eventId = eventId;
+    if (city) photo.city = city;
+    if (country) photo.country = country;
     if (contentHash) photo.contentHash = contentHash;
 
     // Write to the photos subcollection (new home). Each photo is its own
@@ -322,6 +326,8 @@ export async function uploadOnePending(
     date: item.date,
     caption: item.caption,
     eventId: item.eventId,
+    city: item.city,
+    country: item.country,
     fileBlob: item.fileBlob,
     fileName: item.fileName,
     fileType: item.fileType,

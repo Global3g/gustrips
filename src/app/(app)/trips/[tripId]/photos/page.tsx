@@ -55,6 +55,7 @@ import { useToast } from '@/context/ToastContext';
 const TripInsights = dynamic(() => import('@/components/trips/TripInsights'), { ssr: false, loading: () => null });
 const PhotoLightbox = dynamic(() => import('@/components/trips/photos/PhotoLightbox'), { ssr: false });
 import { gridSrc } from '@/lib/photoDisplay';
+import { inferDateLocation } from '@/lib/utils/photoLocation';
 const ScrollScrubber = dynamic(() => import('@/components/trips/photos/ScrollScrubber'), { ssr: false, loading: () => null });
 const SortablePhoto = dynamic(() => import('@/components/trips/photos/SortablePhoto'), { ssr: false });
 const MobileScrollHelper = dynamic(
@@ -194,23 +195,27 @@ export default function PhotosPage() {
     setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
   }, []);
 
-  /* ── Pre-fill event fields ── */
+  /* ── Pre-fill event + location fields ──
+     The location is auto-suggested from the itinerary: the event's own
+     city/country if one is selected, else the place inferred from the chosen
+     date (events on that date / dayLocations). Always editable. */
   useEffect(() => {
+    const guess = inferDateLocation(selectedDate, events, trip);
     if (selectedEventId) {
       const event = events.find((e) => e.id === selectedEventId);
       if (event) {
-        setModalCity(event.city || '');
-        setModalCountry(event.country || '');
+        setModalCity(event.city || guess.city || '');
+        setModalCountry(event.country || guess.country || '');
         setModalEventType(event.type || '');
         setModalEventName(getEventName(event) || '');
       }
     } else {
-      setModalCity('');
-      setModalCountry('');
+      setModalCity(guess.city);
+      setModalCountry(guess.country);
       setModalEventType('');
       setModalEventName('');
     }
-  }, [selectedEventId, events]);
+  }, [selectedEventId, events, selectedDate, trip]);
 
   // Build a fast O(1) lookup from eventId → event once. Declared BEFORE
   // allPhotos so the merge below can use it instead of events.find() inside
@@ -543,6 +548,8 @@ export default function PhotosPage() {
               // chrome). We bump exactly once after Promise.all below.
               const photo = await addPhoto(file, today, undefined, eventId || undefined, {
                 skipTripBump: true,
+                city,
+                country,
               });
               if (eventId) newUrls.push(photo.url);
               successCount++;
@@ -1851,8 +1858,8 @@ export default function PhotosPage() {
                 </select>
 
                 {/* Event details */}
-                {selectedEventId && (
-                  <div className="mb-4 space-y-3">
+                <div className="mb-4 space-y-3">
+                  {selectedEventId && (
                     <div className="rounded-2xl border border-purple-300/30 bg-purple-400/[0.05] backdrop-blur-sm p-3">
                       <p className="text-purple-200/80 text-[10px] uppercase tracking-[0.18em] font-bold mb-2">
                         Información del evento
@@ -1898,8 +1905,9 @@ export default function PhotosPage() {
                         </p>
                       )}
                     </div>
+                  )}
 
-                    <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/[0.05] backdrop-blur-sm p-3">
+                  <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/[0.05] backdrop-blur-sm p-3">
                       <p className="text-emerald-200/80 text-[10px] uppercase tracking-[0.18em] font-bold mb-2">Ubicación</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
@@ -1923,14 +1931,11 @@ export default function PhotosPage() {
                           />
                         </div>
                       </div>
-                      {(!modalCity || !modalCountry) && (
-                        <p className="text-emerald-200/70 text-[10px] mt-2">
-                          💡 Agrega ciudad y país para recordar mejor este momento
-                        </p>
-                      )}
+                      <p className="text-emerald-200/70 text-[10px] mt-2">
+                        💡 Sugerido según tu itinerario para esta fecha — cámbialo si hace falta.
+                      </p>
                     </div>
                   </div>
-                )}
 
                 <div className="flex justify-end gap-2 pt-2">
                   <button

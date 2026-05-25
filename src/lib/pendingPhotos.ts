@@ -13,6 +13,8 @@ export interface PendingPhoto {
   date: string;
   caption?: string;
   eventId?: string;
+  city?: string;
+  country?: string;
   fileBlob: Blob;
   fileType: string;
   fileName: string;
