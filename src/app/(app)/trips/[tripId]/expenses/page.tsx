@@ -4,7 +4,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Plus, List, BarChart3, Scale, CalendarDays, Sparkles } from 'lucide-react';
+import { Plus, List, BarChart3, Scale, CalendarDays, Sparkles, PieChart } from 'lucide-react';
 import { classNames } from '@/lib/utils/helpers';
 import { CaptureTab } from '@/components/expenses/CaptureTab';
 import { useExpensesFromContext } from '@/context/TripDataContext';
@@ -22,12 +22,16 @@ const BalanceTab = dynamic(
   () => import('@/components/expenses/BalanceTab').then((m) => ({ default: m.BalanceTab })),
   { ssr: false, loading: () => null },
 );
+const AnalysisTab = dynamic(
+  () => import('@/components/expenses/AnalysisTab').then((m) => ({ default: m.AnalysisTab })),
+  { ssr: false },
+);
 const DailyBudgetTab = dynamic(
   () => import('@/components/expenses/DailyBudgetTab').then((m) => ({ default: m.DailyBudgetTab })),
   { ssr: false, loading: () => null },
 );
 
-type Tab = 'capture' | 'history' | 'budget' | 'balance' | 'daily';
+type Tab = 'capture' | 'history' | 'budget' | 'balance' | 'daily' | 'analysis';
 
 interface TabConfig {
   id: Tab;
@@ -41,6 +45,7 @@ const TABS: TabConfig[] = [
   { id: 'budget', label: 'vs Presupuesto', icon: BarChart3 },
   { id: 'balance', label: 'Balance', icon: Scale },
   { id: 'daily', label: 'Diario', icon: CalendarDays },
+  { id: 'analysis', label: 'Análisis', icon: PieChart },
 ];
 
 export default function ExpensesPage() {
@@ -131,6 +136,7 @@ export default function ExpensesPage() {
         {activeTab === 'budget' && <BudgetComparisonTab tripId={tripId} />}
         {activeTab === 'balance' && <BalanceTab tripId={tripId} />}
         {activeTab === 'daily' && <DailyBudgetTab tripId={tripId} />}
+        {activeTab === 'analysis' && <AnalysisTab tripId={tripId} />}
       </motion.div>
     </div>
   );
