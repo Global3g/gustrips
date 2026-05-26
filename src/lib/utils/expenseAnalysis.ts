@@ -97,6 +97,45 @@ function cashBase(e: TripExpense, base: string, convert: ExpenseAnalysisInput['c
   return convert(e.amount || 0, e.currency || base);
 }
 
+// ── Per-expense group keys (single source of truth for both aggregation
+//    and drill-down filtering) ──
+export type AnalysisDim = 'category' | 'day' | 'person' | 'city' | 'payment';
+
+export function expensePaymentKey(e: TripExpense): string {
+  if ((e.paymentMethod === 'credit' || e.paymentMethod === 'debit') && e.cardId) {
+    return `card:${e.cardId}`;
+  }
+  return `m:${e.paymentMethod || 'other'}`;
+}
+
+export function expenseCityKey(
+  e: TripExpense,
+  events: TripEvent[],
+  trip: ExpenseAnalysisInput['trip'],
+  eventsById?: Map<string, TripEvent>,
+): string {
+  const linked = e.eventId ? (eventsById?.get(e.eventId) ?? events.find((x) => x.id === e.eventId)) : undefined;
+  let city = (linked?.city || '').trim();
+  if (!city && e.date) city = inferDateLocation(e.date, events, trip).city;
+  return city || '__none';
+}
+
+/** Which group this expense belongs to, for a given dimension. */
+export function expenseDimKey(
+  e: TripExpense,
+  dim: AnalysisDim,
+  events: TripEvent[],
+  trip: ExpenseAnalysisInput['trip'],
+): string {
+  switch (dim) {
+    case 'category': return (e.category || 'misc') as string;
+    case 'day': return e.date || '';
+    case 'person': return e.paidBy || 'unknown';
+    case 'payment': return expensePaymentKey(e);
+    case 'city': return expenseCityKey(e, events, trip);
+  }
+}
+
 function toSlices(map: Map<string, { label: string; amount: number; color?: string }>, total: number): Slice[] {
   return Array.from(map.entries())
     .map(([key, v]) => ({
@@ -155,14 +194,12 @@ export function analyzeExpenses(input: ExpenseAnalysisInput): ExpenseAnalysis {
     personMap.set(uid, prevP);
 
     // Payment method / card.
-    let payKey: string;
+    const payKey = expensePaymentKey(e);
     let payLabel: string;
-    if ((e.paymentMethod === 'credit' || e.paymentMethod === 'debit') && e.cardId) {
-      payKey = `card:${e.cardId}`;
+    if (payKey.startsWith('card:') && e.cardId) {
       payLabel = cardLabelById(e.cardId) || (e.paymentMethod === 'credit' ? 'Tarjeta de crédito' : 'Tarjeta de débito');
     } else {
       const m = e.paymentMethod || 'other';
-      payKey = `m:${m}`;
       const labels: Record<string, string> = {
         cash: 'Efectivo', debit: 'Débito (sin tarjeta)', credit: 'Crédito (sin tarjeta)',
         transfer: 'Transferencia', other: 'Otro',
@@ -174,11 +211,8 @@ export function analyzeExpenses(input: ExpenseAnalysisInput): ExpenseAnalysis {
     payMap.set(payKey, prevPay);
 
     // City: linked event's city, else inferred from the date.
-    const linked = e.eventId ? eventsById.get(e.eventId) : undefined;
-    let city = (linked?.city || '').trim();
-    if (!city && e.date) city = inferDateLocation(e.date, events, trip).city;
-    const cityKey = city || '__none';
-    const cityLabel = city || 'Sin ubicación';
+    const cityKey = expenseCityKey(e, events, trip, eventsById);
+    const cityLabel = cityKey === '__none' ? 'Sin ubicación' : cityKey;
     const prevCity = cityMap.get(cityKey) || { label: cityLabel, amount: 0 };
     prevCity.amount += amt;
     cityMap.set(cityKey, prevCity);
