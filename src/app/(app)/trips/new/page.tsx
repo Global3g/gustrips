@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Sparkles, Check } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { addDays, parseISO, format, differenceInCalendarDays } from 'date-fns';
 import {
@@ -13,21 +13,15 @@ import {
 import { useTrips } from '@/hooks/useTrips';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/context/ToastContext';
-import TripForm from '@/components/trips/TripForm';
+import TripWizard, { type TripWizardData } from '@/components/trips/TripWizard';
 import { ROUTES } from '@/config/constants';
-import { classNames, nowISO } from '@/lib/utils/helpers';
+import { nowISO } from '@/lib/utils/helpers';
 import { getClientDb } from '@/lib/firebase/client';
 import {
-  TRIP_TEMPLATE_LIST,
   TRIP_TEMPLATES,
   type TripTemplate,
-  type TripTemplateId,
 } from '@/lib/tripTemplates';
 import { PACKING_TEMPLATES } from '@/lib/packingTemplates';
-
-/** "Ninguno" sentinel so the chip group has a clean way to opt-out. */
-const NO_TEMPLATE = '__none__' as const;
-type SelectedTemplate = TripTemplateId | typeof NO_TEMPLATE | null;
 
 /**
  * Clamp a daysFromStart offset so an event never lands past the trip's
@@ -123,7 +117,6 @@ export default function NewTripPage() {
   const { trips, createTrip } = useTrips();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<SelectedTemplate>(null);
 
   // Same reasoning as /trips/[tripId]/layout — router.back() is unreliable
   // when there's no usable history. Always go to the dashboard.
@@ -131,16 +124,7 @@ export default function NewTripPage() {
     router.push(ROUTES.app.dashboard);
   };
 
-  const handleSubmit = async (data: {
-    title: string;
-    destination: string;
-    startDate: string;
-    endDate: string;
-    description?: string;
-    status: 'planning' | 'active' | 'completed' | 'cancelled';
-    coverImage?: string | null;
-    travelerIds?: string[];
-  }) => {
+  const handleComplete = async (data: TripWizardData) => {
     try {
       setLoading(true);
       const isFirstTrip = trips.length === 0;
@@ -149,17 +133,20 @@ export default function NewTripPage() {
         destination: data.destination,
         startDate: data.startDate,
         endDate: data.endDate,
-        description: data.description || '',
-        status: data.status,
-        coverImage: data.coverImage ?? null,
-        travelerIds: data.travelerIds || [],
+        description: '',
+        status: 'planning',
+        coverImage: null,
+        travelerIds: data.travelerIds,
+        // Budget is optional in the wizard — only set it when the user typed one.
+        ...(data.budget !== undefined
+          ? { budget: data.budget, budgetCurrency: data.budgetCurrency }
+          : {}),
       });
 
-      // If a template was selected, pre-fill the trip's events / checklist
-      // / packing list. We do this BEFORE redirecting so the user lands on
-      // the trip page and sees the items already populated.
-      if (selectedTemplate && selectedTemplate !== NO_TEMPLATE && user?.uid) {
-        const template = TRIP_TEMPLATES[selectedTemplate];
+      // If a template was picked, pre-fill the trip's events / checklist /
+      // packing list BEFORE redirecting so the user lands on a populated trip.
+      if (data.templateId && user?.uid) {
+        const template: TripTemplate | undefined = TRIP_TEMPLATES[data.templateId];
         if (template) {
           try {
             await seedTripFromTemplate({
@@ -187,9 +174,10 @@ export default function NewTripPage() {
     } catch (err) {
       console.error('Error al crear viaje:', err);
       toast('Error al crear el viaje', 'error');
-    } finally {
       setLoading(false);
     }
+    // On success we navigate away, so we deliberately leave `loading` true
+    // to keep the button disabled during the redirect.
   };
 
   return (
@@ -211,83 +199,11 @@ export default function NewTripPage() {
         </button>
         <div>
           <h1 className="text-white text-2xl font-bold">Nuevo viaje</h1>
-          <p className="text-white/55 text-sm">Cargá título, destino, fechas y construí el itinerario.</p>
+          <p className="text-white/55 text-sm">Respondé unas preguntas y te dejamos el viaje listo.</p>
         </div>
       </motion.div>
 
-      <TripForm onSubmit={handleSubmit} loading={loading} />
-
-      {/* Template picker — placed right under the form so the user sees
-          it as a final "do you want a head start?" step before submitting.
-          Selection survives multiple edits to the form above and only
-          consumes time once `Crear Viaje` is pressed. */}
-      <motion.section
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.15 }}
-        className="rounded-2xl p-5 bg-white border border-gray-200 shadow-sm"
-      >
-        <div className="flex items-start gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-5 h-5 text-amber-500" />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-gray-900 text-base font-semibold">¿Qué tipo de viaje?</h2>
-            <p className="text-gray-500 text-sm">
-              Elegí una plantilla para pre-cargar el itinerario, el checklist y la maleta.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {TRIP_TEMPLATE_LIST.map((tpl) => {
-            const isSelected = selectedTemplate === tpl.id;
-            return (
-              <button
-                key={tpl.id}
-                type="button"
-                onClick={() => setSelectedTemplate(isSelected ? null : tpl.id)}
-                aria-pressed={isSelected}
-                className={classNames(
-                  'inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all',
-                  isSelected
-                    ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-sm'
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300',
-                )}
-              >
-                <span aria-hidden>{tpl.emoji}</span>
-                <span>{tpl.label}</span>
-                {isSelected && <Check className="w-3.5 h-3.5 text-amber-500" />}
-              </button>
-            );
-          })}
-
-          <button
-            type="button"
-            onClick={() => setSelectedTemplate(NO_TEMPLATE)}
-            aria-pressed={selectedTemplate === NO_TEMPLATE}
-            className={classNames(
-              'inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all',
-              selectedTemplate === NO_TEMPLATE
-                ? 'bg-gray-100 border-gray-400 text-gray-700'
-                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300',
-            )}
-          >
-            Ninguno
-          </button>
-        </div>
-
-        {selectedTemplate && selectedTemplate !== NO_TEMPLATE && (
-          <p className="text-xs text-gray-500 mt-3">
-            {TRIP_TEMPLATES[selectedTemplate].description}{' '}
-            <span className="text-gray-400">
-              ({TRIP_TEMPLATES[selectedTemplate].suggestedEvents.length} eventos,{' '}
-              {TRIP_TEMPLATES[selectedTemplate].checklistDefaults.length} tareas,{' '}
-              maleta {TRIP_TEMPLATES[selectedTemplate].packingTemplate})
-            </span>
-          </p>
-        )}
-      </motion.section>
+      <TripWizard loading={loading} onCancel={handleBack} onComplete={handleComplete} />
     </div>
   );
 }
