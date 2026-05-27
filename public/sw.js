@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v36-2026-05-27-trip-wizard';
+const SW_VERSION = 'gustrips-v37-2026-05-27-live-flight-status';
 
 // Cache names are deliberately STABLE (not version-suffixed). Previously every
 // version bump produced new cache names and `activate` deleted the old ones —

@@ -102,6 +102,47 @@ function formatCountdown(deltaMs: number): { primary: string; secondary: string 
   };
 }
 
+/* ─── Live flight status (from /api/flight-status) ──── */
+
+interface FlightEndpointLive {
+  airportIata: string | null;
+  airportName: string | null;
+  scheduled: string | null;
+  revised: string | null;
+  delayed: boolean;
+  terminal: string | null;
+  gate: string | null;
+  baggageBelt: string | null;
+}
+interface FlightLive {
+  available: boolean;
+  reason?: string;
+  statusLabel?: string;
+  severity?: 'ok' | 'warn' | 'bad' | 'info';
+  departure?: FlightEndpointLive | null;
+  arrival?: FlightEndpointLive | null;
+}
+
+const SEV_BG: Record<string, string> = {
+  ok: 'bg-emerald-500/10 border-emerald-400/30',
+  info: 'bg-sky-500/10 border-sky-400/30',
+  warn: 'bg-amber-500/10 border-amber-400/30',
+  bad: 'bg-rose-500/15 border-rose-400/40',
+};
+const SEV_DOT: Record<string, string> = {
+  ok: '#34d399',
+  info: '#38bdf8',
+  warn: '#fbbf24',
+  bad: '#fb7185',
+};
+
+/** AeroDataBox local times look like "2026-05-28 14:35+01:00" — pull HH:mm. */
+function fmtLocal(s: string | null | undefined): string {
+  if (!s) return '';
+  const m = s.match(/(\d{1,2}:\d{2})/);
+  return m ? m[1] : s;
+}
+
 /* ─── Component ─────────────────────────────────────── */
 
 const CHECKLIST_ITEMS = [
@@ -132,6 +173,41 @@ export default function AirportModePage() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const toggle = (key: string) => setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
 
+  // Live flight status. Fetched here — ABOVE the loading guard below — so we
+  // never declare a hook after an early return (that's the React #310 trap).
+  // Degrades silently: offline, no API key, or flight not found → `live`
+  // stays unavailable and the UI falls back to the Google Flights link.
+  const [live, setLive] = useState<FlightLive | null>(null);
+  useEffect(() => {
+    const fn = flight?.details?.flightNumber?.trim();
+    const date = flight?.date;
+    if (!fn) {
+      setLive(null);
+      return;
+    }
+    // No point hitting the network with no signal — keep whatever we had.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
+    let aborted = false;
+    const load = async () => {
+      try {
+        const qs = new URLSearchParams({ flight: fn, ...(date ? { date } : {}) });
+        const res = await fetch(`/api/flight-status?${qs.toString()}`);
+        const json = (await res.json()) as FlightLive;
+        if (!aborted) setLive(json);
+      } catch {
+        if (!aborted) setLive(null);
+      }
+    };
+    load();
+    // Refresh while the screen is open — gate/delay can change minute to minute.
+    const id = setInterval(load, 60_000);
+    return () => {
+      aborted = true;
+      clearInterval(id);
+    };
+  }, [flight?.details?.flightNumber, flight?.date]);
+
   if (tripLoading || eventsLoading) {
     return (
       <div className="mode-active flex items-center justify-center py-24">
@@ -149,6 +225,11 @@ export default function AirportModePage() {
   const terminal = flight?.details?.departureTerminal?.trim() || flight?.details?.terminal?.trim() || 'Pendiente';
   const seat = flight?.details?.seatNumber?.trim() || '';
   const confirmation = flight?.details?.confirmationCode?.trim() || '';
+
+  // Live values win over the static itinerary fields when the API responded.
+  const liveDep = live?.available ? live.departure : null;
+  const liveGate = liveDep?.gate || gate;
+  const liveTerminal = liveDep?.terminal || terminal;
 
   // Boarding pass: first attachment URL on the event. We don't crack open
   // the documents subcollection here — attachments[0] is the canonical
@@ -225,8 +306,8 @@ export default function AirportModePage() {
 
           {/* Info grid: gate / terminal / asiento / código */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <InfoTile label="Puerta" value={gate} />
-            <InfoTile label="Terminal" value={terminal} />
+            <InfoTile label="Puerta" value={liveGate} live={!!liveDep?.gate} />
+            <InfoTile label="Terminal" value={liveTerminal} live={!!liveDep?.terminal} />
             <InfoTile label="Asiento" value={seat || 'Pendiente'} />
             <InfoTile label="Reserva" value={confirmation || 'Pendiente'} />
           </div>
@@ -279,28 +360,67 @@ export default function AirportModePage() {
               </div>
             </a>
 
-            <a
-              href={statusUrl || '#'}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => {
-                if (!statusUrl) e.preventDefault();
-              }}
-              className={[
-                'rounded-2xl p-5 border flex items-center gap-3 transition-all sm:col-span-2',
-                statusUrl
-                  ? 'bg-white/5 border-white/10 text-white hover:bg-white/10'
-                  : 'bg-white/5 border-white/10 text-white/40 cursor-not-allowed',
-              ].join(' ')}
-            >
-              <FileText className="w-5 h-5 flex-shrink-0" />
-              <div className="min-w-0">
-                <div className="text-sm font-bold">Estado del vuelo</div>
-                <div className="text-[11px] opacity-70 truncate">
-                  {statusUrl ? 'Consultar demoras y puerta actualizada' : 'Falta aerolínea + número'}
+            {live?.available ? (
+              <div
+                className={[
+                  'rounded-2xl p-5 border flex items-center gap-3 sm:col-span-2 text-white',
+                  SEV_BG[live.severity ?? 'info'],
+                ].join(' ')}
+              >
+                <span className="relative flex h-3 w-3 flex-shrink-0">
+                  <span
+                    className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60"
+                    style={{ background: SEV_DOT[live.severity ?? 'info'] }}
+                  />
+                  <span
+                    className="relative inline-flex rounded-full h-3 w-3"
+                    style={{ background: SEV_DOT[live.severity ?? 'info'] }}
+                  />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold flex items-center gap-2">
+                    {live.statusLabel}
+                    <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-white/15">
+                      En vivo
+                    </span>
+                  </div>
+                  <div className="text-[11px] opacity-80 truncate">
+                    {liveDep?.delayed && liveDep.revised
+                      ? `Ahora sale ${fmtLocal(liveDep.revised)} · programado ${fmtLocal(liveDep.scheduled)}`
+                      : liveDep?.scheduled
+                        ? `Salida ${fmtLocal(liveDep.scheduled)}${liveDep.airportIata ? ` · ${liveDep.airportIata}` : ''}`
+                        : 'Datos del vuelo actualizados'}
+                  </div>
                 </div>
               </div>
-            </a>
+            ) : (
+              <a
+                href={statusUrl || '#'}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  if (!statusUrl) e.preventDefault();
+                }}
+                className={[
+                  'rounded-2xl p-5 border flex items-center gap-3 transition-all sm:col-span-2',
+                  statusUrl
+                    ? 'bg-white/5 border-white/10 text-white hover:bg-white/10'
+                    : 'bg-white/5 border-white/10 text-white/40 cursor-not-allowed',
+                ].join(' ')}
+              >
+                <FileText className="w-5 h-5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm font-bold">Estado del vuelo</div>
+                  <div className="text-[11px] opacity-70 truncate">
+                    {live && !live.available
+                      ? 'Sin datos en vivo — abrir en Google'
+                      : statusUrl
+                        ? 'Consultar demoras y puerta actualizada'
+                        : 'Falta aerolínea + número'}
+                  </div>
+                </div>
+              </a>
+            )}
           </div>
 
           {/* Mini checklist — local, no persistence on purpose */}
@@ -340,10 +460,13 @@ export default function AirportModePage() {
 
 /* ─── Small presentational tile ─────────────────────── */
 
-function InfoTile({ label, value }: { label: string; value: string }) {
+function InfoTile({ label, value, live = false }: { label: string; value: string; live?: boolean }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-      <div className="text-[10px] uppercase tracking-[0.18em] font-bold text-white/50">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.18em] font-bold text-white/50 flex items-center gap-1.5">
+        {label}
+        {live && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" title="Actualizado en vivo" />}
+      </div>
       <div className="text-base font-bold text-white mt-1 truncate">{value}</div>
     </div>
   );
