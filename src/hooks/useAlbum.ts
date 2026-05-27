@@ -206,6 +206,17 @@ export function useAlbum(tripId: string, trip: Trip | null): UseAlbumReturn {
               favorite: data.favorite,
               deletedAt: typeof data.deletedAt === 'string' ? data.deletedAt : undefined,
               contentHash: typeof data.contentHash === 'string' ? data.contentHash : undefined,
+              // original + WebP derivatives + location — MUST be read back, or
+              // the display helpers (gridSrc/viewSrc) and the WebP reconciler
+              // never see them and the whole optimization is dead.
+              originalUrl: data.originalUrl,
+              originalPath: data.originalPath,
+              viewPath: data.viewPath,
+              thumbWebpPath: data.thumbWebpPath,
+              viewUrl: data.viewUrl,
+              thumbWebpUrl: data.thumbWebpUrl,
+              city: data.city,
+              country: data.country,
             }) as AlbumPhoto,
           );
         });

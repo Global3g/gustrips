@@ -957,7 +957,7 @@ export function HistoryTab({ tripId }: HistoryTabProps) {
                                             <div className="flex items-center gap-1.5">
                                               <CreditCard className="w-3 h-3 text-white/40" />
                                               <span className="text-white/70">{PAYMENT_METHODS[expense.paymentMethod]}</span>
-                                              {expense.cardId && cardsById.get(expense.cardId) && (
+                                              {(expense.paymentMethod === 'credit' || expense.paymentMethod === 'debit') && expense.cardId && cardsById.get(expense.cardId) && (
                                                 <span className="inline-flex items-center gap-1 text-white/55">
                                                   ·
                                                   <span

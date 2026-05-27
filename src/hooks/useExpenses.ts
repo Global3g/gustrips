@@ -135,8 +135,14 @@ export function useExpenses(tripId: string): UseExpensesReturn {
     async (expenseId: string, data: Partial<TripExpense>): Promise<void> => {
       const db = getClientDb();
       const expenseRef = doc(db, `trips/${tripId}/expenses`, expenseId);
-      // Remove id from partial to avoid writing it as a field
-      const { id: _id, ...updateData } = data as Partial<TripExpense> & { id?: string };
+      // Remove id from partial, and strip undefined values — Firestore's
+      // updateDoc rejects `undefined` and would throw (e.g. cardId: undefined
+      // when the payment method isn't a card). Pass `null` to clear a field.
+      const { id: _id, ...rest } = data as Partial<TripExpense> & { id?: string };
+      const updateData: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rest)) {
+        if (v !== undefined) updateData[k] = v;
+      }
       await updateDoc(expenseRef, updateData);
       try { markMutation(); } catch { /* localStorage may be unavailable */ }
     },
