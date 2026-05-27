@@ -783,8 +783,14 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
     setStep((prev) => Math.max(prev - 1, 0));
   };
 
-  // Fields that should use Places Autocomplete
+  // Address-type fields → autocomplete fills the address text + coords.
   const LOCATION_FIELDS = new Set(['address', 'pickupLocation', 'dropoffLocation', 'portName']);
+  // Primary "name" fields → picking a place fills the name AND stamps coords
+  // (and the address subfield when present). This is the natural action that
+  // makes a pin appear instantly, instead of relying on later geocoding.
+  const PLACE_NAME_FIELDS = new Set([
+    'restaurantName', 'activityName', 'hotelName', 'storeName', 'gasStation', 'placeName',
+  ]);
 
   const renderField = (field: FieldDef) => {
     const value = details[field.key] || '';
@@ -804,8 +810,9 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
       );
     }
 
-    // Use Places Autocomplete for location/address fields
-    if (LOCATION_FIELDS.has(field.key)) {
+    // Use Places Autocomplete for both address-type and primary name fields.
+    if (LOCATION_FIELDS.has(field.key) || PLACE_NAME_FIELDS.has(field.key)) {
+      const isNameField = PLACE_NAME_FIELDS.has(field.key);
       return (
         <div key={field.key} className={wrapperClass}>
           <PlacesAutocomplete
@@ -813,9 +820,16 @@ export default function EventForm({ initialData, defaultDate, defaultTime, tripS
             value={value}
             onChange={(v) => handleDetailChange(field.key, v)}
             onSelect={(place) => {
-              handleDetailChange(field.key, place.address || place.name);
               setLatitude(String(place.lat));
               setLongitude(String(place.lng));
+              if (isNameField) {
+                // Keep the place name in the name field; drop the full address
+                // into the address subfield (used by deriveLocation) when set.
+                handleDetailChange(field.key, place.name || place.address);
+                if (place.address) handleDetailChange('address', place.address);
+              } else {
+                handleDetailChange(field.key, place.address || place.name);
+              }
             }}
             placeholder={field.placeholder}
             compact

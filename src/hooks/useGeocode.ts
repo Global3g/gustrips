@@ -9,7 +9,7 @@ interface GeocodedEvent extends TripEvent {
 }
 
 const CACHE_KEY = 'gustrips-geocache';
-const RATE_LIMIT_MS = 1100; // Nominatim requires max 1 req/sec
+const RATE_LIMIT_MS = 350; // gentle throttle; /api/places is server-cached + capped
 
 function getCache(): Record<string, { lat: number; lng: number }> {
   try {
@@ -29,9 +29,11 @@ function setCache(cache: Record<string, { lat: number; lng: number }>) {
 }
 
 /**
- * Geocodes event locations using OpenStreetMap Nominatim (free, no API key).
- * Results are cached in localStorage to avoid repeated requests.
- * Events that already have latitude/longitude are returned as-is.
+ * Geocodes event locations via Google Places (our own /api/places, which is
+ * server-cached and monthly-capped). This is a FALLBACK: events ideally get
+ * lat/lng stamped at creation by PlacesAutocomplete in the event form. Results
+ * are also cached in localStorage. Events that already have coords pass through
+ * untouched (so the map is instant + offline once coords are stored).
  */
 export function useGeocode(events: TripEvent[]): { geocodedEvents: GeocodedEvent[]; loading: boolean } {
   const [geocoded, setGeocoded] = useState<GeocodedEvent[]>([]);
@@ -84,16 +86,16 @@ export function useGeocode(events: TripEvent[]): { geocodedEvents: GeocodedEvent
 
         try {
           const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(item.location)}&limit=1&accept-language=es`,
-            { headers: { 'User-Agent': 'GusTrips/1.0' } },
+            `/api/places?action=search&q=${encodeURIComponent(item.location)}`,
           );
-
           if (!response.ok) continue;
 
-          const data = await response.json();
-          if (data.length > 0) {
-            const lat = parseFloat(data[0].lat);
-            const lng = parseFloat(data[0].lon);
+          const json = await response.json();
+          const first = Array.isArray(json?.data) ? json.data[0] : null;
+          const lat = Number(first?.lat);
+          const lng = Number(first?.lng);
+          // Guard the 0,0 sentinel /api/places returns when Google had no coords.
+          if (first && Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
             results[item.index] = { ...results[item.index], _geoLat: lat, _geoLng: lng };
 
             // Save to cache

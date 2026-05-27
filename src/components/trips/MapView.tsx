@@ -194,9 +194,13 @@ export default function MapView({ events, centerLat = null, centerLng = null, cl
       >
         <CachedTileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+          // Voyager: colorful, labeled basemap (streets + POIs) — reads like a
+          // real map vs the old `dark_all` which had almost no labels. Still
+          // CARTO tiles, so it stays cacheable offline via CachedTileLayer.
+          // (No {r}/retina token — CachedGridLayer.getTileUrl doesn't expand it.)
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
           subdomains="abcd"
-          maxZoom={19}
+          maxZoom={20}
         />
 
         <FitBounds positions={positions} />
