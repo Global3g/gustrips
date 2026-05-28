@@ -1,0 +1,42 @@
+name: Cron · notifications/check
+
+# Hits the Vercel cron endpoint every 5 minutes so the 30-min event reminders
+# AND the live flight watcher actually run. Lives here (not in vercel.json)
+# because Vercel Hobby caps crons at daily granularity. GitHub Actions' free
+# tier supports `*/5` (with a known scheduling jitter of a few minutes — fine
+# for flight gate/delay updates).
+#
+# Required GitHub repo secrets:
+#   CRON_SECRET     — must match the same env var set in Vercel.
+#   VERCEL_PROD_URL — full origin, e.g. https://gustrips.vercel.app
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+# One run at a time; if a previous run is still going we skip the new one.
+concurrency:
+  group: notifications-check
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /api/notifications/check
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_PROD_URL: ${{ secrets.VERCEL_PROD_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$VERCEL_PROD_URL" ]; then
+            echo "::error::Missing CRON_SECRET or VERCEL_PROD_URL repo secret."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${VERCEL_PROD_URL%/}/api/notifications/check")
+          echo "HTTP ${code}"
+          cat /tmp/resp.json || true
+          test "${code}" = "200"
