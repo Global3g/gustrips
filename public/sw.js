@@ -6,7 +6,7 @@
  * - Preserves: Web Share Target (POST /share) + Push notifications
  */
 
-const SW_VERSION = 'gustrips-v39-2026-05-28-flight-push-notifications';
+const SW_VERSION = 'gustrips-v40-2026-05-28-ci-greening';
 
 // Cache names are deliberately STABLE (not version-suffixed). Previously every
 // version bump produced new cache names and `activate` deleted the old ones —

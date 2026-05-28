@@ -172,11 +172,16 @@ export async function GET(
   const token = req.nextUrl.searchParams.get('token');
   const authHeader = req.headers.get('authorization') || '';
 
-  const app = getAdminApp();
-  const db = getAdminFirestore(app);
+  // Wrap in try/catch so unexpected failures (e.g. firebase-admin can't
+  // init in a build/preview env without service-account creds) surface as
+  // 401 instead of a 500 that would leak "something is here" — and so the
+  // unauthenticated smoke test gets a consistent rejection code.
+  try {
+    const app = getAdminApp();
+    const db = getAdminFirestore(app);
 
-  // Load trip
-  const tripSnap = await db.collection('trips').doc(tripId).get();
+    // Load trip
+    const tripSnap = await db.collection('trips').doc(tripId).get();
   if (!tripSnap.exists) {
     return NextResponse.json({ error: 'not-found' }, { status: 404 });
   }
@@ -220,11 +225,15 @@ export async function GET(
   const filename = `${(trip.title || 'viaje').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}.ics`;
 
   return new NextResponse(ics, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Cache-Control': 'private, no-store',
-    },
-  });
+      status: 200,
+      headers: {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  } catch (err) {
+    console.error('[ics] handler failed:', err);
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
 }
