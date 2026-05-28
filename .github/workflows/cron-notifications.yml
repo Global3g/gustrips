@@ -11,10 +11,8 @@ name: Cron · notifications/check
 #   VERCEL_PROD_URL — full origin, e.g. https://gustrips.vercel.app
 
 on:
-  # Schedule disabled until CRON_SECRET + VERCEL_PROD_URL repo secrets are set.
-  # Re-enable by uncommenting the schedule block below.
-  # schedule:
-  #   - cron: '*/5 * * * *'
+  schedule:
+    - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 # One run at a time; if a previous run is still going we skip the new one.
