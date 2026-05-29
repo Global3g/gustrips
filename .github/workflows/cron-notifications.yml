@@ -11,8 +11,10 @@ name: Cron · notifications/check
 #   VERCEL_PROD_URL — full origin, e.g. https://gustrips.vercel.app
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # Schedule paused: waiting on FIREBASE_ADMIN_CREDENTIALS in Vercel. Re-enable
+  # by uncommenting once the service account JSON is uploaded.
+  # schedule:
+  #   - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
 # One run at a time; if a previous run is still going we skip the new one.
